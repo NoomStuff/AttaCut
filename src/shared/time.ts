@@ -17,7 +17,3 @@ export function parseTime(text: string): number | null {
    if (values.slice(1).some((part) => part >= 60)) return null;
    return values.reduce((sum, part) => sum * 60 + part, 0);
 }
-export function formatSize(bytes: number): string {
-   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-   return `${(bytes / 1e6).toFixed(0)} MB`;
-}

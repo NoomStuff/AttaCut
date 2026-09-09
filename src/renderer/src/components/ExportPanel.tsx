@@ -3,6 +3,7 @@ import type { Clip, ExportJob, MediaSource, Preferences } from "../../../shared/
 import { formatTime } from "../../../shared/time";
 import { faArrowUpFromBracket, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
 import { Button, Modal, Toggle } from "./Controls";
+import { errorText } from "../lib/errors";
 
 export function ExportPanel({
    source,
@@ -93,7 +94,7 @@ export function ExportPanel({
                   Browse
                </Button>
             </div>
-            <div className="export-name-slot">
+            <div>
                {mode === "combined" && (
                   <label className="field-label combined-name">
                      Filename
@@ -163,7 +164,4 @@ export function ExportPanel({
          </div>
       </Modal>
    );
-}
-export function errorText(value: unknown): string {
-   return (value instanceof Error ? value.message : String(value)).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
 }

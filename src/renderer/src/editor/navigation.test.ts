@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { adjacentBoundary, snapBoundary } from "./navigation";
+import { adjacentBoundary, adjacentKeyframe, snapBoundary } from "./navigation";
 const clips = [
    { id: "a", start: 1, end: 4, color: 0 },
    { id: "b", start: 7, end: 10, color: 1 },
@@ -18,4 +18,11 @@ it("snaps to valid keys without crossing neighboring clips", () => {
    expect(snapBoundary(document, "b", "start", 3.6, [0, 2, 6, 8, 10], 12)).toBe(6);
    expect(snapBoundary(document, "a", "end", 6.7, [0, 2, 6, 8, 10], 12)).toBe(6);
    expect(snapBoundary(document, "a", "end", 3, [0], 12)).toBe(4);
+});
+it("steps to the next and previous keyframe, including the timeline ends", () => {
+   expect(adjacentKeyframe(3, 1, [2, 6, 8], 12)).toBe(6);
+   expect(adjacentKeyframe(3, -1, [2, 6, 8], 12)).toBe(2);
+   expect(adjacentKeyframe(9, 1, [2, 6, 8], 12)).toBe(12);
+   expect(adjacentKeyframe(1, -1, [2, 6, 8], 12)).toBe(0);
+   expect(adjacentKeyframe(12, 1, [2, 6, 8], 12)).toBe(12);
 });

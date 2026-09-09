@@ -20,7 +20,7 @@ export function SettingsPanel({
    const [recording, setRecording] = useState<CommandId | null>(null);
    const [conflict, setConflict] = useState("");
    return (
-      <Modal title="Settings" onClose={onClose} className="settings-modal">
+      <Modal title="Settings" onClose={onClose}>
          <div className="settings-tabs" role="tablist">
             <button role="tab" aria-selected={tab === "general"} onClick={() => setTab("general")}>
                General

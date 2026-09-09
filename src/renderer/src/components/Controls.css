@@ -1,0 +1,226 @@
+.control-divider {
+   width: 1px;
+   height: 23px;
+   background: var(--line);
+   margin: 0 8px;
+   flex-shrink: 0;
+}
+.button {
+   display: inline-flex;
+   gap: 9px;
+   align-items: center;
+   justify-content: center;
+   padding: 10px 14px;
+   border-radius: 7px;
+   min-height: 37px;
+   font-size: 12px;
+   font-weight: 600;
+   transition:
+      background 120ms,
+      color 120ms,
+      transform 120ms;
+   white-space: nowrap;
+}
+.button > span:empty {
+   display: none;
+}
+.button svg {
+   font-size: 14px;
+}
+.button:hover:not(:disabled) {
+   background: var(--surface-hover);
+}
+.button:active:not(:disabled) {
+   transform: scale(0.96);
+}
+.button.primary {
+   background: var(--accent);
+   color: var(--accent-text);
+   padding: 11px 20px;
+}
+.button.primary:hover:not(:disabled) {
+   background: color-mix(in srgb, var(--accent) 85%, white);
+}
+.button.danger {
+   color: var(--danger);
+}
+.button.active {
+   color: var(--accent);
+   background: var(--accent-soft);
+}
+.button kbd {
+   margin-left: 4px;
+   font-weight: 400;
+}
+.icon-button {
+   width: 36px;
+   height: 36px;
+   padding: 0;
+}
+.tooltip-host {
+   display: inline-flex;
+   position: relative;
+}
+.tooltip {
+   position: absolute;
+   z-index: 100;
+   top: calc(100% + 10px);
+   left: 50%;
+   transform: translateX(-50%) translateY(-3px);
+   opacity: 0;
+   visibility: hidden;
+   pointer-events: none;
+   background: var(--surface-raised);
+   border: 1px solid var(--line);
+   border-radius: 6px;
+   box-shadow: 0 6px 18px #0003;
+   padding: 7px 10px;
+   font-size: 11px;
+   white-space: nowrap;
+   transition:
+      opacity 100ms 350ms,
+      transform 100ms 350ms,
+      visibility 100ms 350ms;
+}
+.tooltip kbd {
+   margin-left: 12px;
+}
+.tooltip-host:hover .tooltip,
+.tooltip-host:has(button:focus-visible) .tooltip {
+   visibility: visible;
+   opacity: 1;
+   transform: translateX(-50%);
+}
+.modal {
+   background: var(--surface);
+   color: var(--text);
+   border: 1px solid var(--line);
+   padding: 0;
+   border-radius: 12px;
+   width: min(720px, calc(100vw - 60px));
+   max-height: calc(100vh - 70px);
+   box-shadow: 0 24px 80px #0006;
+   overflow: auto;
+}
+.modal::backdrop {
+   background: #06090b94;
+   backdrop-filter: blur(3px);
+}
+.modal[open] {
+   animation: modal-enter 140ms ease-out;
+}
+@keyframes modal-enter {
+   from {
+      transform: translateY(8px);
+      opacity: 0;
+   }
+   to {
+      transform: translateY(0);
+      opacity: 1;
+   }
+}
+.modal-header {
+   display: flex;
+   align-items: flex-start;
+   justify-content: space-between;
+   padding: 24px 24px 18px;
+}
+.modal-header h2 {
+   font-size: 21px;
+   font-weight: 600;
+   letter-spacing: -0.4px;
+   margin: 0 0 5px;
+}
+.modal-header p {
+   font-size: 12px;
+   color: var(--muted);
+   margin: 0;
+}
+.modal-body {
+   padding: 0 24px 22px;
+   font-size: 13px;
+}
+.modal-footer {
+   display: flex;
+   justify-content: flex-end;
+   align-items: center;
+   gap: 15px;
+   padding: 17px 24px;
+   border-top: 1px solid var(--line);
+   font-size: 11px;
+   position: sticky;
+   bottom: 0;
+   background: var(--surface);
+}
+.field-label {
+   display: block;
+   font-size: 12px;
+   margin: 8px 0;
+   font-weight: 600;
+}
+.inline-error {
+   padding: 10px 12px;
+   background: color-mix(in srgb, var(--danger) 9%, transparent);
+   color: var(--danger);
+   border-radius: 5px;
+   font-size: 12px;
+   overflow-wrap: anywhere;
+   margin-top: 14px;
+   max-height: 150px;
+   overflow-y: auto;
+}
+.toggle-row {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   gap: 20px;
+   padding: 18px 0;
+   border-bottom: 1px solid var(--line);
+   font-size: 13px;
+   position: relative;
+   cursor: pointer;
+}
+.toggle-row small {
+   display: block;
+   color: var(--muted);
+   font-size: 11px;
+   margin-top: 5px;
+   overflow-wrap: anywhere;
+}
+.toggle-row > span:first-child {
+   flex: 1;
+}
+.toggle-row input {
+   position: absolute;
+   right: 0;
+   opacity: 0;
+   width: 34px;
+   height: 24px;
+}
+.switch {
+   width: 33px;
+   height: 19px;
+   border-radius: 12px;
+   background: var(--faint);
+   padding: 3px;
+   pointer-events: none;
+}
+.switch::before {
+   content: "";
+   display: block;
+   width: 13px;
+   height: 13px;
+   border-radius: 50%;
+   background: var(--surface);
+   transition: transform 120ms;
+}
+.toggle-row input:checked + .switch {
+   background: var(--accent);
+}
+.toggle-row input:checked + .switch::before {
+   transform: translateX(14px);
+}
+.toggle-row input:focus-visible + .switch {
+   outline: 2px solid var(--accent);
+   outline-offset: 4px;
+}

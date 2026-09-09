@@ -1,0 +1,65 @@
+.settings-tabs {
+   display: flex;
+   padding: 0 24px;
+   border-bottom: 1px solid var(--line);
+   margin-bottom: 15px;
+   gap: 22px;
+}
+.settings-tabs button {
+   padding: 10px 0;
+   font-size: 12px;
+   border-bottom: 2px solid transparent;
+   color: var(--muted);
+}
+.settings-tabs button[aria-selected="true"] {
+   border-color: var(--accent);
+   color: var(--text);
+}
+.setting-row {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   gap: 20px;
+   padding: 18px 0;
+   border-bottom: 1px solid var(--line);
+   font-size: 13px;
+}
+.setting-row > div {
+   min-width: 0;
+}
+.setting-row small {
+   display: block;
+   color: var(--muted);
+   font-size: 11px;
+   margin-top: 5px;
+   overflow-wrap: anywhere;
+}
+.setting-row select {
+   font-size: 12px;
+}
+.shortcut-list {
+   margin-bottom: 20px;
+}
+.shortcut-row {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   padding: 7px 0;
+   border-bottom: 1px solid var(--line);
+   font-size: 12px;
+}
+.shortcut-binding {
+   min-width: 110px;
+   text-align: right;
+   border: 1px solid transparent;
+   border-radius: 4px;
+   padding: 6px 9px;
+}
+.shortcut-binding:hover,
+.shortcut-binding.recording {
+   background: var(--accent-soft);
+   border-color: var(--line);
+}
+.shortcut-binding.recording kbd {
+   color: var(--accent);
+}

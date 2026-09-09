@@ -1,0 +1,21 @@
+.export-body {
+   display: grid;
+   gap: 18px;
+}
+.export-body .field-label {
+   display: grid;
+   gap: 7px;
+}
+.directory-field {
+   display: flex;
+   gap: 8px;
+   align-items: center;
+   margin-top: 7px;
+}
+.directory-field input {
+   flex: 1;
+   min-width: 0;
+}
+.frame-modal {
+   width: 490px;
+}

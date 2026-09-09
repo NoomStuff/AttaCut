@@ -1,0 +1,121 @@
+.export-mode {
+   display: flex;
+   padding: 3px;
+   background: var(--background);
+   border: 1px solid var(--line);
+   border-radius: 6px;
+   margin-bottom: 20px;
+}
+.export-mode button {
+   flex: 1;
+   padding: 8px 12px;
+   border-radius: 4px;
+   color: var(--muted);
+}
+.export-mode button[aria-pressed="true"] {
+   background: var(--surface-hover);
+   color: var(--text);
+}
+.export-mode button:disabled {
+   opacity: 0.4;
+   cursor: default;
+}
+.combined-name {
+   display: block;
+   margin-top: 16px;
+}
+.folder-field {
+   display: flex;
+   gap: 8px;
+}
+.folder-field > input {
+   flex: 1;
+   font-size: 12px;
+}
+.folder-field .button {
+   border: 1px solid var(--line);
+}
+.filename-field {
+   display: flex;
+   gap: 8px;
+   align-items: center;
+   margin-top: 7px;
+}
+.filename-field input {
+   flex: 1;
+   min-width: 0;
+}
+.filename-field span {
+   color: var(--muted);
+}
+.export-list {
+   margin-top: 23px;
+}
+.export-list-heading {
+   display: flex;
+   justify-content: space-between;
+   color: var(--muted);
+   font-size: 11px;
+   padding: 0 0 10px;
+   border-bottom: 1px solid var(--line);
+}
+.export-clip-entry {
+   border-bottom: 1px solid var(--line);
+}
+.export-clip-entry .export-row {
+   border-bottom: 0;
+}
+.export-row {
+   display: flex;
+   gap: 10px;
+   align-items: center;
+   padding: 10px 0;
+   border-bottom: 1px solid var(--line);
+}
+.export-row input:not([type="checkbox"]) {
+   flex: 1;
+   padding: 7px;
+   font-size: 12px;
+   border-color: transparent;
+   background: transparent;
+}
+.export-row input:not([type="checkbox"]):hover {
+   border-color: var(--line);
+   background: var(--surface-raised);
+}
+.export-row time {
+   min-width: 65px;
+   text-align: right;
+   font-size: 12px;
+}
+.extension {
+   font-size: 11px;
+   color: var(--faint);
+}
+.color-dot {
+   width: 7px;
+   height: 7px;
+   border-radius: 50%;
+}
+.export-clip-name {
+   flex: 1;
+   padding: 8px;
+   font-size: 12px;
+}
+/* Stable export geometry while switching modes and showing validation failures. */
+.export-modal[open] {
+   display: flex;
+   flex-direction: column;
+   height: min(620px, calc(100vh - 70px));
+   overflow: hidden;
+}
+.export-modal .modal-body {
+   flex: 1;
+   min-height: 0;
+   overflow: auto;
+   scrollbar-gutter: stable;
+}
+.export-modal .modal-header,
+.export-modal .modal-footer {
+   flex-shrink: 0;
+}

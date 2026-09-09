@@ -18,3 +18,9 @@ export function snapBoundary(document: EditDocument, id: string, side: "start" |
       .reduce((best, point) => (Math.abs(point - value) < Math.abs(best - value) ? point : best), Infinity);
    return Number.isFinite(best) ? best : clip[side];
 }
+/** Nearest keyframe from a boundary in one direction, treating the timeline ends as keyframes. */
+export function adjacentKeyframe(value: number, direction: -1 | 1, keys: number[], duration: number): number {
+   return direction === 1
+      ? ([...keys, duration].find((point) => point > value + timeEpsilon) ?? value)
+      : ([0, ...keys].filter((point) => point < value - timeEpsilon).at(-1) ?? value);
+}

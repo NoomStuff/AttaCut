@@ -1,0 +1,228 @@
+.app-shell {
+   height: 100%;
+   display: flex;
+   flex-direction: column;
+   user-select: none;
+}
+.titlebar {
+   height: 30px;
+   min-height: 30px;
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   padding-left: 14px;
+   line-height: 1;
+   -webkit-app-region: drag;
+   color: var(--muted);
+   font-size: 12px;
+}
+.titlebar.mac {
+   padding-left: 84px;
+}
+.app-mark {
+   width: 19px;
+   height: 19px;
+   display: grid;
+   place-items: center;
+   color: var(--accent);
+   font-size: 13px;
+}
+.app-name {
+   color: var(--text);
+   font-weight: 600;
+   letter-spacing: -0.15px;
+}
+.title-separator {
+   margin: 0 4px;
+   opacity: 0.4;
+}
+.title-filename {
+   text-overflow: ellipsis;
+   white-space: nowrap;
+   overflow: hidden;
+}
+.window-controls {
+   display: flex;
+   height: 100%;
+   margin-left: auto;
+}
+.window-controls button {
+   width: 47px;
+   font-size: 11px;
+}
+.window-controls button:hover {
+   background: var(--surface-hover);
+}
+.window-controls button:last-child:hover {
+   background: #c43b3b;
+   color: white;
+}
+.toolbar {
+   height: 48px;
+   min-height: 48px;
+   padding: 0 14px 0 10px;
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   border-bottom: 1px solid var(--line);
+}
+.toolbar nav {
+   display: flex;
+   gap: 3px;
+}
+.app-menu {
+   position: relative;
+}
+.app-menu > button {
+   padding: 8px 10px;
+   font-size: 13px;
+   border-radius: 5px;
+   color: var(--muted);
+}
+.app-menu > button:is(:hover, .active) {
+   background: var(--surface-hover);
+   color: var(--text);
+}
+.dropdown {
+   position: absolute;
+   top: calc(100% + 8px);
+   left: 0;
+   z-index: 20;
+   min-width: 260px;
+   padding: 6px;
+   background: var(--surface-raised);
+   border: 1px solid var(--line);
+   box-shadow: 0 10px 28px #0004;
+   border-radius: 9px;
+}
+.dropdown button {
+   width: 100%;
+   padding: 10px;
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   gap: 22px;
+   text-align: left;
+   border-radius: 4px;
+   font-size: 12px;
+}
+.dropdown button:hover:not(:disabled) {
+   background: var(--surface-hover);
+}
+.editor-dock {
+   margin-top: 8px;
+   background: var(--surface);
+   border: 1px solid var(--line);
+   border-radius: 10px;
+   flex: 0 0 auto;
+   padding: 0 16px;
+}
+.editor-dock .tooltip {
+   top: auto;
+   bottom: calc(100% + 10px);
+}
+.workspace {
+   flex: 1;
+   min-height: 0;
+   display: flex;
+   flex-direction: column;
+   padding: 8px 14px;
+   position: relative;
+}
+.error-banner {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   padding: 10px 26px;
+   background: color-mix(in srgb, var(--danger) 10%, var(--background));
+   color: var(--danger);
+   font-size: 12px;
+}
+.error-banner > span {
+   flex: 1;
+   overflow-wrap: anywhere;
+   max-height: 70px;
+   overflow: auto;
+}
+.error-banner > button {
+   padding: 5px;
+}
+.loading-overlay {
+   position: absolute;
+   inset: 0;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: center;
+   gap: 12px;
+   background: color-mix(in srgb, var(--background) 94%, transparent);
+   z-index: 10;
+}
+.loading-overlay strong {
+   font-weight: 500;
+}
+.loading-overlay > span:last-child {
+   color: var(--muted);
+   font-size: 12px;
+}
+.spinner {
+   width: 25px;
+   height: 25px;
+   border: 2px solid var(--line);
+   border-top-color: var(--accent);
+   border-radius: 50%;
+   animation: spin 700ms linear infinite;
+   margin-bottom: 10px;
+}
+@keyframes spin {
+   to {
+      transform: rotate(360deg);
+   }
+}
+.drop-overlay {
+   position: fixed;
+   inset: 8px;
+   border: 2px dashed var(--accent);
+   background: color-mix(in srgb, var(--background) 95%, transparent);
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: center;
+   gap: 20px;
+   font-size: 24px;
+   z-index: 200;
+   pointer-events: none;
+   border-radius: 12px;
+   color: var(--accent);
+}
+.drop-overlay > svg {
+   font-size: 42px;
+}
+@media (max-width: 1050px) {
+   .toolbar {
+      padding-right: 18px;
+   }
+   .toolbar nav {
+      gap: 0;
+   }
+   .app-menu > button {
+      padding: 7px;
+   }
+   .workspace {
+      padding-left: 18px;
+      padding-right: 18px;
+   }
+   .editor-dock {
+      padding-left: 14px;
+      padding-right: 14px;
+   }
+}
+@media (max-height: 650px) {
+   .titlebar {
+      height: 32px;
+      min-height: 32px;
+   }
+   .editor-dock {
+      margin-top: 10px;
+   }
+}

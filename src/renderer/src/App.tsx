@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "react";
-import type { MediaSource, Preferences, ExportJob, SavedSession } from "../../shared/types";
+import type { MediaSource, ExportJob, SavedSession } from "../../shared/types";
 import { defaultPreferences } from "../../shared/types";
 import { clamp } from "../../shared/time";
 import { adjacentBoundary, snapBoundary } from "./editor/navigation";
@@ -11,34 +11,21 @@ import { addGap, canSplit, deleteClip, editorReducer, emptyEditor, gapAt, newDoc
 import type { EditDocument } from "./editor/model";
 import { bindingFor, commandDefinitions, displayBinding, useCommands } from "./editor/commands";
 import type { CommandId, Commands } from "./editor/commands";
-import { PlaybackClock, useClock } from "./playback/clock";
-import { Button, IconButton, Modal } from "./components/Controls";
+import { PlaybackClock } from "./playback/clock";
+import { Button, Modal } from "./components/Controls";
 import { Player } from "./components/Player";
 import { Timeline } from "./components/Timeline";
 import { Transport } from "./components/Transport";
-import { ExportPanel, errorText } from "./components/ExportPanel";
+import { TopActions } from "./components/TopActions";
+import { JobProgress } from "./components/JobProgress";
+import { EmptyState } from "./components/EmptyState";
+import { ExportPanel } from "./components/ExportPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { errorText } from "./lib/errors";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-   faScissors,
-   faRotateLeft,
-   faRotateRight,
-   faArrowUpFromBracket,
-   faFolderOpen,
-   faMinus,
-   faSquare,
-   faXmark,
-   faArrowRight,
-   faCheck,
-   faCircleExclamation,
-   faPlus,
-   faTrash,
-   faCamera,
-} from "@fortawesome/free-solid-svg-icons";
+import { faScissors, faFolderOpen, faMinus, faSquare, faXmark, faCircleExclamation } from "@fortawesome/free-solid-svg-icons";
 
 type Panel = "export" | "frame" | "settings" | "shortcuts" | "about" | null;
-const HERO_HOLES = [15, 27, 39, 51, 63, 75, 87];
-const HERO_HOLES_RIGHT = [104, 116, 128];
 export default function App() {
    const [source, setSource] = useState<MediaSource | null>(null);
    const [editor, dispatch] = useReducer(editorReducer, emptyEditor);
@@ -102,6 +89,8 @@ export default function App() {
       const action = document.fullscreenElement ? document.exitFullscreen() : videoRef.current?.requestFullscreen();
       void action?.catch((value) => setError(errorText(value)));
    };
+   // Saved eagerly here, and again by the effect below on every change: this call flushes the
+   // outgoing source's session before another one loads, so restoring always sees the latest edit.
    const saveCurrent = async () => {
       if (source)
          await window.desktop.saveSession({
@@ -563,58 +552,7 @@ export default function App() {
                   </div>
                </>
             ) : (
-               <div className="empty-state">
-                  <div className="empty-hero" aria-hidden="true">
-                     <svg viewBox="0 0 148 76" width="148" height="76">
-                        <g>
-                           <rect className="hero-body" x="8" y="22" width="90" height="36" rx="7" />
-                           {HERO_HOLES.map((x) => (
-                              <rect key={`lt${x}`} className="hero-hole" x={x} y="26.5" width="5" height="4.5" rx="1.5" />
-                           ))}
-                           {HERO_HOLES.map((x) => (
-                              <rect key={`lb${x}`} className="hero-hole" x={x} y="49" width="5" height="4.5" rx="1.5" />
-                           ))}
-                        </g>
-                        <g className="hero-piece">
-                           <g className="hero-piece-inner">
-                              <rect className="hero-body kept" x="98" y="22" width="42" height="36" rx="7" />
-                              {HERO_HOLES_RIGHT.map((x) => (
-                                 <rect key={`rt${x}`} className="hero-hole" x={x} y="26.5" width="5" height="4.5" rx="1.5" />
-                              ))}
-                              {HERO_HOLES_RIGHT.map((x) => (
-                                 <rect key={`rb${x}`} className="hero-hole" x={x} y="49" width="5" height="4.5" rx="1.5" />
-                              ))}
-                           </g>
-                        </g>
-                        <line className="hero-cut" x1="98" y1="5" x2="98" y2="71" />
-                     </svg>
-                     <span className="hero-scissors">
-                        <FontAwesomeIcon icon={faScissors} />
-                     </span>
-                  </div>
-                  <h1>Cut your clips, move on.</h1>
-                  <p>Drag & drop or import a video file.</p>
-                  <Button
-                     icon={faFolderOpen}
-                     variant="primary"
-                     onClick={() => {
-                        void choose();
-                     }}
-                     disabled={loading}
-                  >
-                     Import video <FontAwesomeIcon icon={faArrowRight} />
-                  </Button>
-                  <span className="empty-shortcut">
-                     or use <kbd>{mac ? "⌘" : "Ctrl"}</kbd> <kbd>O</kbd>
-                  </span>
-                  <div className="empty-timeline" aria-hidden="true">
-                     <i className="empty-track" />
-                     <span className="empty-clip c0" />
-                     <span className="empty-clip c1" />
-                     <span className="empty-clip c2" />
-                     <span className="empty-playhead" />
-                  </div>
-               </div>
+               <EmptyState onImport={() => void choose()} loading={loading} mac={mac} />
             )}
             {loading && (
                <div className="loading-overlay">
@@ -661,129 +599,5 @@ export default function App() {
             </div>
          )}
       </div>
-   );
-}
-function TopActions({ commands, clock, preferences, mac }: { commands: Commands; clock: PlaybackClock; preferences: Preferences; mac: boolean }) {
-   useClock(clock);
-   return (
-      <div className="top-actions">
-         <IconButton icon={faPlus} label="Add clip in gap" disabled={!commands.add.enabled()} onClick={commands.add.run} />
-         <IconButton
-            icon={faTrash}
-            label="Delete selected clip"
-            disabled={!commands.delete.enabled()}
-            onClick={commands.delete.run}
-            shortcut={displayBinding(bindingFor("delete", preferences.shortcuts), mac)}
-         />
-         <Button
-            icon={faScissors}
-            data-command="split"
-            disabled={!commands.split.enabled()}
-            onClick={commands.split.run}
-            shortcut={displayBinding(bindingFor("split", preferences.shortcuts), mac)}
-         >
-            Split
-         </Button>
-         <span className="control-divider" />
-         <IconButton
-            icon={faRotateLeft}
-            label="Undo"
-            data-command="undo"
-            disabled={!commands.undo.enabled()}
-            onClick={commands.undo.run}
-            shortcut={displayBinding(bindingFor("undo", preferences.shortcuts), mac)}
-         />
-         <IconButton
-            icon={faRotateRight}
-            label="Redo"
-            data-command="redo"
-            disabled={!commands.redo.enabled()}
-            onClick={commands.redo.run}
-            shortcut={displayBinding(bindingFor("redo", preferences.shortcuts), mac)}
-         />
-         <span className="control-divider" />
-         <IconButton icon={faCamera} label="Export current frame" disabled={!commands.frame.enabled()} onClick={commands.frame.run} />
-         <Button variant="primary" icon={faArrowUpFromBracket} data-command="export" disabled={!commands.export.enabled()} onClick={commands.export.run}>
-            Export
-         </Button>
-      </div>
-   );
-}
-function JobProgress({
-   job,
-   onDismiss,
-   onError,
-   onRetry,
-}: {
-   job: ExportJob;
-   onDismiss: () => void;
-   onError: (value: string) => void;
-   onRetry: (value: ExportJob) => void;
-}) {
-   const complete = job.items.filter((item) => item.status === "completed").length;
-   const failures = job.items.filter((item) => item.status === "failed" || item.status === "cancelled");
-   const progress = job.items.reduce((sum, item) => sum + item.progress, 0) / job.items.length;
-   return (
-      <aside className="job-progress" aria-live="polite">
-         <div className="job-summary">
-            <FontAwesomeIcon icon={job.running ? faArrowUpFromBracket : failures.length ? faCircleExclamation : faCheck} />
-            <div>
-               <strong>{job.running ? `Exporting ${complete + 1} of ${job.items.length}` : `${complete} ${complete === 1 ? "clip" : "clips"} exported`}</strong>
-               <small>
-                  {job.running
-                     ? job.items.find((item) => item.status === "running")?.name
-                     : failures.length
-                       ? `${failures.length} unfinished`
-                       : "Saved and ready to use"}
-               </small>
-            </div>
-            {!job.running && <IconButton icon={faXmark} label="Dismiss export status" onClick={onDismiss} />}
-         </div>
-         {job.running && <progress max={1} value={progress} />}
-         {failures.length > 0 && (
-            <details>
-               <summary>Export details</summary>
-               {failures.map((item) => (
-                  <p key={item.id}>
-                     {item.name}: {item.error ?? item.status}
-                  </p>
-               ))}
-            </details>
-         )}
-         <div className="job-actions">
-            {job.running ? (
-               <Button
-                  onClick={() => {
-                     void window.desktop.cancelExport();
-                  }}
-               >
-                  Cancel
-               </Button>
-            ) : (
-               <>
-                  {failures.length > 0 && (
-                     <Button
-                        onClick={() => {
-                           void window.desktop
-                              .retryExport(job.id)
-                              .then(onRetry)
-                              .catch((value: unknown) => onError(errorText(value)));
-                        }}
-                     >
-                        Retry unfinished
-                     </Button>
-                  )}
-                  <Button
-                     icon={faFolderOpen}
-                     onClick={() => {
-                        void window.desktop.revealOutput(job.directory).catch((value: unknown) => onError(errorText(value)));
-                     }}
-                  >
-                     Open folder
-                  </Button>
-               </>
-            )}
-         </div>
-      </aside>
    );
 }

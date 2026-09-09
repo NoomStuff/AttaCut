@@ -1,0 +1,10 @@
+.top-actions {
+   display: flex;
+   gap: 7px;
+   align-items: center;
+}
+@media (max-width: 1050px) {
+   .top-actions {
+      gap: 3px;
+   }
+}

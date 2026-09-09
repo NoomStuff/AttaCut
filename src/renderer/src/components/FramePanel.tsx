@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { MediaSource, Preferences } from "../../../shared/types";
 import { formatTime } from "../../../shared/time";
 import { Button, Modal } from "./Controls";
-import { errorText } from "./ExportPanel";
+import { errorText } from "../lib/errors";
 import { faFolderOpen, faCamera } from "@fortawesome/free-solid-svg-icons";
 
 export function FramePanel({

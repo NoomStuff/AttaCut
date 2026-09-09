@@ -82,6 +82,10 @@
    font-weight: 700;
    white-space: nowrap;
    pointer-events: none;
+   z-index: 2;
+   text-shadow:
+      0 0 2px color-mix(in srgb, var(--clip-color) 25%, var(--surface)),
+      0 1px 3px color-mix(in srgb, var(--clip-color) 25%, var(--surface));
 }
 .trim-handle {
    position: absolute;
@@ -189,13 +193,6 @@
    top: 7px;
    background: #ffffff60;
    pointer-events: none;
-}
-
-.clip-number {
-   z-index: 2;
-   text-shadow:
-      0 0 2px color-mix(in srgb, var(--clip-color) 25%, var(--surface)),
-      0 1px 3px color-mix(in srgb, var(--clip-color) 25%, var(--surface));
 }
 .timeline-edge {
    position: absolute;

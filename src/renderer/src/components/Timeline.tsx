@@ -5,7 +5,7 @@ import { trimClip } from "../editor/model";
 import type { PlaybackClock } from "../playback/clock";
 import { useClock } from "../playback/clock";
 import { clamp, formatTime } from "../../../shared/time";
-import { snapBoundary } from "../editor/navigation";
+import { snapBoundary, adjacentKeyframe } from "../editor/navigation";
 import { IconButton } from "./Controls";
 import { faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
 
@@ -276,9 +276,7 @@ export function Timeline({
                                  event.stopPropagation();
                                  const direction = event.key === "ArrowLeft" ? -1 : 1;
                                  const target = snapping
-                                    ? ((direction === 1
-                                         ? [...keyframes, duration].find((point) => point > clip[side] + 0.001)
-                                         : [0, ...keyframes].filter((point) => point < clip[side] - 0.001).at(-1)) ?? clip[side])
+                                    ? adjacentKeyframe(clip[side], direction, keyframes, duration)
                                     : clip[side] + direction * (event.shiftKey ? 1 : frameStep);
                                  const next = trimClip(
                                     document,
