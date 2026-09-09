@@ -1,0 +1,7 @@
+node_modules
+out
+release
+resources/media
+work
+test-results
+bun.lock

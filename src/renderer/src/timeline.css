@@ -1,0 +1,251 @@
+.timeline-section {
+   padding: 6px 0 0;
+   position: relative;
+}
+.timeline-viewport {
+   position: relative;
+   height: 58px;
+   margin: 4px 7px 0;
+   cursor: crosshair;
+   touch-action: none;
+   clip-path: inset(-10px 0 -24px);
+}
+.timeline-ruler {
+   position: absolute;
+   top: 0;
+   left: 0;
+   right: 0;
+   height: 22px;
+   color: var(--faint);
+   font-size: 9px;
+   font-variant-numeric: tabular-nums;
+   pointer-events: none;
+}
+.timeline-ruler > span {
+   position: absolute;
+   transform: translateX(-50%);
+   white-space: nowrap;
+   padding-bottom: 3px;
+}
+.timeline-ruler > span::after {
+   content: "";
+   width: 1px;
+   height: 5px;
+   position: absolute;
+   top: 13px;
+   left: 50%;
+   background: var(--line);
+}
+.timeline-ruler > span:first-child {
+   transform: none;
+}
+.timeline-ruler > span:last-child {
+   transform: translateX(-100%);
+}
+.timeline-track {
+   position: absolute;
+   left: 0;
+   right: 0;
+   top: 24px;
+   height: 27px;
+}
+.excluded-track {
+   position: absolute;
+   left: 0;
+   right: 0;
+   top: 11px;
+   height: 5px;
+   background: var(--line);
+   border-radius: 3px;
+}
+.clip-range {
+   position: absolute;
+   top: 2px;
+   height: 23px;
+   min-width: 1px;
+   background: color-mix(in srgb, var(--clip-color) 20%, var(--surface));
+   border-top: 1px solid color-mix(in srgb, var(--clip-color) 45%, transparent);
+   border-bottom: 1px solid color-mix(in srgb, var(--clip-color) 45%, transparent);
+   cursor: pointer;
+}
+.clip-range.selected {
+   background: color-mix(in srgb, var(--clip-color) 35%, var(--surface));
+   border-color: var(--clip-color);
+   box-shadow: 0 0 0 2px color-mix(in srgb, var(--clip-color) 10%, transparent);
+}
+.clip-number {
+   color: var(--clip-color);
+   font-size: 9px;
+   position: absolute;
+   left: 14px;
+   top: 5px;
+   font-weight: 700;
+   white-space: nowrap;
+   pointer-events: none;
+}
+.trim-handle {
+   position: absolute;
+   top: -5px;
+   height: 31px;
+   width: 12px;
+   padding: 0;
+   background: var(--clip-color);
+   color: var(--surface);
+   cursor: ew-resize;
+   border: 1px solid color-mix(in srgb, var(--clip-color) 80%, white);
+   z-index: 3;
+   touch-action: none;
+}
+.trim-handle.start {
+   left: 0;
+   border-radius: 4px 1px 1px 4px;
+}
+.trim-handle.end {
+   right: 0;
+   border-radius: 1px 4px 4px 1px;
+}
+.trim-handle span {
+   display: block;
+   position: absolute;
+   top: 9px;
+   left: 4px;
+   width: 2px;
+   height: 11px;
+   border-radius: 2px;
+   background: var(--background);
+   opacity: 0.65;
+}
+.trim-handle::after {
+   content: "";
+   position: absolute;
+   inset: -5px 0;
+}
+.trim-handle.start::after {
+   left: 0;
+}
+.trim-handle.end::after {
+   right: 0;
+}
+.trim-handle:hover {
+   filter: brightness(1.15);
+   z-index: 6;
+}
+.trim-handle:focus-visible {
+   outline: 2px solid var(--text);
+   outline-offset: 2px;
+   z-index: 5;
+}
+.playhead {
+   position: absolute;
+   top: 16px;
+   height: 38px;
+   z-index: 7;
+   pointer-events: none;
+   transform: translateX(-50%);
+   width: 10px;
+}
+.playhead > span {
+   position: absolute;
+   top: 0;
+   left: 0;
+   width: 10px;
+   height: 11px;
+   border-radius: 2px 2px 1px 1px;
+   background: var(--text);
+   clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%);
+}
+.playhead > i {
+   position: absolute;
+   top: 9px;
+   bottom: 0;
+   left: 4px;
+   width: 2px;
+   background: var(--text);
+   box-shadow: 0 0 3px #0005;
+}
+.timeline-time {
+   pointer-events: none;
+   position: absolute;
+   left: 50%;
+   top: -3px;
+   transform: translateX(-50%);
+   z-index: 8;
+   display: flex;
+   gap: 7px;
+   padding: 3px 9px;
+   border-radius: 4px;
+   background: color-mix(in srgb, var(--background) 85%, transparent);
+   font-size: 12px;
+   font-variant-numeric: tabular-nums;
+}
+.timeline-time span,
+.timeline-time time:last-child {
+   color: var(--muted);
+}
+.keyframe-tick {
+   position: absolute;
+   width: 1px;
+   height: 8px;
+   top: 7px;
+   background: #ffffff60;
+   pointer-events: none;
+}
+
+.clip-number {
+   z-index: 2;
+   text-shadow:
+      0 0 2px color-mix(in srgb, var(--clip-color) 25%, var(--surface)),
+      0 1px 3px color-mix(in srgb, var(--clip-color) 25%, var(--surface));
+}
+.timeline-edge {
+   position: absolute;
+   top: 15px;
+   bottom: 0;
+   width: 44px;
+   z-index: 7;
+   pointer-events: none;
+   transition: opacity 160ms ease-out;
+}
+.timeline-edge.left {
+   left: 0;
+   background: linear-gradient(to right, var(--surface) 8px, transparent);
+}
+.timeline-edge.right {
+   right: 0;
+   background: linear-gradient(to left, var(--surface) 8px, transparent);
+}
+.timeline-pan-arrow {
+   position: absolute;
+   top: 35px;
+   z-index: 9;
+   transition: opacity 160ms ease-out;
+}
+.timeline-pan-arrow.left {
+   left: 9px;
+}
+.timeline-pan-arrow.right {
+   right: 9px;
+}
+.timeline-pan-arrow .icon-button {
+   width: 20px;
+   height: 24px;
+   min-height: 0;
+   padding: 0;
+   border-radius: 4px;
+   color: var(--muted);
+   background: transparent;
+}
+.timeline-pan-arrow .icon-button:hover {
+   color: var(--text);
+   background: var(--surface-hover);
+}
+.timeline-pan-arrow .icon-button svg {
+   font-size: 10px;
+}
+.timeline-pan-arrow:has(button:disabled) {
+   pointer-events: none;
+}
+.timeline-viewport.panning,
+.timeline-viewport.panning * {
+   cursor: grabbing;
+}

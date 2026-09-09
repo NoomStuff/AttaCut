@@ -1,0 +1,187 @@
+import { randomUUID } from "node:crypto";
+import { access, constants, stat } from "node:fs/promises";
+import { basename, extname, join, resolve } from "node:path";
+import type { ExportJob, ExportPlan, PlanRequest } from "../shared/types.ts";
+import { analyzeCut, exportCut } from "./media/cut.ts";
+import type { CutAnalysis } from "./media/cut.ts";
+import type { ProbedSource } from "./media/probe.ts";
+import { outputExtension } from "./media/formats.ts";
+import { planRequestSchema } from "../shared/types.ts";
+import { exportCombined } from "./media/combine.ts";
+
+interface StoredPlan {
+   plan: ExportPlan;
+   source: ProbedSource;
+   analyses: Map<string, CutAnalysis[]>;
+   muteAudio: boolean;
+}
+export class ExportService {
+   private plans = new Map<string, StoredPlan>();
+   private controller: AbortController | null = null;
+   private job: ExportJob | null = null;
+   private runningPlan: StoredPlan | null = null;
+   private completion: Promise<void> = Promise.resolve();
+   private emit: (job: ExportJob) => void;
+   constructor(emit: (job: ExportJob) => void) {
+      this.emit = emit;
+   }
+   get running(): boolean {
+      return this.job?.running ?? false;
+   }
+   get current(): ExportJob | null {
+      return this.job;
+   }
+   async plan(source: ProbedSource, request: PlanRequest): Promise<ExportPlan> {
+      const settings = planRequestSchema.parse(request);
+      const directoryPath = resolve(request.directory);
+      const directory = await stat(directoryPath);
+      if (!directory.isDirectory()) throw new Error("Choose an output folder.");
+      await access(directoryPath, constants.W_OK);
+      const used = new Set<string>();
+      const analyses = new Map<string, CutAnalysis[]>();
+      const items = [];
+      for (const item of [...request.items].sort((a, b) => a.clip.start - b.clip.start)) {
+         const extension =
+            !settings.muteAudio && settings.mode === "separate" && item.clip.start === 0 && Math.abs(item.clip.end - source.duration) < 0.0001
+               ? source.extension
+               : outputExtension(source);
+         const stem = sanitizeName(item.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
+         let name = `${stem}${extension}`;
+         let suffix = 2;
+         while (used.has(name.toLowerCase()) || (await exists(join(directoryPath, name)))) name = `${stem} (${suffix++})${extension}`;
+         used.add(name.toLowerCase());
+         const analysis = await analyzeCut(source, item.clip);
+         const id = randomUUID();
+         analyses.set(id, [analysis]);
+         items.push({
+            id,
+            clip: analysis.clip,
+            outputPath: join(directoryPath, name),
+            name,
+            method: analysis.method,
+            encodedSeconds: analysis.encodedSeconds,
+            message: analysis.message,
+         });
+      }
+      if (settings.mode === "combined") {
+         const cuts = items.flatMap((item) => analyses.get(item.id)!);
+         const extension = outputExtension(source);
+         const stem = sanitizeName(settings.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
+         let name = `${stem}${extension}`;
+         for (let suffix = 2; await exists(join(directoryPath, name)); suffix++) name = `${stem} (${suffix})${extension}`;
+         const first = items[0]!;
+         const unsupported = cuts.filter((cut) => cut.method === "unsupported");
+         const combined = {
+            ...first,
+            name,
+            outputPath: join(directoryPath, name),
+            method: unsupported.length ? ("unsupported" as const) : cuts.some((cut) => cut.method === "boundary") ? ("boundary" as const) : ("copy" as const),
+            message: [...new Set(unsupported.map((cut) => cut.message))].join(" "),
+            encodedSeconds: cuts.reduce((sum, cut) => sum + cut.encodedSeconds, 0),
+         };
+         analyses.set(first.id, cuts);
+         items.splice(0, items.length, combined);
+      }
+      const plan: ExportPlan = { id: randomUUID(), sourceId: source.id, directory: directoryPath, items, mode: settings.mode };
+      if (this.plans.size >= 20) this.plans.delete(this.plans.keys().next().value!);
+      this.plans.set(plan.id, { plan, source, analyses, muteAudio: settings.muteAudio });
+      return plan;
+   }
+   start(planId: string): ExportJob {
+      if (this.running) throw new Error("An export is already running.");
+      const stored = this.plans.get(planId);
+      if (!stored) throw new Error("The export plan expired. Review the clips again.");
+      if (stored.plan.items.some((item) => item.method === "unsupported")) throw new Error("Some clips cannot be exported with these boundaries.");
+      this.runningPlan = stored;
+      this.job = {
+         id: randomUUID(),
+         directory: stored.plan.directory,
+         running: true,
+         items: stored.plan.items.map((item) => ({
+            id: item.id,
+            name: item.name,
+            outputPath: item.outputPath,
+            status: "queued",
+            progress: 0,
+            error: null,
+         })),
+      };
+      this.controller = new AbortController();
+      this.completion = this.run();
+      return structuredClone(this.job);
+   }
+   cancel(): void {
+      this.controller?.abort();
+   }
+   waitForIdle(): Promise<void> {
+      return this.completion;
+   }
+   retry(jobId: string): ExportJob {
+      if (!this.job || this.job.id !== jobId || this.running) throw new Error("This export cannot be retried now.");
+      for (const item of this.job.items)
+         if (item.status !== "completed") {
+            item.status = "queued";
+            item.error = null;
+            item.progress = 0;
+         }
+      this.job.running = true;
+      this.controller = new AbortController();
+      this.completion = this.run();
+      return structuredClone(this.job);
+   }
+   private async run(): Promise<void> {
+      const job = this.job!;
+      const stored = this.runningPlan!;
+      const signal = this.controller!.signal;
+      for (const item of job.items) {
+         if (item.status === "completed") continue;
+         if (signal.aborted) {
+            item.status = "cancelled";
+            continue;
+         }
+         item.status = "running";
+         this.emit(structuredClone(job));
+         try {
+            const cuts = stored.analyses.get(item.id)!;
+            const options = {
+               signal,
+               muteAudio: stored.muteAudio,
+               onProgress: (value: number) => {
+                  item.progress = value;
+                  this.emit(structuredClone(job));
+               },
+            };
+            if (stored.plan.mode === "combined" && cuts.length > 1) await exportCombined(stored.source, cuts, item.outputPath, options);
+            else await exportCut(stored.source, cuts[0]!, item.outputPath, options);
+            item.status = "completed";
+            item.progress = 1;
+         } catch (error) {
+            item.status = signal.aborted ? "cancelled" : "failed";
+            item.error = error instanceof Error ? error.message : String(error);
+         }
+         this.emit(structuredClone(job));
+      }
+      job.running = false;
+      this.emit(structuredClone(job));
+   }
+}
+export function sanitizeName(value: string): string {
+   const clean = Array.from(value, (character) => (character.charCodeAt(0) < 32 ? "_" : character))
+      .join("")
+      .replace(/[<>:"/\\|?*]/g, "_")
+      .replace(/[. ]+$/, "")
+      .trim();
+   if (!clean || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(clean)) return `clip-${clean || "untitled"}`;
+   return clean.slice(0, 180);
+}
+async function exists(path: string): Promise<boolean> {
+   try {
+      await access(path);
+      return true;
+   } catch {
+      return false;
+   }
+}
+export function sourceStem(path: string): string {
+   return basename(path, extname(path));
+}

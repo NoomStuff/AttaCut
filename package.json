@@ -1,0 +1,112 @@
+{
+   "name": "attacut",
+   "version": "0.5.2",
+   "description": "A focused desktop video trimmer",
+   "private": true,
+   "type": "module",
+   "main": "out/main/index.js",
+   "author": "NoomStuff",
+   "scripts": {
+      "dev": "electron-vite dev",
+      "build": "bun run typecheck && electron-vite build",
+      "typecheck": "tsc --noEmit",
+      "test": "vitest run",
+      "test:fixtures": "bun scripts/create-fixtures.ts",
+      "test:media": "bun scripts/test-media.ts",
+      "test:details": "bun scripts/test-media-details.ts",
+      "test:formats": "bun scripts/test-formats.ts",
+      "test:previews": "node scripts/test-previews.mjs",
+      "test:keyframes": "bun scripts/test-keyframes.ts",
+      "test:timeline": "node scripts/test-timeline-options.mjs",
+      "test:kept": "node scripts/test-kept-playback.mjs",
+      "test:jobs": "bun scripts/test-jobs.ts",
+      "test:exports": "bun scripts/test-export-options.ts",
+      "test:workflow": "node scripts/test-workflow.mjs",
+      "test:interactions": "node scripts/test-interactions.mjs",
+      "test:ui": "node scripts/test-ui.mjs",
+      "lint": "eslint . --max-warnings 0",
+      "format": "prettier --write .",
+      "format:check": "prettier --check .",
+      "verify": "bun run format:check && bun run lint && bun run test && bun run build",
+      "bundle:media": "bun scripts/bundle-media.ts",
+      "package": "bun scripts/package-app.ts package",
+      "dist": "bun scripts/package-app.ts dist",
+      "dist:win": "bun scripts/package-app.ts dist win32",
+      "dist:mac": "bun scripts/package-app.ts dist darwin",
+      "dist:linux": "bun scripts/package-app.ts dist linux"
+   },
+   "build": {
+      "appId": "dev.attacut.app",
+      "productName": "AttaCut",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+      "directories": {
+         "output": "release"
+      },
+      "files": [
+         "out/**/*",
+         "package.json"
+      ],
+      "extraResources": [
+         {
+            "from": "resources/media",
+            "to": "media"
+         },
+         {
+            "from": "THIRD_PARTY_NOTICES.md",
+            "to": "THIRD_PARTY_NOTICES.md"
+         }
+      ],
+      "win": {
+         "icon": "build/icon.ico",
+         "target": [
+            "portable"
+         ],
+         "signExecutable": false
+      },
+      "mac": {
+         "icon": "build/icon.icns",
+         "binaries": [
+            "Contents/Resources/media/ffmpeg",
+            "Contents/Resources/media/ffprobe"
+         ],
+         "target": [
+            "dmg"
+         ],
+         "category": "public.app-category.video"
+      },
+      "linux": {
+         "icon": "build/icon.png",
+         "target": [
+            "AppImage"
+         ],
+         "category": "AudioVideo"
+      }
+   },
+   "dependencies": {
+      "@fortawesome/fontawesome-svg-core": "^7.3.1",
+      "@fortawesome/free-solid-svg-icons": "^7.3.1",
+      "@fortawesome/react-fontawesome": "^3.5.0",
+      "react": "^19.2.8",
+      "react-dom": "^19.2.8",
+      "zod": "^4.5.4"
+   },
+   "devDependencies": {
+      "@eslint/js": "^10.0.1",
+      "@playwright/test": "^1.63.0",
+      "@types/node": "^26.5.0",
+      "@types/react": "^19.2.18",
+      "@types/react-dom": "^19.2.7",
+      "@vitejs/plugin-react": "^5.2.0",
+      "electron": "^44.2.0",
+      "electron-builder": "^26.15.3",
+      "electron-vite": "^5.0.0",
+      "eslint": "^10.10.0",
+      "png-to-ico": "^3.0.2",
+      "prettier": "^3.9.6",
+      "sharp": "^0.35.4",
+      "typescript": "~6.0.3",
+      "typescript-eslint": "^8.69.0",
+      "vite": "^7.3.5",
+      "vitest": "^4.1.8"
+   }
+}
