@@ -4,6 +4,7 @@ import { formatTime } from "../../../shared/time";
 import { faArrowUpFromBracket, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
 import { Button, Modal, Toggle } from "./Controls";
 import { errorText } from "../lib/errors";
+import { clipColor } from "../editor/colors";
 
 export function ExportPanel({
    source,
@@ -69,7 +70,7 @@ export function ExportPanel({
          className="export-modal"
       >
          <div className="modal-body">
-            <div className="export-mode" role="group" aria-label="Export mode">
+            <div className="export-mode" data-mode={mode} role="group" aria-label="Export mode">
                <button disabled={starting} aria-pressed={mode === "combined"} onClick={() => setMode("combined")}>
                   Merged Video
                </button>
@@ -126,7 +127,7 @@ export function ExportPanel({
                               disabled={starting}
                               onChange={(event) => setRows(rows.map((value, i) => (i === index ? { ...value, included: event.target.checked } : value)))}
                            />
-                           <span className="color-dot" style={{ background: `var(--clip-${row.clip.color % 6})` }} />
+                           <span className="color-dot" style={{ background: clipColor(row.clip.color) }} />
                            {mode === "combined" ? (
                               <span className="export-clip-name">Clip {index + 1}</span>
                            ) : (

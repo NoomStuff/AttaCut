@@ -15,10 +15,13 @@
    min-height: 37px;
    font-size: 12px;
    font-weight: 600;
+   /* Hover attack is instant; the release eases back out via the base transition. */
    transition:
-      background 120ms,
-      color 120ms,
-      transform 120ms;
+      background-color 170ms ease-out,
+      color 170ms ease-out,
+      border-color 170ms ease-out,
+      box-shadow 170ms ease-out,
+      transform 90ms cubic-bezier(0.3, 0.7, 0.4, 1);
    white-space: nowrap;
 }
 .button > span:empty {
@@ -29,6 +32,12 @@
 }
 .button:hover:not(:disabled) {
    background: var(--surface-hover);
+   transition:
+      background-color 0ms,
+      color 0ms,
+      border-color 0ms,
+      box-shadow 0ms,
+      transform 90ms cubic-bezier(0.3, 0.7, 0.4, 1);
 }
 .button:active:not(:disabled) {
    transform: scale(0.96);
@@ -86,7 +95,7 @@
    margin-left: 12px;
 }
 .tooltip-host:hover .tooltip,
-.tooltip-host:has(button:focus-visible) .tooltip {
+:root[data-keyboard] .tooltip-host:has(button:focus-visible) .tooltip {
    visibility: visible;
    opacity: 1;
    transform: translateX(-50%);
@@ -107,16 +116,52 @@
    backdrop-filter: blur(3px);
 }
 .modal[open] {
-   animation: modal-enter 140ms ease-out;
+   animation: modal-enter 150ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.modal[open]::backdrop {
+   animation: modal-backdrop-in 150ms ease-out both;
+}
+.modal.closing {
+   animation: modal-exit 130ms ease-in both;
+   pointer-events: none;
+}
+.modal.closing::backdrop {
+   animation: modal-backdrop-out 130ms ease-in both;
 }
 @keyframes modal-enter {
    from {
-      transform: translateY(8px);
+      transform: translateY(8px) scale(0.99);
       opacity: 0;
    }
    to {
-      transform: translateY(0);
+      transform: translateY(0) scale(1);
       opacity: 1;
+   }
+}
+@keyframes modal-exit {
+   from {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+   }
+   to {
+      transform: translateY(6px) scale(0.99);
+      opacity: 0;
+   }
+}
+@keyframes modal-backdrop-in {
+   from {
+      opacity: 0;
+   }
+   to {
+      opacity: 1;
+   }
+}
+@keyframes modal-backdrop-out {
+   from {
+      opacity: 1;
+   }
+   to {
+      opacity: 0;
    }
 }
 .modal-header {
@@ -204,6 +249,7 @@
    background: var(--faint);
    padding: 3px;
    pointer-events: none;
+   transition: background-color 150ms ease-out;
 }
 .switch::before {
    content: "";
@@ -212,7 +258,7 @@
    height: 13px;
    border-radius: 50%;
    background: var(--surface);
-   transition: transform 120ms;
+   transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .toggle-row input:checked + .switch {
    background: var(--accent);

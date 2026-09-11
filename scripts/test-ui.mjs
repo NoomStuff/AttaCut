@@ -70,8 +70,10 @@ try {
    await page.getByRole("button", { name: "Change shortcut for Split at playhead" }).getByText("X", { exact: true }).waitFor();
    await page.screenshot({ path: "work/screenshots/shortcuts.png" });
    await page.getByRole("tab", { name: "General", exact: true }).click();
-   await page.getByRole("combobox", { name: "Appearance" }).selectOption("light");
+   await page.getByRole("button", { name: "Light theme", exact: true }).click();
+   await expect(page.getByRole("button", { name: "Light theme", exact: true })).toHaveAttribute("aria-pressed", "true");
    await page.getByRole("button", { name: "Close panel", exact: true }).click();
+   await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 640));
    await page.screenshot({ path: "work/screenshots/small-light.png" });
    const playBox = await page.getByRole("button", { name: "Play", exact: true }).boundingBox();

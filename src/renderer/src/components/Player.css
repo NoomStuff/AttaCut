@@ -35,8 +35,14 @@ video:fullscreen {
    border-radius: 5px;
    font-size: 11px;
    pointer-events: none;
+   transition:
+      opacity 170ms ease-out,
+      transform 170ms ease-out,
+      visibility 170ms;
 }
 .player-excluded.hidden {
+   opacity: 0;
+   transform: translateY(-5px);
    visibility: hidden;
 }
 .player-fallback {

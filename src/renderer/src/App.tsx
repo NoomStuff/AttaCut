@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "react";
-import type { MediaSource, ExportJob, SavedSession } from "../../shared/types";
+import type { MediaSource, ExportJob, SavedSession, Preferences } from "../../shared/types";
 import { defaultPreferences } from "../../shared/types";
 import { clamp } from "../../shared/time";
 import { adjacentBoundary, snapBoundary } from "./editor/navigation";
@@ -7,7 +7,7 @@ import { selectNativeAudio } from "./playback/audio";
 import { PlaybackSeeker } from "./playback/seeker";
 import { nextKeptTime } from "./playback/ranges";
 import { FramePanel } from "./components/FramePanel";
-import { addGap, canSplit, deleteClip, editorReducer, emptyEditor, gapAt, newDocument, selectedClip, splitClip, trimClip } from "./editor/model";
+import { addGap, canSplit, deleteClip, editorReducer, emptyEditor, gapAt, minClipLength, newDocument, selectedClip, splitClip, trimClip } from "./editor/model";
 import type { EditDocument } from "./editor/model";
 import { bindingFor, commandDefinitions, displayBinding, useCommands } from "./editor/commands";
 import type { CommandId, Commands } from "./editor/commands";
@@ -22,11 +22,51 @@ import { EmptyState } from "./components/EmptyState";
 import { ExportPanel } from "./components/ExportPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { errorText } from "./lib/errors";
+import { useExitValue, usePressFeedback } from "./lib/motion";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faScissors, faFolderOpen, faMinus, faSquare, faXmark, faCircleExclamation } from "@fortawesome/free-solid-svg-icons";
 
 type Panel = "export" | "frame" | "settings" | "shortcuts" | "about" | null;
+
+function NavDropdown({
+   open,
+   ids,
+   commands,
+   shortcuts,
+   mac,
+   close,
+}: {
+   open: boolean;
+   ids: CommandId[];
+   commands: Commands;
+   shortcuts: Preferences["shortcuts"];
+   mac: boolean;
+   close: () => void;
+}) {
+   const presence = useExitValue(open ? true : null, 120);
+   if (!presence.mounted) return null;
+   return (
+      <div className={`dropdown${presence.closing ? " closing" : ""}`} role="menu">
+         {ids.map((id) => (
+            <button
+               role="menuitem"
+               key={id}
+               disabled={!commands[id].enabled()}
+               onClick={() => {
+                  close();
+                  commands[id].run();
+               }}
+            >
+               <span>{commandDefinitions[id].label}</span>
+               <kbd>{displayBinding(bindingFor(id, shortcuts), mac)}</kbd>
+            </button>
+         ))}
+      </div>
+   );
+}
+
 export default function App() {
+   usePressFeedback();
    const [source, setSource] = useState<MediaSource | null>(null);
    const [editor, dispatch] = useReducer(editorReducer, emptyEditor);
    const [preferences, setPreferences] = useState(defaultPreferences);
@@ -62,15 +102,21 @@ export default function App() {
       trimmingRef.current = active;
       setTrimmingState(active);
    };
-   // Dragging a handle pins the playhead onto the edited boundary, which would flip Split/Add
-   // availability on sub-step rounding while the draft is not yet committed. Hold the pre-drag
-   // availability until the drag settles.
-   const idleAvailability = useRef({ split: true, add: true });
-   const frozenAvailability = (key: "split" | "add", evaluate: () => boolean): boolean => {
+   // Dragging a handle pins the playhead onto the edited boundary, which would flip playhead-
+   // dependent availability on sub-step rounding while the draft is not yet committed. Hold the
+   // pre-drag availability until the drag settles.
+   const idleAvailability = useRef<Record<string, boolean>>({});
+   const frozenAvailability = (key: string, evaluate: () => boolean): boolean => {
       const value = evaluate();
       if (!trimmingRef.current) idleAvailability.current[key] = value;
-      return trimmingRef.current ? idleAvailability.current[key] : value;
+      return trimmingRef.current ? (idleAvailability.current[key] ?? value) : value;
    };
+   const deleteReady = () =>
+      frozenAvailability("delete", () => {
+         if (!available() || !clip) return false;
+         const time = clock.get();
+         return time >= clip.start - 0.001 && time <= clip.end + 0.001;
+      });
    const [clock] = useState(() => new PlaybackClock());
    const [seeker] = useState(() => new PlaybackSeeker(clock));
    const openSequence = useRef(0);
@@ -82,6 +128,8 @@ export default function App() {
    const seek = (time: number) => {
       if (!source) return;
       const target = clamp(time, 0, source.duration);
+      const selected = editor.document.clips.find((item) => target >= item.start && target <= item.end);
+      if (selected && !(clip && target >= clip.start && target <= clip.end)) dispatch({ type: "select", id: selected.id });
       previewEnd.current = null;
       seeker.seek(target, preferences.keepPlaying);
    };
@@ -255,12 +303,19 @@ export default function App() {
    };
    const setBoundary = (side: "start" | "end", value: number) => {
       if (source && clip) {
+         const frameStep = (() => {
+            const rate = source.streams.find((stream) => stream.type === "video")?.frameRate;
+            return rate ? 1 / rate : 0.01;
+         })();
+         const floor = Math.min(clip.end - clip.start, minClipLength((source.duration * 100) / Math.max(1, zoom), frameStep));
+         const bounded = side === "start" ? Math.min(value, clip.end - floor) : Math.max(value, clip.start + floor);
          const next = trimClip(
             editor.document,
             clip.id,
             side,
-            snapping ? snapBoundary(editor.document, clip.id, side, value, keyframes, source.duration) : value,
-            source.duration
+            snapping ? snapBoundary(editor.document, clip.id, side, bounded, keyframes, source.duration) : bounded,
+            source.duration,
+            floor
          );
          const actual = next.clips.find((item) => item.id === clip.id)![side];
          if (actual === clip[side]) return actual;
@@ -270,6 +325,7 @@ export default function App() {
       }
       return value;
    };
+   const minimumClipLength = () => minClipLength(0, 1 / (source?.streams.find((stream) => stream.type === "video")?.frameRate || 100));
    const splitTime = () => {
       if (!snapping || !clip) return clock.get();
       return keyframes
@@ -313,27 +369,46 @@ export default function App() {
       backFast: { enabled: available, run: () => seek(clock.get() - 5) },
       forwardFast: { enabled: available, run: () => seek(clock.get() + 5) },
       previous: {
-         enabled: () => available() && adjacentBoundary(editor.document.clips, clock.get(), -1) !== null,
+         enabled: () => frozenAvailability("previous", () => available() && adjacentBoundary(editor.document.clips, clock.get(), -1) !== null),
          run: () => selectAdjacent(-1),
       },
-      next: { enabled: () => available() && adjacentBoundary(editor.document.clips, clock.get(), 1) !== null, run: () => selectAdjacent(1) },
+      next: {
+         enabled: () => frozenAvailability("next", () => available() && adjacentBoundary(editor.document.clips, clock.get(), 1) !== null),
+         run: () => selectAdjacent(1),
+      },
       split: {
          enabled: () =>
             frozenAvailability(
                "split",
-               () => available() && (!snapping || !readingKeys) && canSplit(editor.document, clock.get()) && canSplit(editor.document, splitTime())
+               () =>
+                  available() &&
+                  (!snapping || !readingKeys) &&
+                  canSplit(editor.document, clock.get(), minimumClipLength()) &&
+                  canSplit(editor.document, splitTime(), minimumClipLength())
             ),
          run: () => {
             const time = splitTime();
-            commit(splitClip(editor.document, time));
+            const next = splitClip(editor.document, time, minimumClipLength());
+            commit(next);
             seek(time);
          },
       },
-      setStart: { enabled: () => available() && !!clip && clock.get() < clip.end, run: () => setBoundary("start", clock.get()) },
-      setEnd: { enabled: () => available() && !!clip && clock.get() > clip.start, run: () => setBoundary("end", clock.get()) },
-      delete: { enabled: () => available() && !!clip, run: () => commit(deleteClip(editor.document)) },
+      setStart: {
+         enabled: () => frozenAvailability("setStart", () => available() && !!clip && clock.get() < clip.end),
+         run: () => setBoundary("start", clock.get()),
+      },
+      setEnd: {
+         enabled: () => frozenAvailability("setEnd", () => available() && !!clip && clock.get() > clip.start),
+         run: () => setBoundary("end", clock.get()),
+      },
+      delete: { enabled: deleteReady, run: () => commit(deleteClip(editor.document)) },
       add: {
-         enabled: () => frozenAvailability("add", () => available() && !!gapAt(editor.document, clock.get(), source!.duration)),
+         enabled: () =>
+            frozenAvailability("add", () => {
+               if (!available()) return false;
+               const gap = gapAt(editor.document, clock.get(), source!.duration);
+               return !!gap && gap.end - gap.start >= minimumClipLength();
+            }),
          run: () => {
             if (source) commit(addGap(editor.document, clock.get(), source.duration));
          },
@@ -375,6 +450,8 @@ export default function App() {
       View: ["zoomIn", "zoomOut", "fit", "settings"],
       Help: ["shortcuts", "about"],
    };
+   const errorPresence = useExitValue(error, 190);
+   const jobPresence = useExitValue(job, 160);
    const video = source?.streams.find((stream) => stream.type === "video");
    const changeAudio = (index: number) => {
       setAudioIndex(index);
@@ -433,45 +510,30 @@ export default function App() {
                      >
                         {name}
                      </button>
-                     {menu === name && (
-                        <div className="dropdown" role="menu">
-                           {ids.map((id) => (
-                              <button
-                                 role="menuitem"
-                                 key={id}
-                                 disabled={!commands[id].enabled()}
-                                 onClick={() => {
-                                    setMenu(null);
-                                    commands[id].run();
-                                 }}
-                              >
-                                 <span>{commandDefinitions[id].label}</span>
-                                 <kbd>{displayBinding(bindingFor(id, preferences.shortcuts), mac)}</kbd>
-                              </button>
-                           ))}
-                        </div>
-                     )}
+                     <NavDropdown open={menu === name} ids={ids} commands={commands} shortcuts={preferences.shortcuts} mac={mac} close={() => setMenu(null)} />
                   </div>
                ))}
             </nav>
             <TopActions commands={commands} clock={clock} preferences={preferences} mac={mac} />
          </header>
-         {error && (
-            <div className="error-banner" role="alert">
-               <FontAwesomeIcon icon={faCircleExclamation} />
-               <span>{error}</span>
-               {restore && (
-                  <Button
-                     onClick={() => {
-                        void choose(restore);
-                     }}
-                  >
-                     Locate video
-                  </Button>
-               )}
-               <button aria-label="Dismiss error" onClick={() => setError(null)}>
-                  <FontAwesomeIcon icon={faXmark} />
-               </button>
+         {errorPresence.mounted && errorPresence.value && (
+            <div className={`error-wrap${errorPresence.closing ? " closing" : ""}`}>
+               <div className="error-banner" role="alert">
+                  <FontAwesomeIcon icon={faCircleExclamation} />
+                  <span>{errorPresence.value}</span>
+                  {restore && (
+                     <Button
+                        onClick={() => {
+                           void choose(restore);
+                        }}
+                     >
+                        Locate video
+                     </Button>
+                  )}
+                  <button aria-label="Dismiss error" onClick={() => setError(null)}>
+                     <FontAwesomeIcon icon={faXmark} />
+                  </button>
+               </div>
             </div>
          )}
          <main className="workspace">
@@ -536,10 +598,13 @@ export default function App() {
                         muted={muted}
                         audioIndex={audioIndex}
                         onAudio={changeAudio}
-                        onMute={() => setMuted(!muted)}
-                        onVolume={(volume) => {
-                           setMuted(false);
-                           setPreferences({ ...preferences, volume });
+                        onMute={() => {
+                           setMuted(!muted && preferences.volume > 0);
+                           if (preferences.volume === 0) setPreferences({ ...preferences, volume: 0.7 });
+                        }}
+                        onVolume={(volume, restore) => {
+                           setMuted(volume === 0);
+                           setPreferences({ ...preferences, volume: volume === 0 ? restore : volume });
                         }}
                         onSettings={() => setPanel("settings")}
                         onBoundary={setBoundary}
@@ -562,7 +627,15 @@ export default function App() {
                </div>
             )}
          </main>
-         {job && <JobProgress job={job} onDismiss={() => setJob(null)} onError={(value) => setError(value)} onRetry={setJob} />}
+         {jobPresence.mounted && jobPresence.value && (
+            <JobProgress
+               job={jobPresence.value}
+               closing={jobPresence.closing}
+               onDismiss={() => setJob(null)}
+               onError={(value) => setError(value)}
+               onRetry={setJob}
+            />
+         )}
          {panel === "export" && source && (
             <ExportPanel
                source={source}

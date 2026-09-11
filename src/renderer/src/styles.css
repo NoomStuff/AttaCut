@@ -12,6 +12,7 @@
 @import "./components/FramePanel.css";
 @import "./components/SettingsPanel.css";
 @import "./components/AudioPicker.css";
+@import "./components/IconAnimations.css";
 
 :root {
    font-family:
@@ -92,16 +93,50 @@ button {
    background: none;
    color: inherit;
    cursor: pointer;
+   /* Anchors the press ripple; overflow keeps it inside. Trim handles keep their enlarged
+      hit area, which overflow clipping would cut off. */
+   position: relative;
+}
+button:not(.trim-handle) {
+   overflow: hidden;
 }
 button:disabled {
    cursor: default;
    opacity: 0.33;
 }
-button:focus-visible,
+:root[data-keyboard] button:focus-visible,
 input:focus-visible,
 select:focus-visible {
    outline: 2px solid var(--accent);
    outline-offset: 3px;
+}
+button.pressing::after {
+   content: "";
+   position: absolute;
+   left: var(--press-x, 50%);
+   top: var(--press-y, 50%);
+   width: calc(var(--press-reach, 50%) * 2);
+   aspect-ratio: 1;
+   border-radius: 50%;
+   background: currentColor;
+   translate: -50% -50%;
+   scale: 0;
+   opacity: 0;
+   animation: press-ripple 180ms ease-out forwards;
+   pointer-events: none;
+}
+@keyframes press-ripple {
+   from {
+      scale: 0;
+      opacity: 0.2;
+   }
+   45% {
+      opacity: 0.12;
+   }
+   to {
+      scale: 1;
+      opacity: 0;
+   }
 }
 input,
 select {
@@ -129,7 +164,7 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-runnable-track {
    height: 5px;
    border-radius: 3px;
-   background: var(--line);
+   background: linear-gradient(to right, var(--accent) var(--fill, 0%), var(--line) var(--fill, 0%));
 }
 input[type="range"]::-webkit-slider-thumb {
    appearance: none;
@@ -139,9 +174,17 @@ input[type="range"]::-webkit-slider-thumb {
    border-radius: 50%;
    background: var(--accent);
    box-shadow: 0 1px 3px #0003;
+   transition:
+      background 150ms ease-out,
+      transform 150ms cubic-bezier(0.3, 1.4, 0.5, 1);
 }
 input[type="range"]:hover::-webkit-slider-thumb {
    background: var(--text);
+   transform: scale(1.3);
+}
+input[type="range"]:active::-webkit-slider-thumb {
+   background: var(--accent);
+   transform: scale(1.15);
 }
 svg {
    flex: 0 0 auto;

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
@@ -50,28 +50,37 @@ export function Modal({
 }) {
    const ref = useRef<HTMLDialogElement>(null);
    const titleId = useId();
+   const [closing, setClosing] = useState(false);
+   const timer = useRef(0);
    useEffect(() => {
       const dialog = ref.current!;
       dialog.showModal();
       dialog.focus();
       return () => {
+         window.clearTimeout(timer.current);
          dialog.close();
       };
    }, []);
+   // Play the exit animation before the panel unmounts.
+   const requestClose = () => {
+      if (closing) return;
+      setClosing(true);
+      timer.current = window.setTimeout(onClose, 140);
+   };
    return (
       <dialog
          ref={ref}
-         className={`modal ${className}`}
+         className={`modal ${className}${closing ? " closing" : ""}`}
          tabIndex={-1}
          aria-labelledby={titleId}
          onCancel={(event) => {
             event.preventDefault();
-            onClose();
+            requestClose();
          }}
          onClick={(event) => {
             if (event.target === event.currentTarget) {
                const rect = event.currentTarget.getBoundingClientRect();
-               if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose();
+               if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) requestClose();
             }
          }}
       >
@@ -80,7 +89,7 @@ export function Modal({
                <h2 id={titleId}>{title}</h2>
                {description && <p>{description}</p>}
             </div>
-            <IconButton icon={faXmark} label="Close panel" onClick={onClose} />
+            <IconButton icon={faXmark} label="Close panel" onClick={requestClose} />
          </div>
          {children}
       </dialog>

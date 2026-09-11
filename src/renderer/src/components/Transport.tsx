@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import type { MediaSource, Preferences } from "../../../shared/types";
 import type { EditDocument } from "../editor/model";
 import { selectedClip } from "../editor/model";
@@ -22,6 +23,41 @@ import {
 import type { Commands } from "../editor/commands";
 import { bindingFor, displayBinding } from "../editor/commands";
 import { AudioPicker } from "./AudioPicker";
+import { pointerSmoothingMs, useSmoothValue } from "../lib/motion";
+import { clipColor } from "../editor/colors";
+
+function VolumeSlider({ volume, muted, onChange }: { volume: number; muted: boolean; onChange: (value: number, restore: number) => void }) {
+   const gestureVolume = useRef<number | null>(null);
+   const displayed = useSmoothValue(muted ? 0 : volume, { follow: pointerSmoothingMs });
+   const finish = () => {
+      gestureVolume.current = null;
+   };
+   return (
+      <span className="volume-slider" style={{ "--fill": `${displayed * 100}%`, "--volume": displayed } as CSSProperties}>
+         <i aria-hidden="true" />
+         <input
+            type="range"
+            aria-label="Preview volume"
+            min={0}
+            max={1}
+            step={0.01}
+            value={muted ? 0 : volume}
+            onPointerDown={() => {
+               gestureVolume.current = volume;
+            }}
+            onPointerUp={finish}
+            onPointerCancel={finish}
+            onLostPointerCapture={finish}
+            onKeyDown={() => {
+               gestureVolume.current ??= volume;
+            }}
+            onKeyUp={finish}
+            onBlur={finish}
+            onChange={(event) => onChange(Number(event.target.value), gestureVolume.current ?? volume)}
+         />
+      </span>
+   );
+}
 
 function TimeField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => number }) {
    const [text, setText] = useState(formatTime(value));
@@ -85,7 +121,7 @@ export function Transport({
    volume: number;
    muted: boolean;
    onMute: () => void;
-   onVolume: (value: number) => void;
+   onVolume: (value: number, restore: number) => void;
    onSettings: () => void;
    onBoundary: (side: "start" | "end", value: number) => number;
    onFullscreen: () => void;
@@ -105,7 +141,7 @@ export function Transport({
             {clip ? (
                <>
                   <span className="selected-clip-label">
-                     <i style={{ background: `var(--clip-${clip.color % 6})` }} />
+                     <i style={{ background: clipColor(clip.color) }} />
                      Clip {index + 1}
                      <span className="muted">of {document.clips.length}</span>
                   </span>
@@ -129,7 +165,7 @@ export function Transport({
                   icon={playing ? faPause : faPlay}
                   label={playing ? "Pause" : "Play"}
                   shortcut={displayBinding(bindingFor("play", preferences.shortcuts), mac)}
-                  className="play-button"
+                  className={`play-button${playing ? " playing" : ""}`}
                   onClick={commands.play.run}
                />
                <IconButton icon={faForwardStep} label="Next clip" disabled={!commands.next.enabled()} onClick={commands.next.run} />
@@ -137,16 +173,12 @@ export function Transport({
          </div>
          <div className="volume-controls">
             <AudioPicker tracks={source.streams.filter((stream) => stream.type === "audio")} selected={audioIndex} onSelect={onAudio} />
-            <IconButton icon={muted || volume === 0 ? faVolumeXmark : faVolumeHigh} label={muted ? "Unmute preview" : "Mute preview"} onClick={onMute} />
-            <input
-               type="range"
-               aria-label="Preview volume"
-               min={0}
-               max={1}
-               step={0.01}
-               value={muted ? 0 : volume}
-               onChange={(event) => onVolume(Number(event.target.value))}
+            <IconButton
+               icon={muted || volume === 0 ? faVolumeXmark : faVolumeHigh}
+               label={muted || volume === 0 ? "Unmute preview" : "Mute preview"}
+               onClick={onMute}
             />
+            <VolumeSlider volume={volume} muted={muted} onChange={onVolume} />
             <span className="control-divider" />
             <div className="zoom-controls" role="group" aria-label="Timeline zoom">
                <IconButton icon={faMagnifyingGlassMinus} label="Zoom out" onClick={commands.zoomOut.run} />

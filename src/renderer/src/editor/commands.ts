@@ -67,7 +67,9 @@ export function useCommands(commands: Commands, overrides: Record<string, string
          if (command.enabled()) {
             command.run();
             const button = document.querySelector<HTMLElement>(`[data-command="${id}"]`);
-            button?.animate([{ backgroundColor: "var(--accent-soft)" }, { backgroundColor: "transparent" }], { duration: 260 });
+            button?.animate([{ backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)" }, { backgroundColor: "transparent" }], {
+               duration: 180,
+            });
          }
       };
       const handler = (event: KeyboardEvent) => {

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { faMoon, faSun } from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { Preferences } from "../../../shared/types";
 import { commandDefinitions, bindingFor, displayBinding, bindingFromEvent } from "../editor/commands";
 import type { CommandId } from "../editor/commands";
@@ -34,20 +36,25 @@ export function SettingsPanel({
                <>
                   <div className="setting-row">
                      <div>
-                        Appearance<small>A quiet frame around your video.</small>
+                        Appearance<small>Your preferred app theme.</small>
                      </div>
-                     <select
-                        aria-label="Appearance"
-                        value={preferences.theme}
-                        onChange={(event) => onChange({ ...preferences, theme: event.target.value === "light" ? "light" : "dark" })}
-                     >
-                        <option value="dark">Dark</option>
-                        <option value="light">Light</option>
-                     </select>
+                     <div className="theme-picker" role="group" aria-label="Appearance">
+                        {(["dark", "light"] as const).map((theme) => (
+                           <button
+                              key={theme}
+                              aria-label={theme === "dark" ? "Dark theme" : "Light theme"}
+                              title={theme === "dark" ? "Dark theme" : "Light theme"}
+                              aria-pressed={preferences.theme === theme}
+                              onClick={() => onChange({ ...preferences, theme })}
+                           >
+                              <FontAwesomeIcon icon={theme === "dark" ? faMoon : faSun} />
+                           </button>
+                        ))}
+                     </div>
                   </div>
                   <Toggle
                      label="Play kept clips only"
-                     description="Skip excluded ranges during playback. Export is unchanged."
+                     description="Skip deleted ranges when playing them in the editor."
                      checked={preferences.keptOnly}
                      onChange={(keptOnly) => onChange({ ...preferences, keptOnly })}
                   />

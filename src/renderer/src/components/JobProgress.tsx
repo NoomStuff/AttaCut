@@ -6,11 +6,13 @@ import { errorText } from "../lib/errors";
 
 export function JobProgress({
    job,
+   closing,
    onDismiss,
    onError,
    onRetry,
 }: {
    job: ExportJob;
+   closing: boolean;
    onDismiss: () => void;
    onError: (value: string) => void;
    onRetry: (value: ExportJob) => void;
@@ -19,9 +21,11 @@ export function JobProgress({
    const failures = job.items.filter((item) => item.status === "failed" || item.status === "cancelled");
    const progress = job.items.reduce((sum, item) => sum + item.progress, 0) / job.items.length;
    return (
-      <aside className="job-progress" aria-live="polite">
+      <aside className={`job-progress${job.running ? "" : " done"}${closing ? " closing" : ""}`} aria-live="polite">
          <div className="job-summary">
-            <FontAwesomeIcon icon={job.running ? faArrowUpFromBracket : failures.length ? faCircleExclamation : faCheck} />
+            <span className={`job-summary-icon${job.running ? "" : " done"}`}>
+               <FontAwesomeIcon icon={job.running ? faArrowUpFromBracket : failures.length ? faCircleExclamation : faCheck} />
+            </span>
             <div>
                <strong>{job.running ? `Exporting ${complete + 1} of ${job.items.length}` : `${complete} ${complete === 1 ? "clip" : "clips"} exported`}</strong>
                <small>

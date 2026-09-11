@@ -10,6 +10,13 @@
    font-size: 12px;
    border-bottom: 2px solid transparent;
    color: var(--muted);
+   transition:
+      border-color 170ms ease-out,
+      color 170ms ease-out;
+}
+.settings-tabs button:hover {
+   color: var(--text);
+   transition-duration: 0ms;
 }
 .settings-tabs button[aria-selected="true"] {
    border-color: var(--accent);
@@ -34,8 +41,34 @@
    margin-top: 5px;
    overflow-wrap: anywhere;
 }
-.setting-row select {
-   font-size: 12px;
+.theme-picker {
+   display: flex;
+   gap: 8px;
+   flex-shrink: 0;
+}
+.theme-picker button {
+   display: grid;
+   place-items: center;
+   width: 44px;
+   height: 40px;
+   border: 1px solid var(--line);
+   border-radius: 6px;
+   background: var(--surface);
+   color: var(--muted);
+   font-size: 17px;
+   transition:
+      background-color 140ms ease-out,
+      border-color 140ms ease-out,
+      color 140ms ease-out;
+}
+.theme-picker button:hover {
+   background: var(--surface-hover);
+   color: var(--text);
+}
+.theme-picker button[aria-pressed="true"] {
+   background: var(--accent-soft);
+   border-color: var(--accent);
+   color: var(--accent);
 }
 .shortcut-list {
    margin-bottom: 20px;
@@ -54,11 +87,15 @@
    border: 1px solid transparent;
    border-radius: 4px;
    padding: 6px 9px;
+   transition:
+      background-color 150ms ease-out,
+      border-color 150ms ease-out;
 }
 .shortcut-binding:hover,
 .shortcut-binding.recording {
    background: var(--accent-soft);
    border-color: var(--line);
+   transition-duration: 0ms;
 }
 .shortcut-binding.recording kbd {
    color: var(--accent);

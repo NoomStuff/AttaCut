@@ -1,5 +1,6 @@
 import type { Clip } from "../../../shared/types";
 import { clamp } from "../../../shared/time";
+import { distinctClipColors } from "./colors";
 
 export interface EditDocument {
    clips: Clip[];
@@ -16,12 +17,16 @@ export const emptyEditor: EditorState = { document: { clips: [], selectedId: nul
 export function editorReducer(state: EditorState, action: EditAction): EditorState {
    switch (action.type) {
       case "load":
-         return { document: action.document, past: [], future: [] };
+         return { document: { ...action.document, clips: distinctClipColors(action.document.clips) }, past: [], future: [] };
       case "select":
          return state.document.clips.some((clip) => clip.id === action.id) ? { ...state, document: { ...state.document, selectedId: action.id } } : state;
       case "commit": {
          if (JSON.stringify(state.document.clips) === JSON.stringify(action.document.clips)) return state;
-         return { document: action.document, past: [...state.past.slice(-99), state.document], future: [] };
+         return {
+            document: { ...action.document, clips: distinctClipColors(action.document.clips) },
+            past: [...state.past.slice(-99), state.document],
+            future: [],
+         };
       }
       case "undo": {
          const previous = state.past.at(-1);
@@ -42,6 +47,13 @@ export function selectedClip(document: EditDocument): Clip | undefined {
 }
 /** Smallest edit step across the editor; clock noise below it is invisible. */
 export const timeEpsilon = 0.001;
+/**
+ * Floor for clip edits: never shorter than two frames, and never narrower than a sliver of the
+ * current timeline view so zooming in restores fine precision.
+ */
+export function minClipLength(viewLength: number, frameStep: number): number {
+   return Math.max(frameStep * 2, viewLength * 0.015);
+}
 /**
  * Whether a playhead position counts as kept. Boundaries are inclusive within the edit step:
  * dragging a handle or jumping to a boundary pins the clock exactly onto it, and media clocks

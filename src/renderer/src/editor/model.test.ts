@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addGap, deleteClip, editorReducer, emptyEditor, insideClip, splitClip, timeEpsilon, trimClip } from "./model";
+import { addGap, deleteClip, editorReducer, emptyEditor, insideClip, minClipLength, splitClip, timeEpsilon, trimClip } from "./model";
 import type { EditDocument } from "./model";
 const source: EditDocument = { clips: [{ id: "a", start: 0, end: 120, color: 0 }], selectedId: "a" };
 describe("source-time editing", () => {
@@ -54,4 +54,13 @@ describe("playhead inclusion", () => {
       expect(insideClip(clips, 10 + timeEpsilon * 2, 30)).toBe(false);
       expect(insideClip(clips, 20 - timeEpsilon * 2, 30)).toBe(false);
    });
+});
+
+it("keeps two frames at maximum zoom and scales the drag floor with the view", () => {
+   expect(minClipLength(0.5, 1 / 30)).toBeCloseTo(2 / 30);
+   expect(minClipLength(120, 1 / 30)).toBeCloseTo(1.8);
+   const floor = minClipLength(0.5, 1 / 30);
+   expect(splitClip(source, 1 / 30, floor)).toBe(source);
+   expect(splitClip(source, 120 - 1 / 30, floor)).toBe(source);
+   expect(trimClip(source, "a", "start", 120, 120, floor).clips[0]!.start).toBeCloseTo(120 - floor);
 });

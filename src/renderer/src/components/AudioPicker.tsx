@@ -3,10 +3,12 @@ import type { MediaStream } from "../../../shared/types";
 import { faHeadphones, faCheck } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { IconButton } from "./Controls";
+import { useExitValue } from "../lib/motion";
 
 export function AudioPicker({ tracks, selected, onSelect }: { tracks: MediaStream[]; selected: number | null; onSelect: (index: number) => void }) {
    const [open, setOpen] = useState(false);
    const ref = useRef<HTMLDivElement>(null);
+   const menu = useExitValue(open && tracks.length > 0 ? true : null, 120);
    useEffect(() => {
       if (!open) return;
       ref.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
@@ -31,9 +33,9 @@ export function AudioPicker({ tracks, selected, onSelect }: { tracks: MediaStrea
             active={open}
             onClick={() => setOpen(!open)}
          />
-         {open && tracks.length > 0 && (
+         {menu.mounted && menu.value && (
             <div
-               className="audio-menu"
+               className={`audio-menu${menu.closing ? " closing" : ""}`}
                role="menu"
                aria-label="Preview audio tracks"
                onKeyDown={(event) => {

@@ -1,4 +1,6 @@
 .export-mode {
+   position: relative;
+   isolation: isolate;
    display: flex;
    padding: 3px;
    background: var(--background);
@@ -6,15 +8,35 @@
    border-radius: 6px;
    margin-bottom: 20px;
 }
+.export-mode::before {
+   content: "";
+   position: absolute;
+   z-index: -1;
+   inset: 3px auto 3px 3px;
+   width: calc((100% - 6px) / 2);
+   background: var(--surface-hover);
+   border-radius: 4px;
+   transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+   pointer-events: none;
+}
+.export-mode[data-mode="separate"]::before {
+   transform: translateX(100%);
+}
 .export-mode button {
    flex: 1;
    padding: 8px 12px;
    border-radius: 4px;
    color: var(--muted);
+   transition:
+      background-color 170ms ease-out,
+      color 170ms ease-out;
 }
 .export-mode button[aria-pressed="true"] {
-   background: var(--surface-hover);
    color: var(--text);
+}
+.export-mode button:hover:not(:disabled):not([aria-pressed="true"]) {
+   color: var(--text);
+   transition-duration: 0ms;
 }
 .export-mode button:disabled {
    opacity: 0.4;
@@ -78,10 +100,14 @@
    font-size: 12px;
    border-color: transparent;
    background: transparent;
+   transition:
+      border-color 150ms ease-out,
+      background-color 150ms ease-out;
 }
 .export-row input:not([type="checkbox"]):hover {
    border-color: var(--line);
    background: var(--surface-raised);
+   transition-duration: 0ms;
 }
 .export-row time {
    min-width: 65px;

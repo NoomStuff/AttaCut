@@ -49,13 +49,18 @@
 .window-controls button {
    width: 47px;
    font-size: 11px;
+   transition:
+      background-color 170ms ease-out,
+      color 170ms ease-out;
 }
 .window-controls button:hover {
    background: var(--surface-hover);
+   transition-duration: 0ms;
 }
 .window-controls button:last-child:hover {
    background: #c43b3b;
    color: white;
+   transition-duration: 0ms;
 }
 .toolbar {
    height: 48px;
@@ -78,10 +83,14 @@
    font-size: 13px;
    border-radius: 5px;
    color: var(--muted);
+   transition:
+      background-color 170ms ease-out,
+      color 170ms ease-out;
 }
 .app-menu > button:is(:hover, .active) {
    background: var(--surface-hover);
    color: var(--text);
+   transition-duration: 0ms;
 }
 .dropdown {
    position: absolute;
@@ -94,6 +103,32 @@
    border: 1px solid var(--line);
    box-shadow: 0 10px 28px #0004;
    border-radius: 9px;
+   transform-origin: 12px top;
+   animation: dropdown-in 140ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.dropdown.closing {
+   animation: dropdown-out 110ms ease-in both;
+   pointer-events: none;
+}
+@keyframes dropdown-in {
+   from {
+      opacity: 0;
+      transform: translateY(-5px) scale(0.97);
+   }
+   to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+   }
+}
+@keyframes dropdown-out {
+   from {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+   }
+   to {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+   }
 }
 .dropdown button {
    width: 100%;
@@ -105,9 +140,11 @@
    text-align: left;
    border-radius: 4px;
    font-size: 12px;
+   transition: background-color 150ms ease-out;
 }
 .dropdown button:hover:not(:disabled) {
    background: var(--surface-hover);
+   transition-duration: 0ms;
 }
 .editor-dock {
    margin-top: 8px;
@@ -129,6 +166,21 @@
    padding: 8px 14px;
    position: relative;
 }
+.error-wrap {
+   display: grid;
+   grid-template-rows: 1fr;
+   transition:
+      grid-template-rows 190ms ease-out,
+      opacity 190ms ease-out;
+}
+.error-wrap.closing {
+   grid-template-rows: 0fr;
+   opacity: 0;
+}
+.error-wrap > .error-banner {
+   min-height: 0;
+   overflow: hidden;
+}
 .error-banner {
    display: flex;
    align-items: center;
@@ -137,6 +189,17 @@
    background: color-mix(in srgb, var(--danger) 10%, var(--background));
    color: var(--danger);
    font-size: 12px;
+   animation: banner-in 190ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes banner-in {
+   from {
+      opacity: 0;
+      transform: translateY(-6px);
+   }
+   to {
+      opacity: 1;
+      transform: translateY(0);
+   }
 }
 .error-banner > span {
    flex: 1;
@@ -157,6 +220,7 @@
    gap: 12px;
    background: color-mix(in srgb, var(--background) 94%, transparent);
    z-index: 10;
+   animation: overlay-in 180ms ease-out;
 }
 .loading-overlay strong {
    font-weight: 500;
@@ -194,9 +258,28 @@
    pointer-events: none;
    border-radius: 12px;
    color: var(--accent);
+   animation: overlay-in 160ms ease-out;
 }
 .drop-overlay > svg {
    font-size: 42px;
+   animation: drop-invite 1.4s ease-in-out infinite;
+}
+@keyframes overlay-in {
+   from {
+      opacity: 0;
+   }
+   to {
+      opacity: 1;
+   }
+}
+@keyframes drop-invite {
+   0%,
+   100% {
+      transform: translateY(0);
+   }
+   50% {
+      transform: translateY(-7px);
+   }
 }
 @media (max-width: 1050px) {
    .toolbar {
