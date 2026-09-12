@@ -1,33 +1,61 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { CommandContext, commandDefinitions, bindingsFor, displayBindings } from "../editor/commands";
+import type { CommandId } from "../editor/commands";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { faXmark } from "@fortawesome/free-solid-svg-icons";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+   command?: CommandId | undefined;
    icon?: IconDefinition;
    shortcut?: string;
    active?: boolean;
    variant?: "primary" | "quiet" | "danger";
 }
-export function Button({ icon, shortcut, active, variant = "quiet", children, className = "", ...props }: ButtonProps) {
-   return (
-      <button {...props} className={`button ${variant} ${active ? "active" : ""} ${className}`}>
+export function Button({ command, icon, shortcut, active, variant = "quiet", children, className = "", ...props }: ButtonProps) {
+   const context = useContext(CommandContext);
+   const tooltipId = useId();
+   const action = command && context ? context.commands[command] : null;
+   if (command && context) shortcut ??= displayBindings(bindingsFor(command, context.overrides).slice(0, 1), context.mac);
+   const button = (
+      <button
+         aria-label={typeof children === "string" ? children : undefined}
+         aria-describedby={command && children !== undefined ? tooltipId : undefined}
+         data-command={command}
+         disabled={action ? !action.enabled() : undefined}
+         onClick={action?.run}
+         {...props}
+         className={`button ${variant} ${active ? "active" : ""} ${className}`}
+      >
          {icon && <FontAwesomeIcon icon={icon} />}
          <span>{children}</span>
          {shortcut && <kbd>{shortcut}</kbd>}
       </button>
+   );
+   if (!command || !context || children === undefined) return button;
+   const binding = displayBindings(bindingsFor(command, context.overrides), context.mac);
+   return (
+      <span className="tooltip-host">
+         {button}
+         <span role="tooltip" id={tooltipId} className="tooltip">
+            {commandDefinitions[command].label}
+            {binding && <kbd>{binding}</kbd>}
+         </span>
+      </span>
    );
 }
 interface IconButtonProps extends Omit<ButtonProps, "icon"> {
    icon: IconDefinition;
    label: string;
 }
-export function IconButton({ icon, label, shortcut, className = "", ...props }: IconButtonProps) {
+export function IconButton({ command, icon, label, shortcut, className = "", ...props }: IconButtonProps) {
+   const context = useContext(CommandContext);
+   if (command && context) shortcut ??= displayBindings(bindingsFor(command, context.overrides), context.mac);
    const id = useId();
    return (
       <span className="tooltip-host">
-         <Button {...props} aria-label={label} aria-describedby={id} icon={icon} className={`icon-button ${className}`} />
+         <Button command={command} shortcut="" {...props} aria-label={label} aria-describedby={id} icon={icon} className={`icon-button ${className}`} />
          <span role="tooltip" id={id} className="tooltip">
             {label}
             {shortcut && <kbd>{shortcut}</kbd>}

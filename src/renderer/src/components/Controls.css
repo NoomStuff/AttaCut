@@ -30,7 +30,7 @@
 .button svg {
    font-size: 14px;
 }
-.button:hover:not(:disabled) {
+.button:is(:hover:not(:disabled), .shortcut-active) {
    background: var(--surface-hover);
    transition:
       background-color 0ms,
@@ -39,7 +39,7 @@
       box-shadow 0ms,
       transform 90ms cubic-bezier(0.3, 0.7, 0.4, 1);
 }
-.button:active:not(:disabled) {
+.button:is(:active:not(:disabled), .shortcut-active) {
    transform: scale(0.96);
 }
 .button.primary {
@@ -47,7 +47,7 @@
    color: var(--accent-text);
    padding: 11px 20px;
 }
-.button.primary:hover:not(:disabled) {
+.button.primary:is(:hover:not(:disabled), .shortcut-active) {
    background: color-mix(in srgb, var(--accent) 85%, white);
 }
 .button.danger {
@@ -85,7 +85,10 @@
    box-shadow: 0 6px 18px #0003;
    padding: 7px 10px;
    font-size: 11px;
-   white-space: nowrap;
+   width: max-content;
+   max-width: min(320px, calc(100vw - 40px));
+   white-space: normal;
+   overflow-wrap: anywhere;
    transition:
       opacity 100ms 350ms,
       transform 100ms 350ms,

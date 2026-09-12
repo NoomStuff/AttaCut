@@ -55,7 +55,7 @@ export const preferencesSchema = z.object({
    keptOnly: z.boolean().default(false),
    keepPlaying: z.boolean().default(false),
    volume: z.number().min(0).max(1).default(0.7),
-   shortcuts: z.record(z.string(), z.string()).default({}),
+   shortcuts: z.record(z.string(), z.array(z.string())).default({}),
    exportMode: z.enum(["separate", "combined"]).default("separate"),
    exportMuted: z.boolean().default(false),
    frameFormat: z.enum(["png", "jpg"]).default("png"),

@@ -1,3 +1,5 @@
+import { useContext } from "react";
+import { CommandContext, bindingsFor, displayBindings } from "../editor/commands";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faScissors, faFolderOpen, faArrowRight } from "@fortawesome/free-solid-svg-icons";
 import { Button } from "./Controls";
@@ -6,6 +8,8 @@ const HERO_HOLES = [15, 27, 39, 51, 63, 75, 87];
 const HERO_HOLES_RIGHT = [104, 116, 128];
 
 export function EmptyState({ onImport, loading, mac }: { onImport: () => void; loading: boolean; mac: boolean }) {
+   const context = useContext(CommandContext);
+   const shortcut = context ? displayBindings(bindingsFor("open", context.overrides), mac) : "";
    return (
       <div className="empty-state">
          <div className="empty-hero" aria-hidden="true">
@@ -38,12 +42,14 @@ export function EmptyState({ onImport, loading, mac }: { onImport: () => void; l
          </div>
          <h1>Cut your clips, move on.</h1>
          <p>Drag & drop or import a video file.</p>
-         <Button icon={faFolderOpen} variant="primary" onClick={onImport} disabled={loading}>
+         <Button command="open" shortcut="" icon={faFolderOpen} variant="primary" onClick={onImport} disabled={loading}>
             Import video <FontAwesomeIcon icon={faArrowRight} />
          </Button>
-         <span className="empty-shortcut">
-            or use <kbd>{mac ? "⌘" : "Ctrl"}</kbd> <kbd>O</kbd>
-         </span>
+         {shortcut && (
+            <span className="empty-shortcut">
+               or use <kbd>{shortcut}</kbd>
+            </span>
+         )}
          <div className="empty-timeline" aria-hidden="true">
             <i className="empty-track" />
             <span className="empty-clip c0" />

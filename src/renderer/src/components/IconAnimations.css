@@ -2,7 +2,7 @@
    control does, plays once on hover, and is keyed on the svg's data-icon attribute. Moves stay
    small and settle quickly: position nudges ease out, scale pops use a light spring. */
 
-button:hover:not(:disabled) [data-icon="scissors"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="scissors"] {
    animation: icon-snip 400ms ease-out;
 }
 @keyframes icon-snip {
@@ -20,7 +20,7 @@ button:hover:not(:disabled) [data-icon="scissors"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="plus"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="plus"] {
    animation: icon-plus 320ms cubic-bezier(0.3, 1.3, 0.4, 1);
 }
 @keyframes icon-plus {
@@ -32,7 +32,7 @@ button:hover:not(:disabled) [data-icon="plus"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="trash"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="trash"] {
    animation: icon-toss 380ms ease-out;
    transform-origin: 50% 85%;
 }
@@ -48,7 +48,7 @@ button:hover:not(:disabled) [data-icon="trash"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="rotate-left"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="rotate-left"] {
    animation: icon-undo 360ms cubic-bezier(0.3, 1.2, 0.4, 1);
 }
 @keyframes icon-undo {
@@ -63,7 +63,7 @@ button:hover:not(:disabled) [data-icon="rotate-left"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="rotate-right"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="rotate-right"] {
    animation: icon-redo 360ms cubic-bezier(0.3, 1.2, 0.4, 1);
 }
 @keyframes icon-redo {
@@ -78,7 +78,7 @@ button:hover:not(:disabled) [data-icon="rotate-right"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="camera"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="camera"] {
    animation: icon-shutter 360ms ease-out;
 }
 @keyframes icon-shutter {
@@ -100,7 +100,7 @@ button:hover:not(:disabled) [data-icon="camera"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="arrow-up-from-bracket"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="arrow-up-from-bracket"] {
    animation: icon-launch 480ms cubic-bezier(0.3, 1.3, 0.4, 1);
 }
 @keyframes icon-launch {
@@ -122,7 +122,7 @@ button:hover:not(:disabled) [data-icon="arrow-up-from-bracket"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="arrow-right"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="arrow-right"] {
    animation: icon-nudge-right 320ms ease-out;
 }
 @keyframes icon-nudge-right {
@@ -137,7 +137,7 @@ button:hover:not(:disabled) [data-icon="arrow-right"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="play"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="play"] {
    animation: icon-play 240ms ease-out;
 }
 @keyframes icon-play {
@@ -152,7 +152,7 @@ button:hover:not(:disabled) [data-icon="play"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="pause"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="pause"] {
    animation: icon-pause 240ms ease-out;
 }
 @keyframes icon-pause {
@@ -167,7 +167,7 @@ button:hover:not(:disabled) [data-icon="pause"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="backward-step"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="backward-step"] {
    animation: icon-step-back 360ms cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 @keyframes icon-step-back {
@@ -185,7 +185,7 @@ button:hover:not(:disabled) [data-icon="backward-step"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="forward-step"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="forward-step"] {
    animation: icon-step-forward 360ms cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 @keyframes icon-step-forward {
@@ -203,7 +203,7 @@ button:hover:not(:disabled) [data-icon="forward-step"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="volume-high"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="volume-high"] {
    animation: icon-wave 400ms ease-out;
 }
 @keyframes icon-wave {
@@ -221,7 +221,7 @@ button:hover:not(:disabled) [data-icon="volume-high"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="volume-xmark"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="volume-xmark"] {
    animation: icon-rattle 340ms ease-out;
 }
 @keyframes icon-rattle {
@@ -237,7 +237,7 @@ button:hover:not(:disabled) [data-icon="volume-xmark"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="headphones"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="headphones"] {
    animation: icon-listen 380ms cubic-bezier(0.3, 1.2, 0.4, 1);
    transform-origin: 50% 85%;
 }
@@ -253,7 +253,7 @@ button:hover:not(:disabled) [data-icon="headphones"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="magnet"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="magnet"] {
    animation: icon-attract 360ms cubic-bezier(0.3, 1.3, 0.4, 1);
 }
 @keyframes icon-attract {
@@ -271,7 +271,7 @@ button:hover:not(:disabled) [data-icon="magnet"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="magnifying-glass-plus"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="magnifying-glass-plus"] {
    animation: icon-zoom-in 320ms cubic-bezier(0.3, 1.3, 0.4, 1);
 }
 @keyframes icon-zoom-in {
@@ -286,7 +286,7 @@ button:hover:not(:disabled) [data-icon="magnifying-glass-plus"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="magnifying-glass-minus"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="magnifying-glass-minus"] {
    animation: icon-zoom-out 320ms cubic-bezier(0.3, 1.3, 0.4, 1);
 }
 @keyframes icon-zoom-out {
@@ -301,7 +301,7 @@ button:hover:not(:disabled) [data-icon="magnifying-glass-minus"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="expand"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="expand"] {
    animation: icon-expand 320ms cubic-bezier(0.3, 1.3, 0.4, 1);
 }
 @keyframes icon-expand {
@@ -316,7 +316,7 @@ button:hover:not(:disabled) [data-icon="expand"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="sliders"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="sliders"] {
    animation: icon-adjust 380ms ease-out;
 }
 @keyframes icon-adjust {
@@ -334,7 +334,7 @@ button:hover:not(:disabled) [data-icon="sliders"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="chevron-left"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="chevron-left"] {
    animation: icon-chevron-left 300ms ease-out;
 }
 @keyframes icon-chevron-left {
@@ -349,7 +349,7 @@ button:hover:not(:disabled) [data-icon="chevron-left"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="chevron-right"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="chevron-right"] {
    animation: icon-chevron-right 300ms ease-out;
 }
 @keyframes icon-chevron-right {
@@ -364,7 +364,7 @@ button:hover:not(:disabled) [data-icon="chevron-right"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="folder-open"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="folder-open"] {
    animation: icon-unfolder 380ms ease-out;
    transform-origin: 12% 88%;
 }
@@ -380,7 +380,7 @@ button:hover:not(:disabled) [data-icon="folder-open"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="check"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="check"] {
    animation: icon-check 300ms cubic-bezier(0.3, 1.4, 0.4, 1);
 }
 @keyframes icon-check {
@@ -395,7 +395,7 @@ button:hover:not(:disabled) [data-icon="check"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="xmark"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="xmark"] {
    animation: icon-turn-x 320ms cubic-bezier(0.3, 1.2, 0.4, 1);
 }
 @keyframes icon-turn-x {
@@ -407,7 +407,7 @@ button:hover:not(:disabled) [data-icon="xmark"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="circle-exclamation"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="circle-exclamation"] {
    animation: icon-alert 380ms ease-out;
 }
 @keyframes icon-alert {
@@ -423,7 +423,7 @@ button:hover:not(:disabled) [data-icon="circle-exclamation"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="minus"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="minus"] {
    animation: icon-shrink 300ms ease-out;
 }
 @keyframes icon-shrink {
@@ -438,7 +438,7 @@ button:hover:not(:disabled) [data-icon="minus"] {
    }
 }
 
-button:hover:not(:disabled) [data-icon="square"] {
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="square"] {
    animation: icon-grow-square 300ms cubic-bezier(0.3, 1.3, 0.4, 1);
 }
 @keyframes icon-grow-square {
@@ -451,4 +451,8 @@ button:hover:not(:disabled) [data-icon="square"] {
    100% {
       transform: scale(1);
    }
+}
+
+button:is(:hover:not(:disabled), .shortcut-active) [data-icon="link"] {
+   animation: icon-attract 360ms ease-out;
 }

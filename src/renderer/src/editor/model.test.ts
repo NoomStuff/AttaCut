@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { addGap, deleteClip, editorReducer, emptyEditor, insideClip, minClipLength, splitClip, timeEpsilon, trimClip } from "./model";
+import {
+   clipAt,
+   mergePair,
+   mergeClips,
+   addGap,
+   deleteClip,
+   editorReducer,
+   emptyEditor,
+   insideClip,
+   minClipLength,
+   splitClip,
+   timeEpsilon,
+   trimClip,
+} from "./model";
 import type { EditDocument } from "./model";
 const source: EditDocument = { clips: [{ id: "a", start: 0, end: 120, color: 0 }], selectedId: "a" };
 describe("source-time editing", () => {
@@ -63,4 +76,30 @@ it("keeps two frames at maximum zoom and scales the drag floor with the view", (
    expect(splitClip(source, 1 / 30, floor)).toBe(source);
    expect(splitClip(source, 120 - 1 / 30, floor)).toBe(source);
    expect(trimClip(source, "a", "start", 120, 120, floor).clips[0]!.start).toBeCloseTo(120 - floor);
+});
+
+describe("merge and playhead targeting", () => {
+   it("merges a split in one undoable edit", () => {
+      const split = splitClip(source, 40);
+      expect(mergePair(split, 40, 1 / 30, 0.1)).toBe(0);
+      expect(mergePair(split, 41, 1 / 30, 0.1)).toBe(-1);
+      const merged = mergeClips(split, 0);
+      expect(merged).toEqual(source);
+      const state = editorReducer({ ...emptyEditor, document: split }, { type: "commit", document: merged });
+      expect(editorReducer(state, { type: "undo" }).document).toEqual(split);
+   });
+   it("allows a one-frame gap but rejects a removed section", () => {
+      const split = splitClip(source, 40);
+      const near = trimClip(split, split.selectedId!, "start", 40 + 1 / 30, 120);
+      expect(mergePair(near, 40, 1 / 30, 0.1)).toBe(0);
+      const gap = trimClip(split, split.selectedId!, "start", 41, 120);
+      expect(mergePair(gap, 40.5, 1 / 30, 1)).toBe(-1);
+   });
+   it("targets the clip under playback, the right clip at a seam, and no clip in a gap", () => {
+      const split = splitClip(source, 40);
+      expect(clipAt(split, 10)?.id).toBe("a");
+      expect(clipAt(split, 40)?.id).toBe(split.selectedId);
+      expect(clipAt(split, 120)?.id).toBe(split.selectedId);
+      expect(clipAt(trimClip(split, split.selectedId!, "start", 50, 120), 45)).toBeUndefined();
+   });
 });

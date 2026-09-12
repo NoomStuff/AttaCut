@@ -7,12 +7,27 @@ import { selectNativeAudio } from "./playback/audio";
 import { PlaybackSeeker } from "./playback/seeker";
 import { nextKeptTime } from "./playback/ranges";
 import { FramePanel } from "./components/FramePanel";
-import { addGap, canSplit, deleteClip, editorReducer, emptyEditor, gapAt, minClipLength, newDocument, selectedClip, splitClip, trimClip } from "./editor/model";
+import {
+   clipAt,
+   mergePair,
+   mergeClips,
+   addGap,
+   canSplit,
+   deleteClip,
+   editorReducer,
+   emptyEditor,
+   gapAt,
+   minClipLength,
+   newDocument,
+   selectedClip,
+   splitClip,
+   trimClip,
+} from "./editor/model";
 import type { EditDocument } from "./editor/model";
-import { bindingFor, commandDefinitions, displayBinding, useCommands } from "./editor/commands";
+import { CommandContext, bindingsFor, commandDefinitions, displayBindings, useCommands } from "./editor/commands";
 import type { CommandId, Commands } from "./editor/commands";
 import { PlaybackClock } from "./playback/clock";
-import { Button, Modal } from "./components/Controls";
+import { Button } from "./components/Controls";
 import { Player } from "./components/Player";
 import { Timeline } from "./components/Timeline";
 import { Transport } from "./components/Transport";
@@ -26,7 +41,7 @@ import { useExitValue, usePressFeedback } from "./lib/motion";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faScissors, faFolderOpen, faMinus, faSquare, faXmark, faCircleExclamation } from "@fortawesome/free-solid-svg-icons";
 
-type Panel = "export" | "frame" | "settings" | "shortcuts" | "about" | null;
+type Panel = "export" | "frame" | "settings" | "shortcuts" | null;
 
 function NavDropdown({
    open,
@@ -58,7 +73,7 @@ function NavDropdown({
                }}
             >
                <span>{commandDefinitions[id].label}</span>
-               <kbd>{displayBinding(bindingFor(id, shortcuts), mac)}</kbd>
+               <kbd>{displayBindings(bindingsFor(id, shortcuts), mac)}</kbd>
             </button>
          ))}
       </div>
@@ -82,7 +97,6 @@ export default function App() {
    const [url, setUrl] = useState("");
    const [previewFailed, setPreviewFailed] = useState(false);
    const [previewNeedsTranscode, setPreviewNeedsTranscode] = useState(false);
-   const [version, setVersion] = useState("");
    const [preparing, setPreparing] = useState(false);
    const [previewProgress, setPreviewProgress] = useState(0);
    const [audioIndex, setAudioIndex] = useState<number | null>(null);
@@ -94,6 +108,9 @@ export default function App() {
    const [snapping, setSnapping] = useState(false);
    const [readingKeys, setReadingKeys] = useState(false);
    const [draggingFile, setDraggingFile] = useState(false);
+   const [trimAnimating, setTrimAnimating] = useState(false);
+   const trimTimer = useRef(0);
+   useEffect(() => () => window.clearTimeout(trimTimer.current), []);
    const [trimming, setTrimmingState] = useState(false);
    const videoRef = useRef<HTMLVideoElement>(null);
    const previewEnd = useRef<number | null>(null);
@@ -113,9 +130,7 @@ export default function App() {
    };
    const deleteReady = () =>
       frozenAvailability("delete", () => {
-         if (!available() || !clip) return false;
-         const time = clock.get();
-         return time >= clip.start - 0.001 && time <= clip.end + 0.001;
+         return available() && !!clipAt(editor.document, clock.get());
       });
    const [clock] = useState(() => new PlaybackClock());
    const [seeker] = useState(() => new PlaybackSeeker(clock));
@@ -225,7 +240,6 @@ export default function App() {
             if (cancelled) return;
             setPreferences(data.preferences);
             setPlatform(data.platform);
-            setVersion(data.version);
             setReady(true);
             if (data.initialFile) void openPath(data.initialFile);
             else if (data.session) void openPath(data.session.path, data.session);
@@ -301,7 +315,8 @@ export default function App() {
          seek(time);
       }
    };
-   const setBoundary = (side: "start" | "end", value: number) => {
+   const setBoundary = (side: "start" | "end", value: number, target = clip) => {
+      const clip = target;
       if (source && clip) {
          const frameStep = (() => {
             const rate = source.streams.find((stream) => stream.type === "video")?.frameRate;
@@ -319,6 +334,9 @@ export default function App() {
          );
          const actual = next.clips.find((item) => item.id === clip.id)![side];
          if (actual === clip[side]) return actual;
+         setTrimAnimating(true);
+         window.clearTimeout(trimTimer.current);
+         trimTimer.current = window.setTimeout(() => setTrimAnimating(false), 180);
          commit(next);
          seek(actual);
          return actual;
@@ -333,7 +351,41 @@ export default function App() {
          .reduce((best, point) => (Math.abs(point - clock.get()) < Math.abs(best - clock.get()) ? point : best), Infinity);
    };
    const available = () => !!source && !loading;
+   const frameStep = 1 / (source?.streams.find((stream) => stream.type === "video")?.frameRate || 100);
+   const stepFrame = (direction: number) => {
+      videoRef.current?.pause();
+      previewEnd.current = null;
+      seeker.seek(clamp((Math.round(clock.get() / frameStep) + direction) * frameStep, 0, source!.duration), false);
+   };
+   const joinAtPlayhead = () =>
+      mergePair(
+         editor.document,
+         clock.get(),
+         frameStep,
+         Math.max(
+            frameStep,
+            (((source!.duration * 100) / Math.max(1, zoom)) * 12) / Math.max(1, document.querySelector(".timeline-viewport")?.clientWidth ?? 1)
+         )
+      );
    const commands: Commands = {
+      frameBack: { enabled: available, run: () => stepFrame(-1) },
+      frameForward: { enabled: available, run: () => stepFrame(1) },
+      mute: {
+         enabled: available,
+         run: () => {
+            setMuted(!muted && preferences.volume > 0);
+            if (preferences.volume === 0) setPreferences({ ...preferences, volume: 0.7 });
+         },
+      },
+      snap: { enabled: () => available() && !readingKeys, run: () => setSnapping((value) => !value) },
+      merge: {
+         enabled: () => frozenAvailability("merge", () => available() && joinAtPlayhead() >= 0),
+         run: () => commit(mergeClips(editor.document, joinAtPlayhead())),
+      },
+      toggleClip: {
+         enabled: () => commands.delete.enabled() || commands.add.enabled(),
+         run: () => (commands.delete.enabled() ? commands.delete.run() : commands.add.run()),
+      },
       open: {
          enabled: () => ready,
          run: () => {
@@ -394,14 +446,36 @@ export default function App() {
          },
       },
       setStart: {
-         enabled: () => frozenAvailability("setStart", () => available() && !!clip && clock.get() < clip.end),
-         run: () => setBoundary("start", clock.get()),
+         enabled: () =>
+            frozenAvailability(
+               "setStart",
+               () =>
+                  available() &&
+                  !!clipAt(editor.document, clock.get()) &&
+                  clock.get() > clipAt(editor.document, clock.get())!.start &&
+                  clock.get() < clipAt(editor.document, clock.get())!.end
+            ),
+         run: () => setBoundary("start", clock.get(), clipAt(editor.document, clock.get())),
       },
       setEnd: {
-         enabled: () => frozenAvailability("setEnd", () => available() && !!clip && clock.get() > clip.start),
-         run: () => setBoundary("end", clock.get()),
+         enabled: () =>
+            frozenAvailability(
+               "setEnd",
+               () =>
+                  available() &&
+                  !!clipAt(editor.document, clock.get()) &&
+                  clock.get() > clipAt(editor.document, clock.get())!.start &&
+                  clock.get() < clipAt(editor.document, clock.get())!.end
+            ),
+         run: () => setBoundary("end", clock.get(), clipAt(editor.document, clock.get())),
       },
-      delete: { enabled: deleteReady, run: () => commit(deleteClip(editor.document)) },
+      delete: {
+         enabled: deleteReady,
+         run: () => {
+            const target = clipAt(editor.document, clock.get());
+            if (target) commit(deleteClip({ ...editor.document, selectedId: target.id }));
+         },
+      },
       add: {
          enabled: () =>
             frozenAvailability("add", () => {
@@ -420,7 +494,6 @@ export default function App() {
       zoomOut: { enabled: available, run: () => setZoomRequest((value) => ({ id: value.id + 1, direction: -1 })) },
       settings: { enabled: () => ready, run: () => setPanel("settings") },
       shortcuts: { enabled: () => ready, run: () => setPanel("shortcuts") },
-      about: { enabled: () => true, run: () => setPanel("about") },
    };
    useCommands(commands, preferences.shortcuts, mac, !!panel || !!menu);
    const prepare = async (track: number | null = audioIndex, transcode = false) => {
@@ -446,9 +519,9 @@ export default function App() {
    const menuItems: Record<string, CommandId[]> = {
       File: ["open", "frame", "export"],
       Edit: ["undo", "redo", "settings"],
-      Clips: ["split", "setStart", "setEnd", "add", "delete", "preview"],
+      Clips: ["merge", "split", "setStart", "setEnd", "add", "delete", "preview"],
       View: ["zoomIn", "zoomOut", "fit", "settings"],
-      Help: ["shortcuts", "about"],
+      Help: ["shortcuts"],
    };
    const errorPresence = useExitValue(error, 190);
    const jobPresence = useExitValue(job, 160);
@@ -458,219 +531,215 @@ export default function App() {
       if (source && videoRef.current && !selectNativeAudio(videoRef.current, source, index)) void prepare(index);
    };
    return (
-      <div
-         className={`app-shell ${draggingFile ? "file-over" : ""}`}
-         onDragOver={(event) => {
-            event.preventDefault();
-            setDraggingFile(true);
-         }}
-         onDragLeave={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFile(false);
-         }}
-         onDrop={(event) => {
-            event.preventDefault();
-            setDraggingFile(false);
-            const file = event.dataTransfer.files[0];
-            if (file) {
-               const path = window.desktop.filePath(file);
-               if (path) void openPath(path);
-            }
-         }}
-      >
-         <div className={`titlebar ${mac ? "mac" : ""}`}>
-            <div className="app-mark">
-               <FontAwesomeIcon icon={faScissors} />
+      <CommandContext.Provider value={{ commands, overrides: preferences.shortcuts, mac }}>
+         <div
+            className={`app-shell ${draggingFile ? "file-over" : ""}`}
+            onDragOver={(event) => {
+               event.preventDefault();
+               setDraggingFile(true);
+            }}
+            onDragLeave={(event) => {
+               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFile(false);
+            }}
+            onDrop={(event) => {
+               event.preventDefault();
+               setDraggingFile(false);
+               const file = event.dataTransfer.files[0];
+               if (file) {
+                  const path = window.desktop.filePath(file);
+                  if (path) void openPath(path);
+               }
+            }}
+         >
+            <div className={`titlebar ${mac ? "mac" : ""}`}>
+               <div className="app-mark">
+                  <FontAwesomeIcon icon={faScissors} />
+               </div>
+               <span className="app-name">AttaCut</span>
+               <span className="title-separator">/</span>
+               <span className="title-filename">{source?.name ?? "New cut"}</span>
+               {!mac && (
+                  <div className="window-controls">
+                     <button aria-label="Minimize window" onClick={() => window.desktop.windowAction("minimize")}>
+                        <FontAwesomeIcon icon={faMinus} />
+                     </button>
+                     <button aria-label="Maximize window" onClick={() => window.desktop.windowAction("maximize")}>
+                        <FontAwesomeIcon icon={faSquare} />
+                     </button>
+                     <button aria-label="Close window" onClick={() => window.desktop.windowAction("close")}>
+                        <FontAwesomeIcon icon={faXmark} />
+                     </button>
+                  </div>
+               )}
             </div>
-            <span className="app-name">AttaCut</span>
-            <span className="title-separator">/</span>
-            <span className="title-filename">{source?.name ?? "New cut"}</span>
-            {!mac && (
-               <div className="window-controls">
-                  <button aria-label="Minimize window" onClick={() => window.desktop.windowAction("minimize")}>
-                     <FontAwesomeIcon icon={faMinus} />
-                  </button>
-                  <button aria-label="Maximize window" onClick={() => window.desktop.windowAction("maximize")}>
-                     <FontAwesomeIcon icon={faSquare} />
-                  </button>
-                  <button aria-label="Close window" onClick={() => window.desktop.windowAction("close")}>
-                     <FontAwesomeIcon icon={faXmark} />
-                  </button>
+            <header className="toolbar">
+               <nav aria-label="Application menu">
+                  {Object.entries(menuItems).map(([name, ids]) => (
+                     <div className="app-menu" key={name}>
+                        <button
+                           className={menu === name ? "active" : ""}
+                           aria-haspopup="menu"
+                           aria-expanded={menu === name}
+                           onClick={() => setMenu(menu === name ? null : name)}
+                        >
+                           {name}
+                        </button>
+                        <NavDropdown
+                           open={menu === name}
+                           ids={ids}
+                           commands={commands}
+                           shortcuts={preferences.shortcuts}
+                           mac={mac}
+                           close={() => setMenu(null)}
+                        />
+                     </div>
+                  ))}
+               </nav>
+               <TopActions commands={commands} clock={clock} preferences={preferences} mac={mac} />
+            </header>
+            {errorPresence.mounted && errorPresence.value && (
+               <div className={`error-wrap${errorPresence.closing ? " closing" : ""}`}>
+                  <div className="error-banner" role="alert">
+                     <FontAwesomeIcon icon={faCircleExclamation} />
+                     <span>{errorPresence.value}</span>
+                     {restore && (
+                        <Button
+                           onClick={() => {
+                              void choose(restore);
+                           }}
+                        >
+                           Locate video
+                        </Button>
+                     )}
+                     <button aria-label="Dismiss error" onClick={() => setError(null)}>
+                        <FontAwesomeIcon icon={faXmark} />
+                     </button>
+                  </div>
                </div>
             )}
-         </div>
-         <header className="toolbar">
-            <nav aria-label="Application menu">
-               {Object.entries(menuItems).map(([name, ids]) => (
-                  <div className="app-menu" key={name}>
-                     <button
-                        className={menu === name ? "active" : ""}
-                        aria-haspopup="menu"
-                        aria-expanded={menu === name}
-                        onClick={() => setMenu(menu === name ? null : name)}
-                     >
-                        {name}
-                     </button>
-                     <NavDropdown open={menu === name} ids={ids} commands={commands} shortcuts={preferences.shortcuts} mac={mac} close={() => setMenu(null)} />
-                  </div>
-               ))}
-            </nav>
-            <TopActions commands={commands} clock={clock} preferences={preferences} mac={mac} />
-         </header>
-         {errorPresence.mounted && errorPresence.value && (
-            <div className={`error-wrap${errorPresence.closing ? " closing" : ""}`}>
-               <div className="error-banner" role="alert">
-                  <FontAwesomeIcon icon={faCircleExclamation} />
-                  <span>{errorPresence.value}</span>
-                  {restore && (
-                     <Button
-                        onClick={() => {
-                           void choose(restore);
-                        }}
-                     >
-                        Locate video
-                     </Button>
-                  )}
-                  <button aria-label="Dismiss error" onClick={() => setError(null)}>
-                     <FontAwesomeIcon icon={faXmark} />
-                  </button>
-               </div>
-            </div>
-         )}
-         <main className="workspace">
-            {source ? (
-               <>
-                  <Player
-                     key={source.id}
-                     source={source}
-                     seeker={seeker}
-                     onFullscreen={fullscreen}
-                     url={url}
-                     videoRef={videoRef}
-                     clock={clock}
-                     clips={editor.document.clips}
-                     keptOnly={preferences.keptOnly}
-                     previewEnd={previewEnd}
-                     volume={preferences.volume}
-                     muted={muted}
-                     audioIndex={audioIndex}
-                     onPlaying={setPlaying}
-                     onPreviewEnd={() => {
-                        previewEnd.current = null;
-                     }}
-                     failed={previewFailed}
-                     onFailure={() => {
-                        setPreviewNeedsTranscode(true);
-                        setPreviewFailed(true);
-                     }}
-                     onPrepare={() => {
-                        void prepare(audioIndex, previewNeedsTranscode);
-                     }}
-                     preparing={preparing}
-                     progress={previewProgress}
-                     trimming={trimming}
-                  />
-                  <div className="editor-dock">
-                     <Timeline
+            <main className="workspace">
+               {source ? (
+                  <>
+                     <Player
                         key={source.id}
-                        document={editor.document}
-                        duration={source.duration}
-                        frameStep={video?.frameRate ? 1 / video.frameRate : 0.01}
-                        clock={clock}
-                        fitToken={fitToken}
-                        zoomRequest={zoomRequest}
-                        onZoom={setZoom}
-                        keyframes={keyframes}
-                        snapping={snapping}
-                        onSelect={(id) => dispatch({ type: "select", id })}
-                        onCommit={commit}
-                        onSeek={seek}
-                        onTrimming={setTrimming}
-                     />
-                     <Transport
-                        document={editor.document}
                         source={source}
+                        seeker={seeker}
+                        onFullscreen={fullscreen}
+                        url={url}
+                        videoRef={videoRef}
                         clock={clock}
-                        playing={playing}
-                        commands={commands}
-                        preferences={preferences}
-                        mac={mac}
+                        clips={editor.document.clips}
+                        keptOnly={preferences.keptOnly}
+                        previewEnd={previewEnd}
                         volume={preferences.volume}
                         muted={muted}
                         audioIndex={audioIndex}
-                        onAudio={changeAudio}
-                        onMute={() => {
-                           setMuted(!muted && preferences.volume > 0);
-                           if (preferences.volume === 0) setPreferences({ ...preferences, volume: 0.7 });
+                        onPlaying={setPlaying}
+                        onPreviewEnd={() => {
+                           previewEnd.current = null;
                         }}
-                        onVolume={(volume, restore) => {
-                           setMuted(volume === 0);
-                           setPreferences({ ...preferences, volume: volume === 0 ? restore : volume });
+                        failed={previewFailed}
+                        onFailure={() => {
+                           setPreviewNeedsTranscode(true);
+                           setPreviewFailed(true);
                         }}
-                        onSettings={() => setPanel("settings")}
-                        onBoundary={setBoundary}
-                        onFullscreen={fullscreen}
-                        zoom={zoom}
-                        snapping={snapping}
-                        readingKeys={readingKeys}
-                        onSnap={() => setSnapping((value) => !value)}
+                        onPrepare={() => {
+                           void prepare(audioIndex, previewNeedsTranscode);
+                        }}
+                        preparing={preparing}
+                        progress={previewProgress}
+                        trimming={trimming}
                      />
+                     <div className={`editor-dock${trimAnimating ? " trim-animating" : ""}`}>
+                        <Timeline
+                           key={source.id}
+                           document={editor.document}
+                           duration={source.duration}
+                           frameStep={video?.frameRate ? 1 / video.frameRate : 0.01}
+                           clock={clock}
+                           fitToken={fitToken}
+                           zoomRequest={zoomRequest}
+                           onZoom={setZoom}
+                           keyframes={keyframes}
+                           snapping={snapping}
+                           onSelect={(id) => dispatch({ type: "select", id })}
+                           onCommit={commit}
+                           onSeek={seek}
+                           onTrimming={setTrimming}
+                        />
+                        <Transport
+                           document={editor.document}
+                           source={source}
+                           clock={clock}
+                           playing={playing}
+                           commands={commands}
+                           preferences={preferences}
+                           mac={mac}
+                           volume={preferences.volume}
+                           muted={muted}
+                           audioIndex={audioIndex}
+                           onAudio={changeAudio}
+                           onVolume={(volume, restore) => {
+                              setMuted(volume === 0);
+                              setPreferences({ ...preferences, volume: volume === 0 ? restore : volume });
+                           }}
+                           onBoundary={setBoundary}
+                           onFullscreen={fullscreen}
+                           zoom={zoom}
+                           snapping={snapping}
+                           readingKeys={readingKeys}
+                        />
+                     </div>
+                  </>
+               ) : (
+                  <EmptyState onImport={() => void choose()} loading={loading} mac={mac} />
+               )}
+               {loading && (
+                  <div className="loading-overlay">
+                     <span className="spinner" />
+                     <strong>Opening video…</strong>
+                     <span>Reading media information</span>
                   </div>
-               </>
-            ) : (
-               <EmptyState onImport={() => void choose()} loading={loading} mac={mac} />
+               )}
+            </main>
+            {jobPresence.mounted && jobPresence.value && (
+               <JobProgress
+                  job={jobPresence.value}
+                  closing={jobPresence.closing}
+                  onDismiss={() => setJob(null)}
+                  onError={(value) => setError(value)}
+                  onRetry={setJob}
+               />
             )}
-            {loading && (
-               <div className="loading-overlay">
-                  <span className="spinner" />
-                  <strong>Opening video…</strong>
-                  <span>Reading media information</span>
+            {panel === "export" && source && (
+               <ExportPanel
+                  source={source}
+                  clips={editor.document.clips}
+                  preferences={preferences}
+                  onPreferences={setPreferences}
+                  onClose={() => setPanel(null)}
+                  onStarted={setJob}
+               />
+            )}
+            {panel === "frame" && source && (
+               <FramePanel source={source} time={clock.get()} preferences={preferences} onPreferences={setPreferences} onClose={() => setPanel(null)} />
+            )}
+            {(panel === "settings" || panel === "shortcuts") && (
+               <SettingsPanel
+                  preferences={preferences}
+                  onChange={setPreferences}
+                  onClose={() => setPanel(null)}
+                  mac={mac}
+                  initialTab={panel === "shortcuts" ? "shortcuts" : "general"}
+               />
+            )}
+            {draggingFile && (
+               <div className="drop-overlay">
+                  <FontAwesomeIcon icon={faFolderOpen} />
+                  <span>Drop to Import video</span>
                </div>
             )}
-         </main>
-         {jobPresence.mounted && jobPresence.value && (
-            <JobProgress
-               job={jobPresence.value}
-               closing={jobPresence.closing}
-               onDismiss={() => setJob(null)}
-               onError={(value) => setError(value)}
-               onRetry={setJob}
-            />
-         )}
-         {panel === "export" && source && (
-            <ExportPanel
-               source={source}
-               clips={editor.document.clips}
-               preferences={preferences}
-               onPreferences={setPreferences}
-               onClose={() => setPanel(null)}
-               onStarted={setJob}
-            />
-         )}
-         {panel === "frame" && source && (
-            <FramePanel source={source} time={clock.get()} preferences={preferences} onPreferences={setPreferences} onClose={() => setPanel(null)} />
-         )}
-         {(panel === "settings" || panel === "shortcuts") && (
-            <SettingsPanel
-               preferences={preferences}
-               onChange={setPreferences}
-               onClose={() => setPanel(null)}
-               mac={mac}
-               initialTab={panel === "shortcuts" ? "shortcuts" : "general"}
-            />
-         )}
-         {panel === "about" && (
-            <Modal title="AttaCut" description="A little less video. A lot less fuss." onClose={() => setPanel(null)}>
-               <div className="modal-body">
-                  <p>Version {version}</p>
-               </div>
-            </Modal>
-         )}
-         {draggingFile && (
-            <div className="drop-overlay">
-               <FontAwesomeIcon icon={faFolderOpen} />
-               <span>Drop to Import video</span>
-            </div>
-         )}
-      </div>
+         </div>
+      </CommandContext.Provider>
    );
 }

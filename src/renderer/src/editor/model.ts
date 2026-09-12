@@ -112,3 +112,28 @@ export function addGap(document: EditDocument, time: number, duration: number): 
    const clip: Clip = { ...gap, id: crypto.randomUUID(), color: Math.max(-1, ...document.clips.map((item) => item.color)) + 1 };
    return { clips: [...document.clips, clip].sort((a, b) => a.start - b.start), selectedId: clip.id };
 }
+
+/** Find the nearest join, allowing at most one source frame between clips. */
+export function mergePair(document: EditDocument, time: number, frameStep: number, handleTolerance: number): number {
+   let found = -1;
+   let distance = Infinity;
+   document.clips.slice(0, -1).forEach((left, index) => {
+      const right = document.clips[index + 1]!;
+      const gap = right.start - left.end;
+      const delta = Math.abs(time - (left.end + right.start) / 2);
+      if (gap >= 0 && gap <= frameStep + timeEpsilon && delta <= handleTolerance && delta < distance) {
+         found = index;
+         distance = delta;
+      }
+   });
+   return found;
+}
+export function mergeClips(document: EditDocument, index: number): EditDocument {
+   const left = document.clips[index];
+   const right = document.clips[index + 1];
+   if (index < 0 || !left || !right) return document;
+   return { clips: document.clips.flatMap((clip, i) => (i === index ? [{ ...left, end: right.end }] : i === index + 1 ? [] : [clip])), selectedId: left.id };
+}
+export function clipAt(document: EditDocument, time: number) {
+   return document.clips.find((clip) => time >= clip.start && time < clip.end) ?? document.clips.find((clip) => Math.abs(time - clip.end) <= timeEpsilon);
+}

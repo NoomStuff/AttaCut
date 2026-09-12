@@ -125,7 +125,16 @@ export function usePressFeedback(): void {
       const usable = (target: EventTarget | null): HTMLButtonElement | null => {
          if (!(target instanceof Element)) return null;
          const button = target.closest("button");
-         if (!button || button.disabled || button.classList.contains("trim-handle") || button.classList.contains("shortcut-binding")) return null;
+         // Binding chips and the capture field hold keyboard focus for recording; never ripple or
+         // blur them, or key capture dies on pointerup before the keys arrive.
+         if (
+            !button ||
+            button.disabled ||
+            button.classList.contains("trim-handle") ||
+            button.classList.contains("shortcut-binding") ||
+            button.classList.contains("shortcut-capture")
+         )
+            return null;
          return button;
       };
       const navigation = (event: KeyboardEvent) => {

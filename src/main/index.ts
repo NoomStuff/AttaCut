@@ -76,9 +76,10 @@ async function start(): Promise<void> {
          {
             label: "Clips",
             submenu: [
+               item("Merge clips", "merge"),
                item("Split at playhead", "split"),
-               item("Set start here", "setStart"),
-               item("Set end here", "setEnd"),
+               item("Trim left", "setStart"),
+               item("Trim right", "setEnd"),
                item("Delete clip", "delete"),
                item("Add clip in gap", "add"),
                item("Preview clip", "preview"),
@@ -94,7 +95,7 @@ async function start(): Promise<void> {
                ...(!app.isPackaged ? [{ role: "toggleDevTools" as const }] : []),
             ],
          },
-         { label: "Help", submenu: [item("Keyboard shortcuts", "shortcuts"), item("About AttaCut", "about")] },
+         { label: "Help", submenu: [item("Keyboard shortcuts", "shortcuts")] },
       ];
       if (process.platform === "darwin") template.unshift({ role: "appMenu" });
       Menu.setApplicationMenu(Menu.buildFromTemplate(template));

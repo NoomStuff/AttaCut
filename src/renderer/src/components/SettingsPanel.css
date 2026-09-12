@@ -74,29 +74,137 @@
    margin-bottom: 20px;
 }
 .shortcut-row {
-   display: flex;
-   align-items: center;
-   justify-content: space-between;
-   padding: 7px 0;
+   padding: 9px 0;
    border-bottom: 1px solid var(--line);
    font-size: 12px;
 }
+.shortcut-line {
+   display: flex;
+   align-items: baseline;
+   gap: 18px;
+}
+.shortcut-action {
+   flex-shrink: 0;
+}
+.shortcut-bindings {
+   flex: 1;
+   min-width: 0;
+   display: flex;
+   flex-direction: row-reverse;
+   flex-wrap: wrap;
+   justify-content: flex-start;
+   align-items: stretch;
+   gap: 5px;
+}
+.shortcut-chip {
+   display: inline-flex;
+   align-items: stretch;
+   max-width: 100%;
+   border: 1px solid var(--line);
+   background: var(--surface);
+   border-radius: 5px;
+   overflow: hidden;
+}
 .shortcut-binding {
-   min-width: 110px;
-   text-align: right;
-   border: 1px solid transparent;
-   border-radius: 4px;
-   padding: 6px 9px;
-   transition:
-      background-color 150ms ease-out,
-      border-color 150ms ease-out;
+   padding: 3px 7px;
+   overflow-wrap: anywhere;
 }
-.shortcut-binding:hover,
-.shortcut-binding.recording {
+.shortcut-remove {
+   display: grid;
+   justify-content: center;
+   place-items: center;
+   width: 17px;
+   flex-shrink: 0;
+   font-size: 10px;
+   color: var(--muted);
+}
+.shortcut-remove:hover {
+   color: var(--danger);
+   background: var(--surface-hover);
+}
+.shortcut-binding:hover {
    background: var(--accent-soft);
-   border-color: var(--line);
-   transition-duration: 0ms;
 }
-.shortcut-binding.recording kbd {
-   color: var(--accent);
+.shortcut-add {
+   display: grid;
+   place-items: center;
+   padding: 6px;
+   color: var(--muted);
+   font-size: 10px;
+   flex-shrink: 0;
+   border-radius: 5px;
+}
+.shortcut-add:hover {
+   color: var(--text);
+   background: var(--surface-hover);
+}
+.shortcut-editor {
+   margin-top: 10px;
+   padding: 12px;
+   background: var(--surface);
+   border: 1px solid var(--line);
+   border-radius: 6px;
+}
+.shortcut-capture {
+   display: block;
+   width: 100%;
+   padding: 14px;
+   border: 1px solid var(--accent);
+   background: var(--accent-soft);
+   border-radius: 5px;
+}
+.shortcut-capture kbd {
+   color: var(--text);
+}
+.shortcut-hint,
+.shortcut-editor .inline-error {
+   margin: 0;
+   font-size: 11px;
+   line-height: 1.5;
+}
+.shortcut-hint {
+   color: var(--muted);
+}
+.shortcut-editor-actions {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   margin-top: 10px;
+}
+.shortcut-editor-actions > p {
+   flex: 1;
+   min-width: 0;
+   overflow-wrap: anywhere;
+}
+.shortcut-toolbar {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   margin-bottom: 16px;
+}
+.shortcut-search {
+   flex: 1;
+   padding: 7px 11px;
+   font-size: 12px;
+}
+.shortcut-toolbar .button {
+   flex-shrink: 0;
+}
+.shortcut-group + .shortcut-group {
+   margin-top: 20px;
+}
+.shortcut-empty {
+   color: var(--muted);
+   font-size: 12px;
+   padding: 14px 0;
+}
+.shortcut-group h3 {
+   margin: 0 0 8px;
+   color: var(--muted);
+   font-size: 11px;
+   font-weight: 600;
+   letter-spacing: 0.04em;
+}
+.shortcut-group .shortcut-row:last-child {
+   border-bottom: 0;
 }

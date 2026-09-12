@@ -21,7 +21,6 @@ import {
    faMagnifyingGlassMinus,
 } from "@fortawesome/free-solid-svg-icons";
 import type { Commands } from "../editor/commands";
-import { bindingFor, displayBinding } from "../editor/commands";
 import { AudioPicker } from "./AudioPicker";
 import { pointerSmoothingMs, useSmoothValue } from "../lib/motion";
 import { clipColor } from "../editor/colors";
@@ -95,20 +94,15 @@ export function Transport({
    clock,
    playing,
    commands,
-   preferences,
-   mac,
    volume,
    muted,
-   onMute,
    onVolume,
-   onSettings,
    onBoundary,
    onFullscreen,
    audioIndex,
    onAudio,
    snapping,
    readingKeys,
-   onSnap,
    zoom,
 }: {
    document: EditDocument;
@@ -120,16 +114,13 @@ export function Transport({
    mac: boolean;
    volume: number;
    muted: boolean;
-   onMute: () => void;
    onVolume: (value: number, restore: number) => void;
-   onSettings: () => void;
    onBoundary: (side: "start" | "end", value: number) => number;
    onFullscreen: () => void;
    audioIndex: number | null;
    onAudio: (index: number) => void;
    snapping: boolean;
    readingKeys: boolean;
-   onSnap: () => void;
    zoom: number;
 }) {
    useClock(clock);
@@ -160,45 +151,51 @@ export function Transport({
          </div>
          <div className="playback-controls">
             <div>
-               <IconButton icon={faBackwardStep} label="Previous clip" disabled={!commands.previous.enabled()} onClick={commands.previous.run} />
                <IconButton
+                  command="previous"
+                  icon={faBackwardStep}
+                  label="Previous clip"
+                  disabled={!commands.previous.enabled()}
+                  onClick={commands.previous.run}
+               />
+               <IconButton
+                  command="play"
                   icon={playing ? faPause : faPlay}
                   label={playing ? "Pause" : "Play"}
-                  shortcut={displayBinding(bindingFor("play", preferences.shortcuts), mac)}
                   className={`play-button${playing ? " playing" : ""}`}
                   onClick={commands.play.run}
                />
-               <IconButton icon={faForwardStep} label="Next clip" disabled={!commands.next.enabled()} onClick={commands.next.run} />
+               <IconButton command="next" icon={faForwardStep} label="Next clip" disabled={!commands.next.enabled()} onClick={commands.next.run} />
             </div>
          </div>
          <div className="volume-controls">
             <AudioPicker tracks={source.streams.filter((stream) => stream.type === "audio")} selected={audioIndex} onSelect={onAudio} />
             <IconButton
+               command="mute"
                icon={muted || volume === 0 ? faVolumeXmark : faVolumeHigh}
                label={muted || volume === 0 ? "Unmute preview" : "Mute preview"}
-               onClick={onMute}
             />
             <VolumeSlider volume={volume} muted={muted} onChange={onVolume} />
             <span className="control-divider" />
             <div className="zoom-controls" role="group" aria-label="Timeline zoom">
-               <IconButton icon={faMagnifyingGlassMinus} label="Zoom out" onClick={commands.zoomOut.run} />
-               <Button className="zoom-percent" aria-label="Fit timeline" onClick={commands.fit.run}>
+               <IconButton command="zoomOut" icon={faMagnifyingGlassMinus} label="Zoom out" onClick={commands.zoomOut.run} />
+               <Button shortcut="" command="fit" className="zoom-percent" aria-label="Fit timeline" onClick={commands.fit.run}>
                   {Math.round(zoom)}%
                </Button>
-               <IconButton icon={faMagnifyingGlassPlus} label="Zoom in" onClick={commands.zoomIn.run} />
+               <IconButton command="zoomIn" icon={faMagnifyingGlassPlus} label="Zoom in" onClick={commands.zoomIn.run} />
             </div>
             <span className="control-divider" />
             <IconButton
+               command="snap"
                icon={faMagnet}
                label="Snap to keyframes"
                active={snapping}
                aria-pressed={snapping}
                aria-busy={readingKeys}
                disabled={readingKeys}
-               onClick={onSnap}
             />
             <IconButton icon={faExpand} label="Fullscreen video" onClick={onFullscreen} />
-            <IconButton icon={faSliders} label="Playback settings" onClick={onSettings} />
+            <IconButton command="settings" icon={faSliders} label="Playback settings" />
          </div>
       </div>
    );

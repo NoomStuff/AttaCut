@@ -1,10 +1,15 @@
-import { useState } from "react";
-import { faMoon, faSun } from "@fortawesome/free-solid-svg-icons";
+import { useEffect, useRef, useState } from "react";
+import { faMoon, faSun, faPlus, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { Preferences } from "../../../shared/types";
-import { commandDefinitions, bindingFor, displayBinding, bindingFromEvent } from "../editor/commands";
+import { commandDefinitions, bindingsFor, displayBinding, bindingFromEvent } from "../editor/commands";
 import type { CommandId } from "../editor/commands";
 import { Button, Modal, Toggle } from "./Controls";
+const shortcutGroups = [...new Set(Object.values(commandDefinitions).map(({ group }) => group))].map((group) => ({
+   name: group,
+   commands: (Object.keys(commandDefinitions) as CommandId[]).filter((id) => commandDefinitions[id].group === group),
+}));
+
 export function SettingsPanel({
    preferences,
    onChange,
@@ -19,12 +24,67 @@ export function SettingsPanel({
    initialTab: "general" | "shortcuts";
 }) {
    const [tab, setTab] = useState(initialTab);
-   const [recording, setRecording] = useState<CommandId | null>(null);
+   const [query, setQuery] = useState("");
+   const searchRef = useRef<HTMLInputElement>(null);
+   const [recording, setRecording] = useState<{ id: CommandId; index: number | null } | null>(null);
    const [conflict, setConflict] = useState("");
+   const [captured, setCaptured] = useState("");
+   // Runs after the modal's dialog.focus(), so the search wins when the shortcuts tab opens.
+   useEffect(() => {
+      if (tab === "shortcuts") searchRef.current?.focus();
+   }, [tab]);
+   const editBinding = (id: CommandId, index: number | null) => {
+      setRecording({ id, index });
+      setCaptured("");
+      setConflict("");
+   };
+   const updateBindings = (id: CommandId, bindings: string[]) => {
+      onChange({ ...preferences, shortcuts: { ...preferences.shortcuts, [id]: bindings } });
+      setRecording(null);
+      setConflict("");
+   };
+   const needle = query.trim().toLowerCase();
+   const matches = (id: CommandId) => {
+      if (!needle) return true;
+      // A row being edited stays visible even when the query no longer matches it.
+      if (recording?.id === id) return true;
+      const bindings = bindingsFor(id, preferences.shortcuts);
+      return [commandDefinitions[id].label, ...bindings, ...bindings.map((binding) => displayBinding(binding, mac))].join(" ").toLowerCase().includes(needle);
+   };
+   const captureBinding = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (!recording || event.nativeEvent.isComposing || event.repeat) return;
+      if (event.key === "Tab") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "Escape") {
+         setRecording(null);
+         return;
+      }
+      if (["Control", "Meta", "Alt", "Shift"].includes(event.key)) return;
+      const binding = bindingFromEvent(event.nativeEvent, mac);
+      setCaptured(binding);
+      if (["ALT+F4", "MOD+Q", "MOD+W", "MOD+C", "MOD+V", "MOD+X", "ENTER"].includes(binding.toUpperCase())) {
+         setConflict("That shortcut belongs to the system or a standard control.");
+         return;
+      }
+      const duplicate = (Object.keys(commandDefinitions) as CommandId[]).find((id) =>
+         bindingsFor(id, preferences.shortcuts).some(
+            (key, index) => !(id === recording.id && index === recording.index) && key.toUpperCase() === binding.toUpperCase()
+         )
+      );
+      setConflict(duplicate ? `Already used by ${commandDefinitions[duplicate].label.toLowerCase()}.` : "");
+   };
    return (
       <Modal title="Settings" onClose={onClose}>
          <div className="settings-tabs" role="tablist">
-            <button role="tab" aria-selected={tab === "general"} onClick={() => setTab("general")}>
+            <button
+               role="tab"
+               aria-selected={tab === "general"}
+               onClick={() => {
+                  setTab("general");
+                  setRecording(null);
+               }}
+            >
                General
             </button>
             <button role="tab" aria-selected={tab === "shortcuts"} onClick={() => setTab("shortcuts")}>
@@ -67,61 +127,114 @@ export function SettingsPanel({
                </>
             ) : (
                <>
-                  {conflict && (
-                     <p className="inline-error" role="alert">
-                        {conflict}
-                     </p>
-                  )}
-                  <Button
-                     onClick={() => {
-                        onChange({ ...preferences, shortcuts: {} });
-                        setRecording(null);
-                        setConflict("");
-                     }}
-                  >
-                     Restore default shortcuts
-                  </Button>
+                  <div className="shortcut-toolbar">
+                     <input
+                        ref={searchRef}
+                        className="shortcut-search"
+                        type="search"
+                        placeholder="Search actions or keys"
+                        aria-label="Search shortcuts"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                     />
+                     <Button
+                        variant="danger"
+                        onClick={() => {
+                           onChange({ ...preferences, shortcuts: {} });
+                           setRecording(null);
+                           setConflict("");
+                        }}
+                     >
+                        Reset bindings
+                     </Button>
+                  </div>
                   <div className="shortcut-list">
-                     {(Object.keys(commandDefinitions) as CommandId[]).map((id) => (
-                        <div className="shortcut-row" key={id}>
-                           <span>{commandDefinitions[id].label}</span>
-                           <button
-                              className={`shortcut-binding ${recording === id ? "recording" : ""}`}
-                              aria-label={`Change shortcut for ${commandDefinitions[id].label}`}
-                              onClick={() => {
-                                 setRecording(id);
-                                 setConflict("");
-                              }}
-                              onKeyDown={(event) => {
-                                 if (recording !== id) return;
-                                 event.preventDefault();
-                                 event.stopPropagation();
-                                 if (event.key === "Escape") {
-                                    setRecording(null);
-                                    return;
-                                 }
-                                 if (["Control", "Meta", "Alt", "Shift"].includes(event.key)) return;
-                                 const binding = bindingFromEvent(event.nativeEvent, mac);
-                                 if (["ALT+F4", "MOD+Q", "MOD+W", "MOD+C", "MOD+V", "MOD+X", "TAB", "SHIFT+TAB", "ENTER"].includes(binding.toUpperCase())) {
-                                    setConflict("That shortcut belongs to the system or a standard control.");
-                                    return;
-                                 }
-                                 const duplicate = (Object.keys(commandDefinitions) as CommandId[]).find(
-                                    (other) => other !== id && bindingFor(other, preferences.shortcuts).toUpperCase() === binding.toUpperCase()
-                                 );
-                                 if (duplicate) {
-                                    setConflict(`Already used by ${commandDefinitions[duplicate].label.toLowerCase()}.`);
-                                    return;
-                                 }
-                                 onChange({ ...preferences, shortcuts: { ...preferences.shortcuts, [id]: binding } });
-                                 setRecording(null);
-                                 setConflict("");
-                              }}
-                           >
-                              <kbd>{recording === id ? "Press keys…" : displayBinding(bindingFor(id, preferences.shortcuts), mac) || "Unassigned"}</kbd>
-                           </button>
-                        </div>
-                     ))}
+                     {shortcutGroups.map((group) => {
+                        const commands = group.commands.filter(matches);
+                        if (!commands.length) return null;
+                        return (
+                           <section className="shortcut-group" key={group.name} aria-labelledby={`shortcuts-${group.name}`}>
+                              <h3 id={`shortcuts-${group.name}`}>{group.name}</h3>
+                              {commands.map((id) => (
+                                 <div className="shortcut-row" key={id}>
+                                    <div className="shortcut-line">
+                                       <span className="shortcut-action">{commandDefinitions[id].label}</span>
+                                       <div className="shortcut-bindings">
+                                          {bindingsFor(id, preferences.shortcuts).map((binding, index) => (
+                                             <span className="shortcut-chip" key={binding}>
+                                                <button
+                                                   className="shortcut-binding"
+                                                   aria-label={`Change ${displayBinding(binding, mac)} for ${commandDefinitions[id].label}`}
+                                                   onClick={() => editBinding(id, index)}
+                                                >
+                                                   <kbd>{displayBinding(binding, mac)}</kbd>
+                                                </button>
+                                                <button
+                                                   className="shortcut-remove"
+                                                   aria-label={`Remove ${displayBinding(binding, mac)} from ${commandDefinitions[id].label}`}
+                                                   onClick={() =>
+                                                      updateBindings(
+                                                         id,
+                                                         bindingsFor(id, preferences.shortcuts).filter((_, i) => i !== index)
+                                                      )
+                                                   }
+                                                >
+                                                   <FontAwesomeIcon icon={faXmark} />
+                                                </button>
+                                             </span>
+                                          ))}
+                                          <button
+                                             className="shortcut-add"
+                                             aria-label={`Add binding for ${commandDefinitions[id].label}`}
+                                             onClick={() => editBinding(id, null)}
+                                          >
+                                             <FontAwesomeIcon icon={faPlus} />
+                                          </button>
+                                       </div>
+                                    </div>
+                                    {recording?.id === id && (
+                                       <div className="shortcut-editor" key={`${id}-${recording.index}`}>
+                                          <button
+                                             className="shortcut-capture"
+                                             ref={(element) => {
+                                                element?.focus();
+                                             }}
+                                             aria-label={`Record binding for ${commandDefinitions[id].label}`}
+                                             aria-describedby={`binding-help-${id}`}
+                                             onKeyDown={captureBinding}
+                                          >
+                                             <kbd>{captured ? displayBinding(captured, mac) : "Press keys…"}</kbd>
+                                          </button>
+                                          <div className="shortcut-editor-actions">
+                                             <p
+                                                id={`binding-help-${id}`}
+                                                className={conflict ? "inline-error" : "shortcut-hint"}
+                                                role={conflict ? "alert" : undefined}
+                                             >
+                                                {conflict || "Press a key combination, then save. Escape cancels."}
+                                             </p>
+                                             <Button onClick={() => setRecording(null)}>Cancel</Button>
+                                             <Button
+                                                variant="primary"
+                                                disabled={!captured || !!conflict}
+                                                onClick={() => {
+                                                   const bindings = [...bindingsFor(id, preferences.shortcuts)];
+                                                   if (recording.index === null) bindings.push(captured);
+                                                   else bindings[recording.index] = captured;
+                                                   updateBindings(id, bindings);
+                                                }}
+                                             >
+                                                Save binding
+                                             </Button>
+                                          </div>
+                                       </div>
+                                    )}
+                                 </div>
+                              ))}
+                           </section>
+                        );
+                     })}
+                     {!shortcutGroups.some((group) => group.commands.some(matches)) && <p className="shortcut-empty">No actions match that search.</p>}
                   </div>
                </>
             )}

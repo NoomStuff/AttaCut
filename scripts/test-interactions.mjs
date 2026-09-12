@@ -60,6 +60,9 @@ try {
    await page.getByRole("button", { name: "Export", exact: true }).click();
    await expect(page.getByRole("textbox", { name: "Save to", exact: true })).toHaveValue(dirname(media));
    await page.keyboard.press("Escape");
+   // A pointerdown inside the modal's 140ms exit window gets captured by the closing dialog and
+   // the whole drag would retarget to <html> once it unmounts.
+   await page.waitForFunction(() => !document.querySelector("dialog[open]"));
    await page.locator("video").evaluate((video) => {
       globalThis.presented = [];
       const frame = (now) => {
