@@ -46,12 +46,12 @@ try {
    const clip = await page.locator(".clip-range:not(.leaving)").boundingBox();
    await page.mouse.move(clip.x + clip.width * 0.2, clip.y + clip.height / 2);
    await expect(page.locator(".trim-handle.start.nearby")).toHaveCount(1);
-   await page.waitForTimeout(160);
-   assert.equal(await page.locator(".trim-handle.start").evaluate((el) => getComputedStyle(el).width), "12px");
+   await page.waitForTimeout(320);
+   assert.equal(await page.locator(".trim-handle.start").evaluate((el) => getComputedStyle(el).width), "14px");
    await page.mouse.move(clip.x + clip.width * 0.8, clip.y + clip.height / 2);
    await expect(page.locator(".trim-handle.end.nearby")).toHaveCount(1);
-   await page.waitForTimeout(160);
-   assert.equal(await page.locator(".trim-handle.start").evaluate((el) => getComputedStyle(el).width), "6px");
+   await page.waitForTimeout(320);
+   assert.equal(await page.locator(".trim-handle.start").evaluate((el) => getComputedStyle(el).width), "8px");
    // The handle also accepts a press slightly outside its visible edge.
    const start = await page.locator(".trim-handle.start").boundingBox();
    await page.mouse.move(start.x - 2, start.y + start.height / 2);

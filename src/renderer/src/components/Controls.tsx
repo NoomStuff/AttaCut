@@ -1,10 +1,52 @@
 import { CommandContext, commandDefinitions, bindingsFor, displayBindings } from "../editor/commands";
 import type { CommandId } from "../editor/commands";
-import { useContext, useEffect, useId, useRef, useState } from "react";
+import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { faXmark } from "@fortawesome/free-solid-svg-icons";
+
+function TooltipHost({ children }: { children: ReactNode }) {
+   const ref = useRef<HTMLSpanElement>(null);
+   const [hovered, setHovered] = useState(false);
+   const [focused, setFocused] = useState(false);
+   const active = hovered || focused;
+   useLayoutEffect(() => {
+      if (!active) return;
+      const host = ref.current!;
+      const tooltip = host.querySelector<HTMLElement>(".tooltip")!;
+      const position = () => {
+         tooltip.style.removeProperty("--tooltip-shift");
+         const rect = tooltip.getBoundingClientRect();
+         const margin = 8;
+         const left = Math.max(margin, Math.min(rect.left, document.documentElement.clientWidth - rect.width - margin));
+         tooltip.style.setProperty("--tooltip-shift", `${left - rect.left}px`);
+      };
+      position();
+      const observer = new ResizeObserver(position);
+      observer.observe(host);
+      observer.observe(tooltip);
+      window.addEventListener("resize", position);
+      window.addEventListener("scroll", position, true);
+      return () => {
+         observer.disconnect();
+         window.removeEventListener("resize", position);
+         window.removeEventListener("scroll", position, true);
+      };
+   }, [active]);
+   return (
+      <span
+         ref={ref}
+         className="tooltip-host"
+         onMouseEnter={() => setHovered(true)}
+         onMouseLeave={() => setHovered(false)}
+         onFocus={() => setFocused(true)}
+         onBlur={() => setFocused(false)}
+      >
+         {children}
+      </span>
+   );
+}
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    command?: CommandId | undefined;
@@ -36,13 +78,13 @@ export function Button({ command, icon, shortcut, active, variant = "quiet", chi
    if (!command || !context || children === undefined) return button;
    const binding = displayBindings(bindingsFor(command, context.overrides), context.mac);
    return (
-      <span className="tooltip-host">
+      <TooltipHost>
          {button}
          <span role="tooltip" id={tooltipId} className="tooltip">
             {commandDefinitions[command].label}
             {binding && <kbd>{binding}</kbd>}
          </span>
-      </span>
+      </TooltipHost>
    );
 }
 interface IconButtonProps extends Omit<ButtonProps, "icon"> {
@@ -54,13 +96,13 @@ export function IconButton({ command, icon, label, shortcut, className = "", ...
    if (command && context) shortcut ??= displayBindings(bindingsFor(command, context.overrides), context.mac);
    const id = useId();
    return (
-      <span className="tooltip-host">
+      <TooltipHost>
          <Button command={command} shortcut="" {...props} aria-label={label} aria-describedby={id} icon={icon} className={`icon-button ${className}`} />
          <span role="tooltip" id={id} className="tooltip">
             {label}
             {shortcut && <kbd>{shortcut}</kbd>}
          </span>
-      </span>
+      </TooltipHost>
    );
 }
 export function Modal({
@@ -89,10 +131,13 @@ export function Modal({
          dialog.close();
       };
    }, []);
-   // Play the exit animation before the panel unmounts.
+   // Play the exit animation before the panel unmounts. The dialog itself closes natively
+   // right away: its backdrop ignores pointer-events while fading and would swallow a click
+   // aimed at the app behind it.
    const requestClose = () => {
       if (closing) return;
       setClosing(true);
+      ref.current?.close();
       timer.current = window.setTimeout(onClose, 140);
    };
    return (

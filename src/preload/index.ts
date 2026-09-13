@@ -19,6 +19,7 @@ const api: DesktopApi = {
    preparePreview: (sourceId, audioIndex, transcode) => ipcRenderer.invoke("preview:prepare", { sourceId, audioIndex, transcode }),
    cancelPreview: () => ipcRenderer.invoke("preview:cancel"),
    keyframes: (sourceId) => ipcRenderer.invoke("source:keyframes", sourceId),
+   scrubAudio: (sourceId, streamIndex) => ipcRenderer.invoke("audio:scrub", { sourceId, streamIndex }),
    exportFrame: (request) => ipcRenderer.invoke("frame:export", request),
    planExport: (request) => ipcRenderer.invoke("export:plan", request),
    startExport: (id) => ipcRenderer.invoke("export:start", id),

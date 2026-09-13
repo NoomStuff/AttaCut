@@ -124,6 +124,12 @@ export function SettingsPanel({
                      checked={preferences.keepPlaying}
                      onChange={(keepPlaying) => onChange({ ...preferences, keepPlaying })}
                   />
+                  <Toggle
+                     label="Audio scrubbing"
+                     description="Play a short audio burst at the playhead while scrubbing and stepping with playback paused. Unavailable for sources over two hours."
+                     checked={preferences.audioScrub}
+                     onChange={(audioScrub) => onChange({ ...preferences, audioScrub })}
+                  />
                </>
             ) : (
                <>

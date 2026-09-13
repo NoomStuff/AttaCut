@@ -65,9 +65,10 @@ try {
    await page.getByRole("button", { name: "Playback settings" }).click();
    await page.getByRole("switch", { name: "Play kept clips only" }).check();
    await page.getByRole("tab", { name: "Keyboard shortcuts" }).click();
-   await page.getByRole("button", { name: "Change shortcut for Split at playhead" }).click();
+   await page.getByRole("button", { name: "Change S for Split at playhead" }).click();
    await page.keyboard.press("x");
-   await page.getByRole("button", { name: "Change shortcut for Split at playhead" }).getByText("X", { exact: true }).waitFor();
+   await page.getByRole("button", { name: "Save binding" }).click();
+   await page.getByRole("button", { name: "Change X for Split at playhead" }).waitFor();
    await page.screenshot({ path: "work/screenshots/shortcuts.png" });
    await page.getByRole("tab", { name: "General", exact: true }).click();
    await page.getByRole("button", { name: "Light theme", exact: true }).click();

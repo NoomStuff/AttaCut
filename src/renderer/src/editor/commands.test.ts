@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bindingsFor, commandForBinding, displayBindings } from "./commands";
+import { resolvedCommand, bindingsFor, commandForBinding, displayBindings } from "./commands";
 import { preferencesSchema } from "../../../shared/types";
 
 describe("multiple command bindings", () => {
@@ -18,5 +18,28 @@ describe("multiple command bindings", () => {
    it("persists empty and multiple bindings without restoring defaults", () => {
       const preferences = preferencesSchema.parse({ shortcuts: { mute: [], split: ["S", "Alt+S"] } });
       expect(preferencesSchema.parse(JSON.parse(JSON.stringify(preferences))).shortcuts).toEqual({ mute: [], split: ["S", "Alt+S"] });
+   });
+});
+
+describe("resolved commands", () => {
+   it("uses the current valid action when execution follows a state change", () => {
+      const remaining = ["a", "b"];
+      const deleted: string[] = [];
+      const command = resolvedCommand(() => {
+         const target = remaining[0];
+         return target
+            ? () => {
+                 deleted.push(target);
+                 remaining.shift();
+              }
+            : undefined;
+      });
+      expect(command.enabled()).toBe(true);
+      command.run();
+      expect(command.enabled()).toBe(true);
+      command.run();
+      expect(command.enabled()).toBe(false);
+      command.run();
+      expect(deleted).toEqual(["a", "b"]);
    });
 });

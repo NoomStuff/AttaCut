@@ -18,8 +18,9 @@ interface SmoothOptions {
 
 /**
  * Tweens discrete changes or follows continuous input with frame-rate-independent damping.
- * The frame loop stays scheduled while targets change, so dense pointer events cannot
- * starve rendering. Snap and key changes hand control over immediately.
+ * The loop self-schedules across frames and consumes its slot at tick entry, so a stale slot
+ * id can never block a restart and the chain can never freeze mid-tween. Snap and key changes
+ * hand control over immediately.
  */
 export function useSmoothValue(target: number, options: SmoothOptions = {}): number {
    const [, render] = useReducer((count: number) => count + 1, 0);
@@ -56,6 +57,9 @@ export function useSmoothValue(target: number, options: SmoothOptions = {}): num
    useEffect(() => {
       if (!run.current || frame.current) return;
       const tick = (now: number) => {
+         // Consume the slot before anything else: once this tick runs, its id is history and
+         // can never block the effect from scheduling a successor.
+         frame.current = 0;
          const current = run.current;
          if (!current) return;
          const { duration = 170, follow } = optionsRef.current;
@@ -74,7 +78,6 @@ export function useSmoothValue(target: number, options: SmoothOptions = {}): num
          if (finished) {
             display.current = targetRef.current;
             run.current = null;
-            frame.current = 0;
          } else {
             frame.current = requestAnimationFrame(tick);
          }
@@ -143,6 +146,14 @@ export function usePressFeedback(): void {
       const pointerMode = () => {
          delete document.documentElement.dataset.keyboard;
       };
+      let pressed: { button: HTMLButtonElement; pointerId: number } | null = null;
+      const finishPress = () => {
+         if (!pressed) return;
+         const { button } = pressed;
+         pressed = null;
+         button.classList.add("releasing");
+         if (document.activeElement === button) button.blur();
+      };
       const press = (event: PointerEvent) => {
          if (event.button !== 0 || !event.isPrimary) return;
          const button = usable(event.target);
@@ -154,29 +165,34 @@ export function usePressFeedback(): void {
          button.style.setProperty("--press-x", `${x}px`);
          button.style.setProperty("--press-y", `${y}px`);
          button.style.setProperty("--press-reach", `${Math.ceil(reach)}px`);
-         button.classList.remove("pressing");
+         finishPress();
+         button.classList.remove("pressing", "releasing");
          void button.offsetWidth;
          button.classList.add("pressing");
+         pressed = { button, pointerId: event.pointerId };
       };
       const release = (event: PointerEvent) => {
-         const button = usable(event.target);
-         if (button && document.activeElement === button) button.blur();
+         if (event.type === "pointerup" && event.button !== 0) return;
+         if (pressed?.pointerId === event.pointerId) finishPress();
       };
       const settle = (event: AnimationEvent) => {
-         if (event.animationName === "press-ripple" && event.target instanceof Element) event.target.classList.remove("pressing");
+         if (event.animationName === "press-release" && event.target instanceof Element) event.target.classList.remove("pressing", "releasing");
       };
       document.addEventListener("keydown", navigation, true);
       document.addEventListener("pointerdown", pointerMode, true);
       document.addEventListener("pointerdown", press);
-      document.addEventListener("pointerup", release);
-      document.addEventListener("pointercancel", release);
+      window.addEventListener("pointerup", release, true);
+      window.addEventListener("pointercancel", release, true);
+      window.addEventListener("blur", finishPress);
       document.addEventListener("animationend", settle, true);
       return () => {
          document.removeEventListener("keydown", navigation, true);
          document.removeEventListener("pointerdown", pointerMode, true);
          document.removeEventListener("pointerdown", press);
-         document.removeEventListener("pointerup", release);
-         document.removeEventListener("pointercancel", release);
+         window.removeEventListener("pointerup", release, true);
+         window.removeEventListener("pointercancel", release, true);
+         window.removeEventListener("blur", finishPress);
+         pressed?.button.classList.remove("pressing", "releasing");
          document.removeEventListener("animationend", settle, true);
       };
    }, []);

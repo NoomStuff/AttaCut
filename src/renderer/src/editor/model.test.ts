@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
    clipAt,
+   ClipPriority,
+   gapAt,
    mergePair,
    mergeClips,
    addGap,
@@ -101,5 +103,51 @@ describe("merge and playhead targeting", () => {
       expect(clipAt(split, 40)?.id).toBe(split.selectedId);
       expect(clipAt(split, 120)?.id).toBe(split.selectedId);
       expect(clipAt(trimClip(split, split.selectedId!, "start", 50, 120), 45)).toBeUndefined();
+   });
+});
+
+describe("clip interaction priority", () => {
+   const a = { id: "a", start: 5, end: 10, color: 0 };
+   const b = { id: "b", start: 10, end: 20, color: 1 };
+   const document = { clips: [a, b], selectedId: "b" };
+   it("uses the last interaction at a shared edge, independently of array order or selection", () => {
+      const priority = new ClipPriority();
+      priority.move(document, 7);
+      priority.move(document, 10);
+      expect(priority.resolve(document, 10)).toEqual(a);
+      priority.move(document, 15);
+      priority.move(document, 10);
+      expect(priority.resolve(document, 10)).toEqual(b);
+   });
+   it("remembers the deleted side instead of targeting its neighbor", () => {
+      const priority = new ClipPriority();
+      priority.remember(a);
+      const deleted = deleteClip({ ...document, selectedId: a.id });
+      expect(priority.resolve(deleted, 10)).toEqual(a);
+      expect(priority.resolve(deleted, 10, false)).toEqual(b);
+      expect(priority.resolve(document, 10)).toEqual(a);
+      priority.move(deleted, 15);
+      expect(priority.resolve(deleted, 10)).toEqual(b);
+   });
+   it("clears deletion memory when the user moves into a clear gap", () => {
+      const priority = new ClipPriority();
+      priority.remember(a);
+      const deleted = { clips: [b], selectedId: b.id };
+      priority.move(deleted, 7);
+      expect(priority.resolve(deleted, 7)).toBeUndefined();
+      expect(priority.resolve(deleted, 10)).toEqual(b);
+   });
+   it("does not let playback resolution change the last user interaction", () => {
+      const priority = new ClipPriority();
+      priority.remember(a);
+      expect(priority.resolve(document, 15)).toEqual(b);
+      expect(priority.resolve(document, 10)).toEqual(a);
+      expect(priority.resolve(document, 25)).toBeUndefined();
+   });
+   it("allows explicit add on either exposed edge, but never between touching clips", () => {
+      expect(gapAt(document, 5, 30)).toEqual({ start: 0, end: 5 });
+      expect(gapAt(document, 20, 30)).toEqual({ start: 20, end: 30 });
+      expect(gapAt(document, 10, 30)).toBeNull();
+      expect(gapAt(document, 15, 30)).toBeNull();
    });
 });

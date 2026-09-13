@@ -72,7 +72,7 @@ export function Player({
                else if (next !== video.currentTime) seeker.seek(next, true);
             }
          }
-         if (video.readyState > 0 && !latest.current.failed && !video.seeking && !seeker.pending) clock.set(video.currentTime);
+         if (!video.paused && video.readyState > 0 && !latest.current.failed && !video.seeking && !seeker.pending) clock.set(video.currentTime);
          frame = requestAnimationFrame(update);
       };
       frame = requestAnimationFrame(update);

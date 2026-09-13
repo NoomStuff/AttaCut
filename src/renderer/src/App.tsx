@@ -5,10 +5,11 @@ import { clamp } from "../../shared/time";
 import { adjacentBoundary, snapBoundary } from "./editor/navigation";
 import { selectNativeAudio } from "./playback/audio";
 import { PlaybackSeeker } from "./playback/seeker";
+import { AudioScrubber } from "./playback/scrubber";
 import { nextKeptTime } from "./playback/ranges";
 import { FramePanel } from "./components/FramePanel";
 import {
-   clipAt,
+   ClipPriority,
    mergePair,
    mergeClips,
    addGap,
@@ -24,9 +25,9 @@ import {
    trimClip,
 } from "./editor/model";
 import type { EditDocument } from "./editor/model";
-import { CommandContext, bindingsFor, commandDefinitions, displayBindings, useCommands } from "./editor/commands";
+import { CommandContext, resolvedCommand, bindingsFor, commandDefinitions, displayBindings, useCommands } from "./editor/commands";
 import type { CommandId, Commands } from "./editor/commands";
-import { PlaybackClock } from "./playback/clock";
+import { PlaybackClock, useClock } from "./playback/clock";
 import { Button } from "./components/Controls";
 import { Player } from "./components/Player";
 import { Timeline } from "./components/Timeline";
@@ -112,6 +113,16 @@ export default function App() {
    const trimTimer = useRef(0);
    useEffect(() => () => window.clearTimeout(trimTimer.current), []);
    const [trimming, setTrimmingState] = useState(false);
+   // A pure bounds edit animates the clip to its new shape, undo and redo included, so a
+   // trimmed edge visibly travels back. Structural edits (split, merge, add, delete) keep
+   // their own presence animations: gliding bounds would fight the seam and enter/exit cues.
+   const sameClipIds = (a: EditDocument, b: EditDocument) =>
+      a.clips.length === b.clips.length && a.clips.every((clip, index) => clip.id === b.clips[index]?.id);
+   const animateTrim = () => {
+      setTrimAnimating(true);
+      window.clearTimeout(trimTimer.current);
+      trimTimer.current = window.setTimeout(() => setTrimAnimating(false), 180);
+   };
    const videoRef = useRef<HTMLVideoElement>(null);
    const previewEnd = useRef<number | null>(null);
    const trimmingRef = useRef(false);
@@ -119,34 +130,61 @@ export default function App() {
       trimmingRef.current = active;
       setTrimmingState(active);
    };
-   // Dragging a handle pins the playhead onto the edited boundary, which would flip playhead-
-   // dependent availability on sub-step rounding while the draft is not yet committed. Hold the
-   // pre-drag availability until the drag settles.
-   const idleAvailability = useRef<Record<string, boolean>>({});
-   const frozenAvailability = (key: string, evaluate: () => boolean): boolean => {
-      const value = evaluate();
-      if (!trimmingRef.current) idleAvailability.current[key] = value;
-      return trimmingRef.current ? (idleAvailability.current[key] ?? value) : value;
-   };
-   const deleteReady = () =>
-      frozenAvailability("delete", () => {
-         return available() && !!clipAt(editor.document, clock.get());
-      });
    const [clock] = useState(() => new PlaybackClock());
    const [seeker] = useState(() => new PlaybackSeeker(clock));
+   const [scrubber] = useState(() => new AudioScrubber());
+   // Load compact scrub audio for the selected track in the background; scrubbing simply stays
+   // silent when a source is too large to keep in memory.
+   useEffect(() => {
+      if (!source || !preferences.audioScrub || audioIndex === null) return;
+      let cancelled = false;
+      void window.desktop
+         .scrubAudio(source.id, audioIndex)
+         .then((data) => {
+            if (!cancelled && data) scrubber.setPcm(data.pcm, data.sampleRate);
+         })
+         .catch(() => {
+            // Scrub audio is best-effort; its absence is not an error worth a banner.
+         });
+      return () => {
+         cancelled = true;
+         scrubber.stop();
+      };
+   }, [source, audioIndex, preferences.audioScrub, scrubber]);
    const openSequence = useRef(0);
    const sourceRef = useRef(source);
    sourceRef.current = source;
    const mac = platform === "darwin";
-   const clip = selectedClip(editor.document);
-   const commit = (document: EditDocument) => dispatch({ type: "commit", document });
-   const seek = (time: number) => {
+   useClock(clock);
+   const [priority] = useState(() => new ClipPriority());
+   const [, refreshPriority] = useReducer((value: number) => value + 1, 0);
+   const remember = (clip: ReturnType<typeof selectedClip>) => {
+      priority.remember(clip);
+      refreshPriority();
+   };
+   const deleteTarget = () => priority.resolve(editor.document, clock.get(), false);
+   const targetClip = () => priority.resolve(editor.document, clock.get());
+   const currentClip = () => {
+      const target = targetClip();
+      return editor.document.clips.find((item) => item.id === target?.id);
+   };
+   const clip = currentClip();
+   const activeDocument = { ...editor.document, selectedId: clip?.id ?? null };
+   const commit = (document: EditDocument) => {
+      remember(selectedClip(document));
+      dispatch({ type: "commit", document });
+   };
+   const seek = (time: number, preservePriority = false) => {
       if (!source) return;
       const target = clamp(time, 0, source.duration);
-      const selected = editor.document.clips.find((item) => target >= item.start && target <= item.end);
-      if (selected && !(clip && target >= clip.start && target <= clip.end)) dispatch({ type: "select", id: selected.id });
+      if (!trimmingRef.current && !preservePriority) {
+         priority.move(editor.document, target);
+         refreshPriority();
+      }
       previewEnd.current = null;
       seeker.seek(target, preferences.keepPlaying);
+      // Scrub bursts only belong to paused seeking; playing video provides its own audio.
+      if (videoRef.current?.paused && preferences.audioScrub) scrubber.scrub(target, muted ? 0 : preferences.volume);
    };
    const fullscreen = () => {
       const action = document.fullscreenElement ? document.exitFullscreen() : videoRef.current?.requestFullscreen();
@@ -184,6 +222,7 @@ export default function App() {
          setSnapping(false);
          setReadingKeys(false);
          setUrl(media.url);
+         remember(undefined);
          clock.set(0);
          setPlaying(false);
          const firstAudio = media.streams.find((stream) => stream.type === "audio");
@@ -307,11 +346,6 @@ export default function App() {
    const selectAdjacent = (direction: -1 | 1) => {
       const time = adjacentBoundary(editor.document.clips, clock.get(), direction);
       if (time !== null) {
-         const next =
-            direction === 1
-               ? (editor.document.clips.find((item) => item.end === time) ?? editor.document.clips.find((item) => item.start === time))
-               : (editor.document.clips.find((item) => item.start === time) ?? editor.document.clips.find((item) => item.end === time));
-         if (next) dispatch({ type: "select", id: next.id });
          seek(time);
       }
    };
@@ -328,17 +362,25 @@ export default function App() {
             editor.document,
             clip.id,
             side,
-            snapping ? snapBoundary(editor.document, clip.id, side, bounded, keyframes, source.duration) : bounded,
+            snapping
+               ? snapBoundary(
+                    editor.document,
+                    clip.id,
+                    side,
+                    bounded,
+                    keyframes,
+                    source.duration,
+                    side === "start" ? { high: clip.end - floor } : { low: clip.start + floor }
+                 )
+               : bounded,
             source.duration,
             floor
          );
          const actual = next.clips.find((item) => item.id === clip.id)![side];
          if (actual === clip[side]) return actual;
-         setTrimAnimating(true);
-         window.clearTimeout(trimTimer.current);
-         trimTimer.current = window.setTimeout(() => setTrimAnimating(false), 180);
+         animateTrim();
          commit(next);
-         seek(actual);
+         seeker.seek(actual, preferences.keepPlaying);
          return actual;
       }
       return value;
@@ -350,12 +392,13 @@ export default function App() {
          .filter((point) => point >= clip.start && point <= clip.end)
          .reduce((best, point) => (Math.abs(point - clock.get()) < Math.abs(best - clock.get()) ? point : best), Infinity);
    };
-   const available = () => !!source && !loading;
+   const available = () => !!source && !loading && !trimmingRef.current;
    const frameStep = 1 / (source?.streams.find((stream) => stream.type === "video")?.frameRate || 100);
    const stepFrame = (direction: number) => {
       videoRef.current?.pause();
       previewEnd.current = null;
-      seeker.seek(clamp((Math.round(clock.get() / frameStep) + direction) * frameStep, 0, source!.duration), false);
+      const target = clamp((Math.round(clock.get() / frameStep) + direction) * frameStep, 0, source!.duration);
+      seek(target);
    };
    const joinAtPlayhead = () =>
       mergePair(
@@ -379,12 +422,15 @@ export default function App() {
       },
       snap: { enabled: () => available() && !readingKeys, run: () => setSnapping((value) => !value) },
       merge: {
-         enabled: () => frozenAvailability("merge", () => available() && joinAtPlayhead() >= 0),
+         enabled: () => available() && joinAtPlayhead() >= 0,
          run: () => commit(mergeClips(editor.document, joinAtPlayhead())),
       },
       toggleClip: {
-         enabled: () => commands.delete.enabled() || commands.add.enabled(),
-         run: () => (commands.delete.enabled() ? commands.delete.run() : commands.add.run()),
+         ...resolvedCommand(() => {
+            const action = currentClip() ? commands.delete : commands.add;
+            return action.enabled() ? action.run : undefined;
+         }),
+         feedback: () => (currentClip() ? "delete" : "add"),
       },
       open: {
          enabled: () => ready,
@@ -421,81 +467,77 @@ export default function App() {
       backFast: { enabled: available, run: () => seek(clock.get() - 5) },
       forwardFast: { enabled: available, run: () => seek(clock.get() + 5) },
       previous: {
-         enabled: () => frozenAvailability("previous", () => available() && adjacentBoundary(editor.document.clips, clock.get(), -1) !== null),
+         enabled: () => available() && adjacentBoundary(editor.document.clips, clock.get(), -1) !== null,
          run: () => selectAdjacent(-1),
       },
       next: {
-         enabled: () => frozenAvailability("next", () => available() && adjacentBoundary(editor.document.clips, clock.get(), 1) !== null),
+         enabled: () => available() && adjacentBoundary(editor.document.clips, clock.get(), 1) !== null,
          run: () => selectAdjacent(1),
       },
       split: {
          enabled: () =>
-            frozenAvailability(
-               "split",
-               () =>
-                  available() &&
-                  (!snapping || !readingKeys) &&
-                  canSplit(editor.document, clock.get(), minimumClipLength()) &&
-                  canSplit(editor.document, splitTime(), minimumClipLength())
-            ),
+            available() &&
+            (!snapping || !readingKeys) &&
+            canSplit(activeDocument, clock.get(), minimumClipLength()) &&
+            canSplit(activeDocument, splitTime(), minimumClipLength()),
          run: () => {
             const time = splitTime();
-            const next = splitClip(editor.document, time, minimumClipLength());
+            const next = splitClip(activeDocument, time, minimumClipLength());
             commit(next);
-            seek(time);
+            seeker.seek(time, preferences.keepPlaying);
          },
       },
       setStart: {
-         enabled: () =>
-            frozenAvailability(
-               "setStart",
-               () =>
-                  available() &&
-                  !!clipAt(editor.document, clock.get()) &&
-                  clock.get() > clipAt(editor.document, clock.get())!.start &&
-                  clock.get() < clipAt(editor.document, clock.get())!.end
-            ),
-         run: () => setBoundary("start", clock.get(), clipAt(editor.document, clock.get())),
+         enabled: () => available() && !!currentClip() && clock.get() > currentClip()!.start && clock.get() < currentClip()!.end,
+         run: () => setBoundary("start", clock.get(), currentClip()),
       },
       setEnd: {
-         enabled: () =>
-            frozenAvailability(
-               "setEnd",
-               () =>
-                  available() &&
-                  !!clipAt(editor.document, clock.get()) &&
-                  clock.get() > clipAt(editor.document, clock.get())!.start &&
-                  clock.get() < clipAt(editor.document, clock.get())!.end
-            ),
-         run: () => setBoundary("end", clock.get(), clipAt(editor.document, clock.get())),
+         enabled: () => available() && !!currentClip() && clock.get() > currentClip()!.start && clock.get() < currentClip()!.end,
+         run: () => setBoundary("end", clock.get(), currentClip()),
       },
-      delete: {
-         enabled: deleteReady,
+      delete: resolvedCommand(() => {
+         if (!available()) return;
+         const target = deleteTarget();
+         if (!target) return;
+         return () => {
+            commit(deleteClip({ ...editor.document, selectedId: target.id }));
+            remember(target);
+         };
+      }),
+      add: resolvedCommand(() => {
+         if (!available()) return;
+         const time = clock.get();
+         const gap = gapAt(editor.document, time, source!.duration);
+         if (!gap || gap.end - gap.start < minimumClipLength()) return;
+         return () => commit(addGap(editor.document, time, source!.duration));
+      }),
+      undo: {
+         enabled: () => available() && !!editor.past.length,
          run: () => {
-            const target = clipAt(editor.document, clock.get());
-            if (target) commit(deleteClip({ ...editor.document, selectedId: target.id }));
+            const previous = editor.past.at(-1)!;
+            if (sameClipIds(editor.document, previous)) animateTrim();
+            remember(selectedClip(previous));
+            dispatch({ type: "undo" });
          },
       },
-      add: {
-         enabled: () =>
-            frozenAvailability("add", () => {
-               if (!available()) return false;
-               const gap = gapAt(editor.document, clock.get(), source!.duration);
-               return !!gap && gap.end - gap.start >= minimumClipLength();
-            }),
+      redo: {
+         enabled: () => available() && !!editor.future.length,
          run: () => {
-            if (source) commit(addGap(editor.document, clock.get(), source.duration));
+            const next = editor.future[0]!;
+            if (sameClipIds(editor.document, next)) animateTrim();
+            remember(selectedClip(editor.future[0]!));
+            dispatch({ type: "redo" });
          },
       },
-      undo: { enabled: () => available() && !!editor.past.length, run: () => dispatch({ type: "undo" }) },
-      redo: { enabled: () => available() && !!editor.future.length, run: () => dispatch({ type: "redo" }) },
       fit: { enabled: available, run: () => setFitToken((value) => value + 1) },
       zoomIn: { enabled: available, run: () => setZoomRequest((value) => ({ id: value.id + 1, direction: 1 })) },
       zoomOut: { enabled: available, run: () => setZoomRequest((value) => ({ id: value.id + 1, direction: -1 })) },
       settings: { enabled: () => ready, run: () => setPanel("settings") },
       shortcuts: { enabled: () => ready, run: () => setPanel("shortcuts") },
    };
-   useCommands(commands, preferences.shortcuts, mac, !!panel || !!menu);
+   // Panel dialogs guard themselves: the command handler checks the live dialog state, so the
+   // panel's exit fade never blocks shortcuts. Only the menu needs the React-side flag.
+   useCommands(commands, preferences.shortcuts, mac, !!menu);
    const prepare = async (track: number | null = audioIndex, transcode = false) => {
       if (!source) return;
       videoRef.current?.pause();
@@ -634,7 +676,11 @@ export default function App() {
                         volume={preferences.volume}
                         muted={muted}
                         audioIndex={audioIndex}
-                        onPlaying={setPlaying}
+                        onPlaying={(value) => {
+                           setPlaying(value);
+                           // Real playback replaces any scrub burst still sounding.
+                           if (value) scrubber.stop();
+                        }}
                         onPreviewEnd={() => {
                            previewEnd.current = null;
                         }}
@@ -653,7 +699,7 @@ export default function App() {
                      <div className={`editor-dock${trimAnimating ? " trim-animating" : ""}`}>
                         <Timeline
                            key={source.id}
-                           document={editor.document}
+                           document={activeDocument}
                            duration={source.duration}
                            frameStep={video?.frameRate ? 1 / video.frameRate : 0.01}
                            clock={clock}
@@ -662,13 +708,14 @@ export default function App() {
                            onZoom={setZoom}
                            keyframes={keyframes}
                            snapping={snapping}
-                           onSelect={(id) => dispatch({ type: "select", id })}
+                           playing={playing}
+                           onSelect={(id) => remember(editor.document.clips.find((item) => item.id === id))}
                            onCommit={commit}
                            onSeek={seek}
                            onTrimming={setTrimming}
                         />
                         <Transport
-                           document={editor.document}
+                           document={activeDocument}
                            source={source}
                            clock={clock}
                            playing={playing}

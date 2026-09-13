@@ -162,7 +162,11 @@ export function Transport({
                   command="play"
                   icon={playing ? faPause : faPlay}
                   label={playing ? "Pause" : "Play"}
-                  className={`play-button${playing ? " playing" : ""}`}
+                  className="play-button"
+                  // The playing state rides on a data attribute: rewriting className on every
+                  // toggle would wipe the shortcut-flash and press-ripple classes this button
+                  // relies on for its feedback animations.
+                  data-playing={playing ? "" : undefined}
                   onClick={commands.play.run}
                />
                <IconButton command="next" icon={faForwardStep} label="Next clip" disabled={!commands.next.enabled()} onClick={commands.next.run} />

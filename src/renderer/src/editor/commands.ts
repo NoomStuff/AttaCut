@@ -32,8 +32,13 @@ export const commandDefinitions = {
 } as const;
 export type CommandId = keyof typeof commandDefinitions;
 export interface Command {
+   feedback?: () => CommandId;
    enabled: () => boolean;
    run: () => void;
+}
+/** Availability and execution resolve the same current action, including after another edit. */
+export function resolvedCommand(resolve: () => (() => void) | undefined): Command {
+   return { enabled: () => !!resolve(), run: () => resolve()?.() };
 }
 export type Commands = Record<CommandId, Command>;
 export const CommandContext = createContext<{ commands: Commands; overrides: Record<string, string[]>; mac: boolean } | null>(null);
@@ -73,10 +78,12 @@ export function useCommands(commands: Commands, overrides: Record<string, string
          keyboardFocus = false;
       };
       const execute = (id: string) => {
-         if (!isCommandId(id) || latest.current.blocked) return;
+         // The dialog's open attribute clears the moment a panel dismisses, even though its
+         // exit fade still renders, so shortcuts work again immediately.
+         if (!isCommandId(id) || latest.current.blocked || document.querySelector("dialog[open]")) return;
          const command = latest.current.commands[id];
          if (command.enabled()) {
-            const feedbackId = id === "toggleClip" ? (latest.current.commands.delete.enabled() ? "delete" : "add") : id;
+            const feedbackId = command.feedback?.() ?? id;
             document.querySelectorAll<HTMLElement>(`[data-command="${feedbackId}"]`).forEach((button) => {
                button.classList.remove("shortcut-active");
                void button.offsetWidth;
@@ -91,6 +98,7 @@ export function useCommands(commands: Commands, overrides: Record<string, string
          const target = event.target;
          if (
             latest.current.blocked ||
+            document.querySelector("dialog[open]") ||
             event.isComposing ||
             (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable=true]"))
          )

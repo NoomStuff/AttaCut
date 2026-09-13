@@ -76,7 +76,9 @@ body,
    width: 100%;
    height: 100%;
    margin: 0;
-   overflow: hidden;
+   /* clip, unlike hidden, forbids programmatic scrolling: tooltips and menus poke past the
+      window edge, and a scroll-into-view would otherwise pan the whole fixed-layout app. */
+   overflow: clip;
 }
 body {
    background: var(--background);
@@ -121,23 +123,29 @@ button.pressing::after {
    background: currentColor;
    translate: -50% -50%;
    scale: 0;
-   opacity: 0;
+   opacity: 0.2;
    animation: press-ripple 180ms ease-out forwards;
    pointer-events: none;
+}
+button.pressing.releasing::after {
+   animation:
+      press-ripple 180ms ease-out forwards,
+      press-release 180ms ease-out forwards;
 }
 @keyframes press-ripple {
    from {
       scale: 0;
-      opacity: 0.2;
-   }
-   45% {
-      opacity: 0.12;
    }
    to {
       scale: 1;
+   }
+}
+@keyframes press-release {
+   to {
       opacity: 0;
    }
 }
+
 input,
 select {
    color: var(--text);

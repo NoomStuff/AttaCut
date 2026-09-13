@@ -9,6 +9,7 @@ import type { PlaybackClock } from "../playback/clock";
 import { useClock } from "../playback/clock";
 import { clamp, formatTime } from "../../../shared/time";
 import { snapBoundary, adjacentKeyframe } from "../editor/navigation";
+import type { SnapBounds } from "../editor/navigation";
 import { IconButton } from "./Controls";
 import { pointerSmoothingMs, useSmoothValue } from "../lib/motion";
 import { faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
@@ -38,9 +39,10 @@ interface TimelineProps {
    zoomRequest: { id: number; direction: number };
    keyframes: number[];
    snapping: boolean;
+   playing: boolean;
    onSelect: (id: string) => void;
    onCommit: (document: EditDocument) => void;
-   onSeek: (time: number) => void;
+   onSeek: (time: number, preservePriority?: boolean) => void;
    onZoom: (percent: number) => void;
    onTrimming: (active: boolean) => void;
 }
@@ -60,6 +62,7 @@ export function Timeline({
    zoomRequest,
    keyframes,
    snapping,
+   playing,
    onSelect,
    onCommit,
    onSeek,
@@ -108,9 +111,12 @@ export function Timeline({
    const dragging = drag.current;
    const pointerDriven = scrubbing.current !== null || dragging !== null;
    const dragBoundary = dragging ? visible.clips.find((clip) => clip.id === dragging.id)![dragging.side] : time;
-   // Share one follower so the dragged edge and playhead cannot drift apart.
+   // Share one follower so the dragged edge and playhead cannot drift apart. While playback
+   // runs, the drawn time snaps straight to the clock: the picture jumps on a seek, and a
+   // gliding playhead would land after the content it points at.
    const drawTime = useSmoothValue(dragBoundary, {
       ...(pointerDriven ? { follow: pointerSmoothingMs } : { duration: 170, jump: 0.24 }),
+      snap: () => playing,
       key: dragging ? "drag:" + dragging.id + ":" + dragging.side : (scrubbing.current ?? "idle"),
    });
    const drawEdge = drawTime;
@@ -156,12 +162,12 @@ export function Timeline({
       const wheel = (event: WheelEvent) => {
          event.preventDefault();
          const { view: current, duration: total } = latest.current;
-         if (event.altKey || event.shiftKey)
+         if (event.altKey || event.shiftKey) {
             setView({
                ...current,
                start: clamp(current.start + ((event.deltaY + event.deltaX) * current.length) / 900, 0, total - current.length),
             });
-         else {
+         } else {
             const rect = element.getBoundingClientRect();
             const fraction = clamp((event.clientX - rect.left) / rect.width, 0, 1);
             if (event.deltaY === 0) return;
@@ -194,18 +200,31 @@ export function Timeline({
       return clamp(latestDrawn.current.start + ((clientX - rect.left) / rect.width) * latestDrawn.current.length, 0, duration);
    };
    const x = (point: number) => `${((point - drawn.start) / drawn.length) * 100}%`;
-   /** Keep handles usable at this zoom without expanding already shorter clips. */
+   /** Longest floor a clip must keep at this zoom without expanding already shorter clips. */
+   const clipFloor = (id: string, source: EditDocument) => {
+      const clip = source.clips.find((item) => item.id === id);
+      if (!clip) return 0;
+      return Math.min(clip.end - clip.start, minClipLength(drawn.length, frameStep));
+   };
+   /** Keep handles usable at this zoom: the boundary may not cross the length floor. */
    const enforceMinLength = (id: string, side: "start" | "end", value: number, source: EditDocument) => {
       const clip = source.clips.find((item) => item.id === id);
       if (!clip) return value;
-      const floor = Math.min(clip.end - clip.start, minClipLength(drawn.length, frameStep));
+      const floor = clipFloor(id, source);
       return side === "start" ? Math.min(value, clip.end - floor) : Math.max(value, clip.start + floor);
+   };
+   /** Snap candidates restricted to the length floor, so a snapped boundary never gets pushed off its keyframe. */
+   const clipSnapBounds = (id: string, side: "start" | "end", source: EditDocument): SnapBounds => {
+      const clip = source.clips.find((item) => item.id === id);
+      if (!clip) return {};
+      const floor = clipFloor(id, source);
+      return side === "start" ? { high: clip.end - floor } : { low: clip.start + floor };
    };
    const startDrag = (event: ReactPointerEvent<HTMLButtonElement>, id: string, side: "start" | "end") => {
       if (event.button !== 0) return;
       event.stopPropagation();
       event.preventDefault();
-      event.currentTarget.focus({ preventScroll: true });
+      if (globalThis.document.activeElement instanceof HTMLElement) globalThis.document.activeElement.blur();
       drag.current = { pointerId: event.pointerId, original: document, id, side, target: event.currentTarget };
       event.currentTarget.setPointerCapture(event.pointerId);
       // Report before seeking: the drag pins the playhead onto the boundary being edited.
@@ -214,16 +233,39 @@ export function Timeline({
       const clip = document.clips.find((item) => item.id === id)!;
       onSeek(clip[side]);
    };
-   const moveDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+   const applyDrag = (clientX: number) => {
       const current = drag.current;
-      if (!current || current.pointerId !== event.pointerId) return;
-      let value = pointAt(event.clientX);
-      if (snapping) value = snapBoundary(current.original, current.id, current.side, value, keyframes, duration);
+      if (!current) return;
+      let value = pointAt(clientX);
+      if (snapping)
+         value = snapBoundary(
+            current.original,
+            current.id,
+            current.side,
+            value,
+            keyframes,
+            duration,
+            clipSnapBounds(current.id, current.side, current.original)
+         );
       value = enforceMinLength(current.id, current.side, value, current.original);
       const next = trimClip(current.original, current.id, current.side, value, duration);
       draftRef.current = next;
       setDraft(next);
       onSeek(next.clips.find((clip) => clip.id === current.id)![current.side]);
+   };
+   const applyPan = (clientX: number) => {
+      const active = panning.current;
+      if (!active) return;
+      const width = viewportWidth || viewport.current!.getBoundingClientRect().width;
+      setView({
+         length: active.length,
+         start: clamp(active.start - ((clientX - active.x) * active.length) / width, 0, duration - active.length),
+      });
+   };
+   const moveDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+      const current = drag.current;
+      if (!current || current.pointerId !== event.pointerId) return;
+      applyDrag(event.clientX);
    };
    const endDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
       if (drag.current?.pointerId !== event.pointerId) return;
@@ -271,11 +313,7 @@ export function Timeline({
             onPointerMove={(event) => {
                const pan = panning.current;
                if (pan?.pointerId === event.pointerId) {
-                  const width = event.currentTarget.getBoundingClientRect().width;
-                  setView({
-                     length: pan.length,
-                     start: clamp(pan.start - ((event.clientX - pan.x) * pan.length) / width, 0, duration - pan.length),
-                  });
+                  applyPan(event.clientX);
                   return;
                }
                if (pressScrub.current === event.pointerId) {
@@ -289,12 +327,15 @@ export function Timeline({
                if (event.button === 1) {
                   setPanActive(true);
                   event.preventDefault();
-                  panning.current = { pointerId: event.pointerId, x: event.clientX, start: drawn.start, length: drawn.length };
+                  // Anchor the pan to the drawn (visual) frame, but pin the target length:
+                  // capturing the smoothed length would freeze a mid-tween zoom level.
+                  panning.current = { pointerId: event.pointerId, x: event.clientX, start: drawn.start, length: view.length };
                   event.currentTarget.setPointerCapture(event.pointerId);
                   return;
                }
                if (event.button !== 0) return;
                event.preventDefault();
+               if (globalThis.document.activeElement instanceof HTMLElement) globalThis.document.activeElement.blur();
                pressScrub.current = event.pointerId;
                event.currentTarget.setPointerCapture(event.pointerId);
                onSeek(pointAt(event.clientX));
@@ -399,12 +440,6 @@ export function Timeline({
                               "--clip-color": clipColor(clip.color),
                            } as CSSProperties
                         }
-                        onPointerDown={(event) => {
-                           if (event.button !== 0) return;
-                           onSelect(clip.id);
-                           // Seek into the clicked clip, matching a click on bare timeline.
-                           onSeek(clamp(pointAt(event.clientX), clip.start, clip.end));
-                        }}
                      >
                         <span className="clip-number" aria-hidden="true">
                            {String(index + 1).padStart(2, "0")}
@@ -438,11 +473,11 @@ export function Timeline({
                                     event.stopPropagation();
                                     const direction = event.key === "ArrowLeft" ? -1 : 1;
                                     const target = snapping
-                                       ? adjacentKeyframe(clip[side], direction, keyframes, duration)
+                                       ? adjacentKeyframe(clip[side], direction, keyframes, duration, clipSnapBounds(clip.id, side, document))
                                        : clip[side] + direction * (event.shiftKey ? 1 : frameStep);
                                     const next = trimClip(document, clip.id, side, enforceMinLength(clip.id, side, target, document), duration);
                                     onCommit(next);
-                                    onSeek(next.clips.find((item) => item.id === clip.id)![side]);
+                                    onSeek(next.clips.find((item) => item.id === clip.id)![side], true);
                                  }
                               }}
                            >

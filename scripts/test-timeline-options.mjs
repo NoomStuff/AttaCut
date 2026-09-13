@@ -1,10 +1,18 @@
+/* global window, KeyboardEvent */
 import { _electron as electron, expect } from "@playwright/test";
 import { mkdtemp } from "node:fs/promises";
 import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+// Prefer the packaged binary when it has been bundled; fall back to PATH for dev runs.
+const ffmpeg =
+   process.env.FFMPEG_PATH ??
+   (existsSync(resolve("resources/media", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"))
+      ? resolve("resources/media", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg")
+      : "ffmpeg");
 const profile = await mkdtemp(resolve("work/timeline-options-"));
 for (const audio of [true, false]) {
-   execFileSync(resolve("resources/media/ffmpeg.exe"), [
+   execFileSync(ffmpeg, [
       "-v",
       "error",
       "-i",
@@ -62,6 +70,7 @@ try {
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await seek(6);
    expect(await video.evaluate((video) => video.paused)).toBe(false);
+   await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", bubbles: true })));
    await page.keyboard.press("s");
    await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toBeVisible();
    expect(await video.evaluate((video) => video.paused)).toBe(false);
@@ -97,10 +106,10 @@ try {
    await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("125%");
    expect(await video.evaluate((video) => video.currentTime)).toBe(cursor);
    await page.getByRole("button", { name: "Pan timeline right", exact: true }).click();
-   expect(Number(await page.locator(".timeline-edge.left").evaluate((el) => el.style.opacity))).toBeGreaterThan(0);
+   expect(Number(await page.locator(".timeline-pan-arrow.left").evaluate((el) => el.style.opacity))).toBeGreaterThan(0);
    while (await page.getByRole("button", { name: "Pan timeline right", exact: true }).isEnabled())
       await page.getByRole("button", { name: "Pan timeline right", exact: true }).click();
-   await expect(page.locator(".timeline-edge.right")).toHaveCSS("opacity", "0");
+   await expect(page.locator(".timeline-pan-arrow.right")).toHaveCSS("opacity", "0");
    await page.screenshot({ path: "work/screenshots/v051-timeline.png" });
    await page.getByRole("button", { name: "Fit timeline", exact: true }).click();
    await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("100%");

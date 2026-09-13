@@ -54,6 +54,7 @@ export const preferencesSchema = z.object({
    outputDirectory: z.string().default(""),
    keptOnly: z.boolean().default(false),
    keepPlaying: z.boolean().default(false),
+   audioScrub: z.boolean().default(false),
    volume: z.number().min(0).max(1).default(0.7),
    shortcuts: z.record(z.string(), z.array(z.string())).default({}),
    exportMode: z.enum(["separate", "combined"]).default("separate"),
@@ -141,6 +142,11 @@ export interface PreviewProgress {
    progress: number;
    running: boolean;
 }
+/** Mono 16-bit PCM used for scrub bursts; null when the source is too large to keep. */
+export interface ScrubAudio {
+   sampleRate: number;
+   pcm: ArrayBuffer;
+}
 export interface DesktopApi {
    bootstrap(): Promise<Bootstrap>;
    chooseSource(): Promise<string | null>;
@@ -153,6 +159,7 @@ export interface DesktopApi {
    preparePreview(sourceId: string, audioIndex: number | null, transcode: boolean): Promise<string>;
    cancelPreview(): Promise<void>;
    keyframes(sourceId: string): Promise<number[]>;
+   scrubAudio(sourceId: string, streamIndex: number): Promise<ScrubAudio | null>;
    exportFrame(request: FrameRequest): Promise<string>;
    planExport(request: PlanRequest): Promise<ExportPlan>;
    startExport(planId: string): Promise<ExportJob>;

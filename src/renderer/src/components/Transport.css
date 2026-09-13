@@ -84,7 +84,7 @@
 .play-button svg {
    font-size: 16px;
 }
-.play-button.playing {
+.play-button[data-playing] {
    color: var(--accent);
 }
 .volume-controls {

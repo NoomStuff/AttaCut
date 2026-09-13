@@ -1,15 +1,26 @@
 {
    "name": "attacut",
-   "version": "0.5.5",
+   "version": "0.6.0",
    "description": "Cut your clips, move on.",
    "private": false,
    "type": "module",
    "main": "out/main/index.js",
    "author": "NoomStuff",
    "scripts": {
-      "dev": "electron-vite dev",
-      "build": "bun run typecheck && electron-vite build",
+      "dev": "bun run build:icons && electron-vite dev",
+      "build": "bun run build:icons && bun run typecheck && electron-vite build",
+      "build:icons": "bun scripts/build-icons.ts",
       "typecheck": "tsc --noEmit",
+      "lint": "eslint . --max-warnings 0",
+      "format": "prettier --write .",
+      "format:check": "prettier --check .",
+      "verify": "bun run format:check && bun run lint && bun run test && bun run build",
+      "bundle:media": "bun scripts/bundle-media.ts",
+      "package": "bun scripts/package-app.ts package",
+      "dist": "bun scripts/package-app.ts dist",
+      "dist:win": "bun scripts/package-app.ts dist win32",
+      "dist:mac": "bun scripts/package-app.ts dist darwin",
+      "dist:linux": "bun scripts/package-app.ts dist linux",
       "test": "vitest run",
       "test:fixtures": "bun scripts/create-fixtures.ts",
       "test:media": "bun scripts/test-media.ts",
@@ -23,19 +34,12 @@
       "test:exports": "bun scripts/test-export-options.ts",
       "test:workflow": "node scripts/test-workflow.mjs",
       "test:interactions": "node scripts/test-interactions.mjs",
+      "test:shortcuts": "node scripts/test-shortcuts.mjs",
       "test:motion": "node scripts/test-rapid-drag.mjs",
       "test:polish": "node scripts/test-polish.mjs",
       "test:ui": "node scripts/test-ui.mjs",
-      "lint": "eslint . --max-warnings 0",
-      "format": "prettier --write .",
-      "format:check": "prettier --check .",
-      "verify": "bun run format:check && bun run lint && bun run test && bun run build",
-      "bundle:media": "bun scripts/bundle-media.ts",
-      "package": "bun scripts/package-app.ts package",
-      "dist": "bun scripts/package-app.ts dist",
-      "dist:win": "bun scripts/package-app.ts dist win32",
-      "dist:mac": "bun scripts/package-app.ts dist darwin",
-      "dist:linux": "bun scripts/package-app.ts dist linux"
+      "test:regressions": "node scripts/test-regressions.mjs",
+      "test:clip-priority": "node scripts/test-clip-priority.mjs"
    },
    "build": {
       "appId": "dev.attacut.app",
@@ -49,6 +53,14 @@
          "package.json"
       ],
       "extraResources": [
+         {
+            "from": "build",
+            "to": "icons",
+            "filter": [
+               "icon.ico",
+               "icon.png"
+            ]
+         },
          {
             "from": "resources/media",
             "to": "media"

@@ -1,12 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
 import { join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { z } from "zod";
 import { preferencesSchema, planRequestSchema, savedSessionSchema, frameRequestSchema } from "../shared/types.ts";
 import { probeSource, sourceKeyframes } from "./media/probe.ts";
+import { extractScrubPcm } from "./media/scrub-audio.ts";
 import { exportFrame } from "./media/frame.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import { preparePreview } from "./media/preview.ts";
@@ -16,16 +18,29 @@ import { serveMedia } from "./media/serve.ts";
 import { videoExtensions } from "./media/formats.ts";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
-// Dev runs from out/main, so the unpackaged icons live two levels up; packaged builds
-// embed the exe/bundle icon and need no window icon.
+// Use the same assets for native windows and Windows shell entries in every build.
 function windowIcon(): string | undefined {
    if (process.platform === "darwin") return undefined;
    const name = process.platform === "win32" ? "icon.ico" : "icon.png";
-   const icon = resolve(currentDirectory, "../../build", name);
+   const icon = app.isPackaged ? join(process.resourcesPath, "icons", name) : resolve(currentDirectory, "../../build", name);
    return existsSync(icon) ? icon : undefined;
 }
 app.setName("AttaCut");
-if (process.platform === "win32") app.setAppUserModelId("dev.attacut.app");
+if (process.platform === "win32") {
+   // Taskbar and notification surfaces resolve a raw AUMID's label from this registry key;
+   // without it they fall back to the executable description, which reads "Electron" for
+   // dev runs and portable builds that install no Start Menu shortcut.
+   const modelId = "dev.attacut.app";
+   app.setAppUserModelId(modelId);
+   const reg = (path: string, value: string, data: string) =>
+      spawnSync("reg", ["add", path, "/v", value, "/t", "REG_SZ", "/d", data, "/f"], { windowsHide: true, stdio: "ignore" });
+   reg(`HKCU\\Software\\Classes\\AppUserModelId\\${modelId}`, "DisplayName", "AttaCut");
+   const icon = windowIcon();
+   if (icon) reg(`HKCU\\Software\\Classes\\AppUserModelId\\${modelId}`, "IconUri", icon);
+   // A window with no shortcut carrying its AUMID is named after the executable's cached
+   // friendly name, which stays "Electron" for the dev electron.exe until relabeled here.
+   reg("HKCU\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\Shell\\MuiCache", `${process.execPath}.FriendlyAppName`, "AttaCut");
+}
 app.commandLine.appendSwitch("enable-blink-features", "AudioVideoTracks");
 protocol.registerSchemesAsPrivileged([
    { scheme: "media", privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
@@ -38,6 +53,7 @@ async function start(): Promise<void> {
    const sources = new Map<string, ProbedSource>();
    const mediaPaths = new Map<string, string>();
    const keyframes = new Map<string, number[]>();
+   const scrubAudio = new Map<string, Promise<{ sampleRate: number; pcm: ArrayBuffer } | null>>();
    const frameOutputs = new Set<string>();
    const exportsService = new ExportService((job) => {
       if (!window.isDestroyed()) window.webContents.send("export:progress", job);
@@ -141,6 +157,15 @@ async function start(): Promise<void> {
          nodeIntegration: false,
       },
    });
+   if (process.platform === "win32" && icon) {
+      window.setAppDetails({
+         appId: "dev.attacut.app",
+         appIconPath: icon,
+         appIconIndex: 0,
+         relaunchDisplayName: "AttaCut",
+         relaunchCommand: app.isPackaged ? `"${process.execPath}"` : `"${process.execPath}" "${app.getAppPath()}"`,
+      });
+   }
    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
    window.webContents.on("will-navigate", (event) => event.preventDefault());
    window.once("ready-to-show", () => {
@@ -221,6 +246,19 @@ async function start(): Promise<void> {
       const points = await sourceKeyframes(source, sourceController?.signal);
       keyframes.set(source.id, points);
       return points;
+   });
+   handle("audio:scrub", async (value) => {
+      const { sourceId, streamIndex } = z.object({ sourceId: z.string(), streamIndex: z.number().int() }).parse(value);
+      const source = getSource(sourceId);
+      const key = `${source.id}:${streamIndex}`;
+      const cached = scrubAudio.get(key);
+      if (cached) return cached;
+      const extraction = extractScrubPcm(source, streamIndex).catch((error: unknown) => {
+         scrubAudio.delete(key);
+         throw error;
+      });
+      scrubAudio.set(key, extraction);
+      return extraction;
    });
    handle("frame:export", async (value) => {
       const request = frameRequestSchema.parse(value);

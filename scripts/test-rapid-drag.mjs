@@ -69,22 +69,30 @@ try {
          { side, selector }
       );
       await page.mouse.up();
-      // Release while still moving, then ensure the committed edge and playhead agree.
+      // Release while still moving, then ensure the committed state landed on the target and
+      // the drawn edge agrees. The clock is the contract; the drawn playhead eases behind it.
       await page.waitForTimeout(120);
       const settled = await page.evaluate((side) => {
          const view = document.querySelector(".timeline-viewport").getBoundingClientRect();
          const rect = document.querySelector(side === "scrub" ? ".playhead" : ".clip-range").getBoundingClientRect();
          const pixel = side === "scrub" ? rect.x + rect.width / 2 : side === "start" ? rect.x : rect.right;
          const ph = document.querySelector(".playhead").getBoundingClientRect();
-         return { drawn: (pixel - view.x) / view.width, alignment: Math.abs(pixel - ph.x - ph.width / 2) };
+         const [minutes, seconds] = document.querySelector(".timeline-time time").textContent.split(":");
+         return {
+            drawn: (pixel - view.x) / view.width,
+            clock: Number(minutes) * 60 + Number(seconds),
+            alignment: Math.abs(pixel - ph.x - ph.width / 2),
+         };
       }, side);
       const moving = samples.filter((s) => s.ms > 50 && s.ms < 480);
       const lag = Math.max(...moving.map((s) => Math.abs(s.wanted - s.drawn)));
+      const target = samples.at(-1).wanted * 18;
+      const clockError = Math.abs(target - settled.clock);
       console.log(
-         `${side}: maximum lag ${(100 * lag).toFixed(1)}% of timeline, settled error ${(100 * Math.abs(samples.at(-1).wanted - settled.drawn)).toFixed(2)}%`
+         `${side}: maximum lag ${(100 * lag).toFixed(1)}% of timeline, settled clock error ${clockError.toFixed(2)}s, drawn error ${(100 * Math.abs(samples.at(-1).wanted - settled.drawn)).toFixed(2)}%`
       );
       assert(lag < 0.12, `${side} falls behind rapid input: ${(lag * 100).toFixed(1)}%`);
-      assert(Math.abs(samples.at(-1).wanted - settled.drawn) < 0.005, `${side} did not settle`);
+      assert(clockError < 0.15, `${side} did not settle on the released time`);
       assert(settled.alignment < 1, `${side} detached from playhead on release`);
       assert(
          samples.every((s) => s.alignment < 1),

@@ -101,10 +101,12 @@ export function deleteClip(document: EditDocument): EditDocument {
    return { clips, selectedId: clips[index]?.id ?? clips[index - 1]?.id ?? null };
 }
 export function gapAt(document: EditDocument, time: number, duration: number): { start: number; end: number } | null {
-   if (document.clips.some((clip) => time >= clip.start && time < clip.end)) return null;
-   const start = document.clips.filter((clip) => clip.end <= time).at(-1)?.end ?? 0;
-   const end = document.clips.find((clip) => clip.start > time)?.start ?? duration;
-   return end - start > timeEpsilon ? { start, end } : null;
+   let start = 0;
+   for (const clip of document.clips) {
+      if (clip.start - start > timeEpsilon && time >= start - timeEpsilon && time <= clip.start + timeEpsilon) return { start, end: clip.start };
+      start = clip.end;
+   }
+   return duration - start > timeEpsilon && time >= start - timeEpsilon && time <= duration + timeEpsilon ? { start, end: duration } : null;
 }
 export function addGap(document: EditDocument, time: number, duration: number): EditDocument {
    const gap = gapAt(document, time, duration);
@@ -136,4 +138,26 @@ export function mergeClips(document: EditDocument, index: number): EditDocument 
 }
 export function clipAt(document: EditDocument, time: number) {
    return document.clips.find((clip) => time >= clip.start && time < clip.end) ?? document.clips.find((clip) => Math.abs(time - clip.end) <= timeEpsilon);
+}
+
+/** Interaction memory is independent of selection and survives deletion until the next move/edit. */
+export class ClipPriority {
+   private last: Clip | undefined;
+   remember(clip: Clip | undefined): void {
+      this.last = clip;
+   }
+   resolve(document: EditDocument, time: number, includeDeleted = true): Clip | undefined {
+      const contains = (clip: Clip) => time >= clip.start - timeEpsilon && time <= clip.end + timeEpsilon;
+      const interior = document.clips.find((clip) => time > clip.start + timeEpsilon && time < clip.end - timeEpsilon);
+      if (interior) return interior;
+      const remembered = document.clips.find((clip) => clip.id === this.last?.id) ?? (includeDeleted ? this.last : undefined);
+      if (remembered && contains(remembered)) return remembered;
+      return document.clips.find(contains);
+   }
+   move(document: EditDocument, time: number): void {
+      const candidates = document.clips.filter((clip) => time >= clip.start - timeEpsilon && time <= clip.end + timeEpsilon);
+      // A clear gap starts a fresh interaction. At an edge, preserve the previous choice.
+      if (!candidates.length) this.last = undefined;
+      else this.last = this.resolve(document, time);
+   }
 }

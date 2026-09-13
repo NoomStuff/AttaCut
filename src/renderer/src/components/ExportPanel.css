@@ -128,12 +128,14 @@
    padding: 8px;
    font-size: 12px;
 }
-/* Stable export geometry while switching modes and showing validation failures. */
-.export-modal[open] {
-   display: flex;
+/* Keep the same layout through mode changes, validation, and the exit fade. */
+.export-modal {
    flex-direction: column;
    height: min(620px, calc(100vh - 70px));
    overflow: hidden;
+}
+.export-modal[open] {
+   display: flex;
 }
 .export-modal .modal-body {
    flex: 1;
