@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { MediaSource, Preferences } from "../../../shared/types";
+import type { MediaSource } from "../../../shared/types";
 import type { EditDocument } from "../editor/model";
 import { selectedClip } from "../editor/model";
 import type { PlaybackClock } from "../playback/clock";
@@ -110,8 +110,6 @@ export function Transport({
    clock: PlaybackClock;
    playing: boolean;
    commands: Commands;
-   preferences: Preferences;
-   mac: boolean;
    volume: number;
    muted: boolean;
    onVolume: (value: number, restore: number) => void;

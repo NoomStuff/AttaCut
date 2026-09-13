@@ -1,4 +1,5 @@
 import type { Clip } from "../../../shared/types";
+import { undoLimit } from "../../../shared/types";
 import { clamp } from "../../../shared/time";
 import { distinctClipColors } from "./colors";
 
@@ -12,19 +13,27 @@ export interface EditorState {
    future: EditDocument[];
 }
 export type EditAction =
-   { type: "load"; document: EditDocument } | { type: "select"; id: string } | { type: "commit"; document: EditDocument } | { type: "undo" } | { type: "redo" };
+   | { type: "load"; document: EditDocument; past?: EditDocument[]; future?: EditDocument[] }
+   | { type: "select"; id: string }
+   | { type: "commit"; document: EditDocument }
+   | { type: "undo" }
+   | { type: "redo" };
 export const emptyEditor: EditorState = { document: { clips: [], selectedId: null }, past: [], future: [] };
 export function editorReducer(state: EditorState, action: EditAction): EditorState {
    switch (action.type) {
       case "load":
-         return { document: { ...action.document, clips: distinctClipColors(action.document.clips) }, past: [], future: [] };
+         return {
+            document: { ...action.document, clips: distinctClipColors(action.document.clips) },
+            past: action.past ?? [],
+            future: action.future ?? [],
+         };
       case "select":
          return state.document.clips.some((clip) => clip.id === action.id) ? { ...state, document: { ...state.document, selectedId: action.id } } : state;
       case "commit": {
          if (JSON.stringify(state.document.clips) === JSON.stringify(action.document.clips)) return state;
          return {
             document: { ...action.document, clips: distinctClipColors(action.document.clips) },
-            past: [...state.past.slice(-99), state.document],
+            past: [...state.past, state.document].slice(-undoLimit),
             future: [],
          };
       }

@@ -38,7 +38,7 @@
    font-size: 13px;
 }
 
-.setting-row>div {
+.setting-row > div {
    min-width: 0;
 }
 
@@ -202,7 +202,7 @@
    margin-top: 10px;
 }
 
-.shortcut-editor-actions>p {
+.shortcut-editor-actions > p {
    flex: 1;
    min-width: 0;
    overflow-wrap: anywhere;
@@ -225,7 +225,7 @@
    flex-shrink: 0;
 }
 
-.shortcut-group+.shortcut-group {
+.shortcut-group + .shortcut-group {
    margin-top: 20px;
 }
 

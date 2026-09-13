@@ -1,11 +1,10 @@
 import { faLink, faPlus, faTrash, faScissors, faRotateLeft, faRotateRight, faCamera, faArrowUpFromBracket } from "@fortawesome/free-solid-svg-icons";
-import type { Preferences } from "../../../shared/types";
 import type { PlaybackClock } from "../playback/clock";
 import { useClock } from "../playback/clock";
 import type { Commands } from "../editor/commands";
 import { Button, IconButton } from "./Controls";
 
-export function TopActions({ commands, clock }: { commands: Commands; clock: PlaybackClock; preferences: Preferences; mac: boolean }) {
+export function TopActions({ commands, clock }: { commands: Commands; clock: PlaybackClock }) {
    useClock(clock);
    return (
       <div className="top-actions">

@@ -128,16 +128,9 @@ export function usePressFeedback(): void {
       const usable = (target: EventTarget | null): HTMLButtonElement | null => {
          if (!(target instanceof Element)) return null;
          const button = target.closest("button");
-         // Binding chips and the capture field hold keyboard focus for recording; never ripple or
-         // blur them, or key capture dies on pointerup before the keys arrive.
-         if (
-            !button ||
-            button.disabled ||
-            button.classList.contains("trim-handle") ||
-            button.classList.contains("shortcut-binding") ||
-            button.classList.contains("shortcut-capture")
-         )
-            return null;
+         // Buttons marked data-press-ignore hold keyboard focus or run pointer drags; never
+         // ripple or blur them, or key capture dies on pointerup before the keys arrive.
+         if (!button || button.disabled || button.closest("[data-press-ignore]")) return null;
          return button;
       };
       const navigation = (event: KeyboardEvent) => {

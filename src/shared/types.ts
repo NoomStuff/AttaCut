@@ -55,6 +55,7 @@ export const preferencesSchema = z.object({
    keptOnly: z.boolean().default(false),
    keepPlaying: z.boolean().default(false),
    audioScrub: z.boolean().default(false),
+   snapping: z.boolean().default(false),
    volume: z.number().min(0).max(1).default(0.7),
    shortcuts: z.record(z.string(), z.array(z.string())).default({}),
    exportMode: z.enum(["separate", "combined"]).default("separate"),
@@ -64,21 +65,28 @@ export const preferencesSchema = z.object({
 });
 export type Preferences = z.infer<typeof preferencesSchema>;
 export const defaultPreferences: Preferences = preferencesSchema.parse({});
+/** Deepest undo stack, both in memory and on disk. */
+export const undoLimit = 200;
+const savedDocumentShape = {
+   clips: z.array(clipSchema).max(500),
+   selectedId: z.string().nullable(),
+};
+const savedDocumentInvariant = (document: { clips: Clip[]; selectedId: string | null }): boolean =>
+   new Set(document.clips.map((clip) => clip.id)).size === document.clips.length &&
+   document.clips.every((clip, index) => index === 0 || clip.start >= document.clips[index - 1]!.end) &&
+   (document.selectedId === null || document.clips.some((clip) => clip.id === document.selectedId));
+export const savedDocumentSchema = z.object(savedDocumentShape).refine(savedDocumentInvariant, "Saved clips are inconsistent.");
+export type SavedDocument = z.infer<typeof savedDocumentSchema>;
 export const savedSessionSchema = z
    .object({
       path: z.string(),
       size: z.number(),
       modified: z.number(),
-      clips: z.array(clipSchema).max(500),
-      selectedId: z.string().nullable(),
+      ...savedDocumentShape,
+      past: z.array(savedDocumentSchema).max(undoLimit).default([]),
+      future: z.array(savedDocumentSchema).max(undoLimit).default([]),
    })
-   .refine(
-      (session) =>
-         new Set(session.clips.map((clip) => clip.id)).size === session.clips.length &&
-         session.clips.every((clip, index) => index === 0 || clip.start >= session.clips[index - 1]!.end) &&
-         (session.selectedId === null || session.clips.some((clip) => clip.id === session.selectedId)),
-      "Saved clips are inconsistent."
-   );
+   .refine(savedDocumentInvariant, "Saved clips are inconsistent.");
 export type SavedSession = z.infer<typeof savedSessionSchema>;
 export interface Bootstrap {
    preferences: Preferences;
@@ -146,6 +154,16 @@ export interface PreviewProgress {
 export interface ScrubAudio {
    sampleRate: number;
    pcm: ArrayBuffer;
+}
+
+/** A separate export spanning the whole source keeps the source container; everything else exports to the export container. */
+export function exportExtensionFor(
+   source: Pick<MediaSource, "extension" | "exportExtension" | "duration">,
+   clip: Pick<Clip, "start" | "end">,
+   options: { separate: boolean; muteAudio: boolean }
+): string {
+   const fullRange = clip.start === 0 && Math.abs(clip.end - source.duration) < 0.0001;
+   return !options.muteAudio && options.separate && fullRange ? source.extension : source.exportExtension;
 }
 export interface DesktopApi {
    bootstrap(): Promise<Bootstrap>;

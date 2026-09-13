@@ -1,6 +1,6 @@
 {
    "name": "attacut",
-   "version": "0.6.0",
+   "version": "0.6.1",
    "description": "Cut your clips, move on.",
    "private": false,
    "type": "module",

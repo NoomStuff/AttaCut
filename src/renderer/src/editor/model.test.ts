@@ -16,6 +16,7 @@ import {
    trimClip,
 } from "./model";
 import type { EditDocument } from "./model";
+import { undoLimit } from "../../../shared/types";
 const source: EditDocument = { clips: [{ id: "a", start: 0, end: 120, color: 0 }], selectedId: "a" };
 describe("source-time editing", () => {
    it("splits, trims a gap, and undoes the whole edit without moving other clips", () => {
@@ -47,6 +48,26 @@ describe("source-time editing", () => {
       const committed = editorReducer({ ...emptyEditor, document: source }, { type: "commit", document: deleted });
       const undone = editorReducer(committed, { type: "undo" });
       expect(editorReducer(undone, { type: "commit", document: splitClip(source, 50) }).future).toEqual([]);
+   });
+   it("caps the undo history at undoLimit previous states", () => {
+      let state = { ...emptyEditor, document: source };
+      for (let index = 1; index <= undoLimit + 50; index++)
+         state = editorReducer(state, { type: "commit", document: trimClip(source, "a", "end", 120 - index / 10, 120) });
+      expect(state.past.length).toBe(undoLimit);
+      expect(state.past[0]!.clips[0]!.end).toBeCloseTo(115);
+      expect(state.past.at(-1)!.clips[0]!.end).toBeCloseTo(95.1);
+      const undone = editorReducer(state, { type: "undo" });
+      expect(undone.document.clips[0]!.end).toBeCloseTo(95.1);
+      expect(undone.future[0]!.clips[0]!.end).toBeCloseTo(95);
+   });
+   it("restores undo and redo history with a loaded document", () => {
+      const past = [{ clips: [], selectedId: null }];
+      const future = [source];
+      const loaded = editorReducer(emptyEditor, { type: "load", document: source, past, future });
+      expect(loaded.past).toEqual(past);
+      expect(loaded.future).toEqual(future);
+      expect(editorReducer(loaded, { type: "undo" }).document).toEqual(past[0]);
+      expect(editorReducer(editorReducer(loaded, { type: "undo" }), { type: "redo" }).document).toEqual(loaded.document);
    });
 });
 describe("playhead inclusion", () => {

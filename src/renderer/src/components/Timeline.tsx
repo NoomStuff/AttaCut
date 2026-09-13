@@ -4,12 +4,11 @@ import type { EditDocument } from "../editor/model";
 import type { Clip } from "../../../shared/types";
 import { clipChanges } from "../editor/clipChanges";
 import { clipColor } from "../editor/colors";
-import { minClipLength, trimClip } from "../editor/model";
+import { trimClip } from "../editor/model";
 import type { PlaybackClock } from "../playback/clock";
 import { useClock } from "../playback/clock";
 import { clamp, formatTime } from "../../../shared/time";
-import { snapBoundary, adjacentKeyframe } from "../editor/navigation";
-import type { SnapBounds } from "../editor/navigation";
+import { adjacentKeyframe, clipFloor, resolveBoundary } from "../editor/navigation";
 import { IconButton } from "./Controls";
 import { pointerSmoothingMs, useSmoothValue } from "../lib/motion";
 import { faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
@@ -43,7 +42,7 @@ interface TimelineProps {
    onSelect: (id: string) => void;
    onCommit: (document: EditDocument) => void;
    onSeek: (time: number, preservePriority?: boolean) => void;
-   onZoom: (percent: number) => void;
+   onZoom: (percent: number, viewportWidth: number) => void;
    onTrimming: (active: boolean) => void;
 }
 interface Drag {
@@ -143,7 +142,7 @@ export function Timeline({
       });
    }, [keyframes, drawn.start, drawn.length]);
    latest.current = { view, duration };
-   useEffect(() => onZoom((100 * duration) / view.length), [duration, view.length, onZoom]);
+   useEffect(() => onZoom((100 * duration) / view.length, viewportWidth), [duration, view.length, viewportWidth, onZoom]);
    useEffect(() => {
       setView({ start: 0, length: duration });
    }, [duration, fitToken]);
@@ -200,26 +199,6 @@ export function Timeline({
       return clamp(latestDrawn.current.start + ((clientX - rect.left) / rect.width) * latestDrawn.current.length, 0, duration);
    };
    const x = (point: number) => `${((point - drawn.start) / drawn.length) * 100}%`;
-   /** Longest floor a clip must keep at this zoom without expanding already shorter clips. */
-   const clipFloor = (id: string, source: EditDocument) => {
-      const clip = source.clips.find((item) => item.id === id);
-      if (!clip) return 0;
-      return Math.min(clip.end - clip.start, minClipLength(drawn.length, frameStep));
-   };
-   /** Keep handles usable at this zoom: the boundary may not cross the length floor. */
-   const enforceMinLength = (id: string, side: "start" | "end", value: number, source: EditDocument) => {
-      const clip = source.clips.find((item) => item.id === id);
-      if (!clip) return value;
-      const floor = clipFloor(id, source);
-      return side === "start" ? Math.min(value, clip.end - floor) : Math.max(value, clip.start + floor);
-   };
-   /** Snap candidates restricted to the length floor, so a snapped boundary never gets pushed off its keyframe. */
-   const clipSnapBounds = (id: string, side: "start" | "end", source: EditDocument): SnapBounds => {
-      const clip = source.clips.find((item) => item.id === id);
-      if (!clip) return {};
-      const floor = clipFloor(id, source);
-      return side === "start" ? { high: clip.end - floor } : { low: clip.start + floor };
-   };
    const startDrag = (event: ReactPointerEvent<HTMLButtonElement>, id: string, side: "start" | "end") => {
       if (event.button !== 0) return;
       event.stopPropagation();
@@ -236,19 +215,14 @@ export function Timeline({
    const applyDrag = (clientX: number) => {
       const current = drag.current;
       if (!current) return;
-      let value = pointAt(clientX);
-      if (snapping)
-         value = snapBoundary(
-            current.original,
-            current.id,
-            current.side,
-            value,
-            keyframes,
-            duration,
-            clipSnapBounds(current.id, current.side, current.original)
-         );
-      value = enforceMinLength(current.id, current.side, value, current.original);
-      const next = trimClip(current.original, current.id, current.side, value, duration);
+      const time = resolveBoundary(current.original, current.id, current.side, pointAt(clientX), {
+         duration,
+         viewLength: drawn.length,
+         frameStep,
+         snapping,
+         keyframes,
+      });
+      const next = trimClip(current.original, current.id, current.side, time, duration);
       draftRef.current = next;
       setDraft(next);
       onSeek(next.clips.find((clip) => clip.id === current.id)![current.side]);
@@ -467,15 +441,29 @@ export function Timeline({
                               onLostPointerCapture={() => {
                                  if (drag.current) cancel();
                               }}
+                              data-press-ignore
                               onKeyDown={(event) => {
                                  if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && !event.altKey && !event.ctrlKey && !event.metaKey) {
                                     event.preventDefault();
                                     event.stopPropagation();
                                     const direction = event.key === "ArrowLeft" ? -1 : 1;
+                                    const floor = clipFloor(document, clip.id, drawn.length, frameStep);
                                     const target = snapping
-                                       ? adjacentKeyframe(clip[side], direction, keyframes, duration, clipSnapBounds(clip.id, side, document))
+                                       ? adjacentKeyframe(
+                                            clip[side],
+                                            direction,
+                                            keyframes,
+                                            duration,
+                                            side === "start" ? { high: clip.end - floor } : { low: clip.start + floor }
+                                         )
                                        : clip[side] + direction * (event.shiftKey ? 1 : frameStep);
-                                    const next = trimClip(document, clip.id, side, enforceMinLength(clip.id, side, target, document), duration);
+                                    const next = trimClip(
+                                       document,
+                                       clip.id,
+                                       side,
+                                       resolveBoundary(document, clip.id, side, target, { duration, viewLength: drawn.length, frameStep, snapping: false }),
+                                       duration
+                                    );
                                     onCommit(next);
                                     onSeek(next.clips.find((item) => item.id === clip.id)![side], true);
                                  }

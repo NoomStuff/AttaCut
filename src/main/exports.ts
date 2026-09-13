@@ -2,11 +2,10 @@ import { randomUUID } from "node:crypto";
 import { access, constants, stat } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import type { ExportJob, ExportPlan, PlanRequest } from "../shared/types.ts";
+import { exportExtensionFor, planRequestSchema } from "../shared/types.ts";
 import { analyzeCut, exportCut } from "./media/cut.ts";
 import type { CutAnalysis } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
-import { outputExtension } from "./media/formats.ts";
-import { planRequestSchema } from "../shared/types.ts";
 import { exportCombined } from "./media/combine.ts";
 
 interface StoredPlan {
@@ -41,10 +40,7 @@ export class ExportService {
       const analyses = new Map<string, CutAnalysis[]>();
       const items = [];
       for (const item of [...request.items].sort((a, b) => a.clip.start - b.clip.start)) {
-         const extension =
-            !settings.muteAudio && settings.mode === "separate" && item.clip.start === 0 && Math.abs(item.clip.end - source.duration) < 0.0001
-               ? source.extension
-               : outputExtension(source);
+         const extension = exportExtensionFor(source, item.clip, { separate: settings.mode === "separate", muteAudio: settings.muteAudio });
          const stem = sanitizeName(item.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
          let name = `${stem}${extension}`;
          let suffix = 2;
@@ -65,7 +61,7 @@ export class ExportService {
       }
       if (settings.mode === "combined") {
          const cuts = items.flatMap((item) => analyses.get(item.id)!);
-         const extension = outputExtension(source);
+         const extension = source.exportExtension;
          const stem = sanitizeName(settings.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
          let name = `${stem}${extension}`;
          for (let suffix = 2; await exists(join(directoryPath, name)); suffix++) name = `${stem} (${suffix})${extension}`;

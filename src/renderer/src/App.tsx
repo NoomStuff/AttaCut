@@ -2,7 +2,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import type { MediaSource, ExportJob, SavedSession, Preferences } from "../../shared/types";
 import { defaultPreferences } from "../../shared/types";
 import { clamp } from "../../shared/time";
-import { adjacentBoundary, snapBoundary } from "./editor/navigation";
+import { adjacentBoundary, resolveBoundary } from "./editor/navigation";
 import { selectNativeAudio } from "./playback/audio";
 import { PlaybackSeeker } from "./playback/seeker";
 import { AudioScrubber } from "./playback/scrubber";
@@ -105,8 +105,11 @@ export default function App() {
    const [fitToken, setFitToken] = useState(0);
    const [zoomRequest, setZoomRequest] = useState({ id: 0, direction: 0 });
    const [zoom, setZoom] = useState(100);
+   // Reported by the Timeline with the zoom percentage; read when merge evaluates, so a
+   // viewport resize between renders still yields a current seam tolerance.
+   const viewportWidth = useRef(0);
    const [keyframes, setKeyframes] = useState<number[]>([]);
-   const [snapping, setSnapping] = useState(false);
+   const snapping = preferences.snapping;
    const [readingKeys, setReadingKeys] = useState(false);
    const [draggingFile, setDraggingFile] = useState(false);
    const [trimAnimating, setTrimAnimating] = useState(false);
@@ -200,6 +203,8 @@ export default function App() {
             modified: source.modified,
             clips: editor.document.clips,
             selectedId: editor.document.selectedId,
+            past: editor.past,
+            future: editor.future,
          });
    };
    const openPath = async (path: string, saved?: SavedSession) => {
@@ -219,7 +224,6 @@ export default function App() {
          setSource(media);
          setPreferences((current) => ({ ...current, outputDirectory: media.directory }));
          setKeyframes([]);
-         setSnapping(false);
          setReadingKeys(false);
          setUrl(media.url);
          remember(undefined);
@@ -231,7 +235,12 @@ export default function App() {
          setPreviewNeedsTranscode(false);
          setPreparing(false);
          setAudioIndex(media.streams.find((stream) => stream.type === "audio")?.index ?? null);
-         dispatch({ type: "load", document: validSaved ? { clips: saved.clips, selectedId: saved.selectedId } : newDocument(media.duration) });
+         dispatch({
+            type: "load",
+            document: validSaved ? { clips: saved.clips, selectedId: saved.selectedId } : newDocument(media.duration),
+            past: validSaved ? saved.past : [],
+            future: validSaved ? saved.future : [],
+         });
          setFitToken((value) => value + 1);
          setZoomRequest((value) => ({ id: value.id + 1, direction: 0 }));
          setRestore(null);
@@ -311,13 +320,15 @@ export default function App() {
                modified: source.modified,
                clips: editor.document.clips,
                selectedId: editor.document.selectedId,
+               past: editor.past,
+               future: editor.future,
             })
             .catch((value: unknown) => setError(errorText(value)));
-   }, [source, editor.document]);
+   }, [source, editor]);
    useEffect(() => {
       if (!menu) return;
       const close = (event: PointerEvent) => {
-         if (!(event.target instanceof Element && event.target.closest(".app-menu"))) setMenu(null);
+         if (!(event.target instanceof Element && event.target.closest("[data-menu]"))) setMenu(null);
       };
       const escape = (event: KeyboardEvent) => {
          if (event.key === "Escape") setMenu(null);
@@ -352,30 +363,14 @@ export default function App() {
    const setBoundary = (side: "start" | "end", value: number, target = clip) => {
       const clip = target;
       if (source && clip) {
-         const frameStep = (() => {
-            const rate = source.streams.find((stream) => stream.type === "video")?.frameRate;
-            return rate ? 1 / rate : 0.01;
-         })();
-         const floor = Math.min(clip.end - clip.start, minClipLength((source.duration * 100) / Math.max(1, zoom), frameStep));
-         const bounded = side === "start" ? Math.min(value, clip.end - floor) : Math.max(value, clip.start + floor);
-         const next = trimClip(
-            editor.document,
-            clip.id,
-            side,
-            snapping
-               ? snapBoundary(
-                    editor.document,
-                    clip.id,
-                    side,
-                    bounded,
-                    keyframes,
-                    source.duration,
-                    side === "start" ? { high: clip.end - floor } : { low: clip.start + floor }
-                 )
-               : bounded,
-            source.duration,
-            floor
-         );
+         const time = resolveBoundary(editor.document, clip.id, side, value, {
+            duration: source.duration,
+            viewLength: (source.duration * 100) / Math.max(1, zoom),
+            frameStep,
+            snapping,
+            keyframes,
+         });
+         const next = trimClip(editor.document, clip.id, side, time, source.duration);
          const actual = next.clips.find((item) => item.id === clip.id)![side];
          if (actual === clip[side]) return actual;
          animateTrim();
@@ -405,10 +400,8 @@ export default function App() {
          editor.document,
          clock.get(),
          frameStep,
-         Math.max(
-            frameStep,
-            (((source!.duration * 100) / Math.max(1, zoom)) * 12) / Math.max(1, document.querySelector(".timeline-viewport")?.clientWidth ?? 1)
-         )
+         // A seam joins when the playhead is within ~12px of it at the current zoom.
+         Math.max(frameStep, (((source!.duration * 100) / Math.max(1, zoom)) * 12) / Math.max(1, viewportWidth.current))
       );
    const commands: Commands = {
       frameBack: { enabled: available, run: () => stepFrame(-1) },
@@ -420,7 +413,7 @@ export default function App() {
             if (preferences.volume === 0) setPreferences({ ...preferences, volume: 0.7 });
          },
       },
-      snap: { enabled: () => available() && !readingKeys, run: () => setSnapping((value) => !value) },
+      snap: { enabled: () => available() && !readingKeys, run: () => setPreferences((current) => ({ ...current, snapping: !current.snapping })) },
       merge: {
          enabled: () => available() && joinAtPlayhead() >= 0,
          run: () => commit(mergeClips(editor.document, joinAtPlayhead())),
@@ -617,7 +610,7 @@ export default function App() {
             <header className="toolbar">
                <nav aria-label="Application menu">
                   {Object.entries(menuItems).map(([name, ids]) => (
-                     <div className="app-menu" key={name}>
+                     <div className="app-menu" key={name} data-menu>
                         <button
                            className={menu === name ? "active" : ""}
                            aria-haspopup="menu"
@@ -637,7 +630,7 @@ export default function App() {
                      </div>
                   ))}
                </nav>
-               <TopActions commands={commands} clock={clock} preferences={preferences} mac={mac} />
+               <TopActions commands={commands} clock={clock} />
             </header>
             {errorPresence.mounted && errorPresence.value && (
                <div className={`error-wrap${errorPresence.closing ? " closing" : ""}`}>
@@ -705,7 +698,10 @@ export default function App() {
                            clock={clock}
                            fitToken={fitToken}
                            zoomRequest={zoomRequest}
-                           onZoom={setZoom}
+                           onZoom={(percent, width) => {
+                              setZoom(percent);
+                              viewportWidth.current = width;
+                           }}
                            keyframes={keyframes}
                            snapping={snapping}
                            playing={playing}
@@ -720,8 +716,6 @@ export default function App() {
                            clock={clock}
                            playing={playing}
                            commands={commands}
-                           preferences={preferences}
-                           mac={mac}
                            volume={preferences.volume}
                            muted={muted}
                            audioIndex={audioIndex}

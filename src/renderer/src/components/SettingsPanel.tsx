@@ -170,6 +170,7 @@ export function SettingsPanel({
                                              <span className="shortcut-chip" key={binding}>
                                                 <button
                                                    className="shortcut-binding"
+                                                   data-press-ignore
                                                    aria-label={`Change ${displayBinding(binding, mac)} for ${commandDefinitions[id].label}`}
                                                    onClick={() => editBinding(id, index)}
                                                 >
@@ -202,6 +203,7 @@ export function SettingsPanel({
                                        <div className="shortcut-editor" key={`${id}-${recording.index}`}>
                                           <button
                                              className="shortcut-capture"
+                                             data-press-ignore
                                              ref={(element) => {
                                                 element?.focus();
                                              }}

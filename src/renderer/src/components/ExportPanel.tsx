@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Clip, ExportJob, MediaSource, Preferences } from "../../../shared/types";
+import { exportExtensionFor } from "../../../shared/types";
 import { formatTime } from "../../../shared/time";
 import { faArrowUpFromBracket, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
 import { Button, Modal, Toggle } from "./Controls";
@@ -113,10 +114,7 @@ export function ExportPanel({
                   <span>Duration</span>
                </div>
                {rows.map((row, index) => {
-                  const extension =
-                     !muteAudio && mode === "separate" && row.clip.start === 0 && Math.abs(row.clip.end - source.duration) < 0.0001
-                        ? source.extension
-                        : source.exportExtension;
+                  const extension = exportExtensionFor(source, row.clip, { separate: mode === "separate", muteAudio });
                   return (
                      <div key={row.clip.id} className="export-clip-entry">
                         <div className="export-row">
