@@ -1,0 +1,57 @@
+.help-modal {
+   overflow: hidden;
+}
+
+/* The body scrolls instead of the dialog, so switching tabs can reset the scroll. */
+.help-modal .modal-body {
+   overflow-y: auto;
+   max-height: calc(100vh - 195px);
+}
+
+.help-body {
+   max-width: 580px;
+   font-size: 13px;
+   line-height: 1.6;
+}
+
+.help-body p {
+   margin: 0 0 13px;
+}
+
+.help-body h3 {
+   margin: 20px 0 9px;
+   color: var(--muted);
+   font-size: 11px;
+   font-weight: 600;
+   letter-spacing: 0.04em;
+}
+
+.help-body ol,
+.help-body ul {
+   margin: 0 0 13px;
+   padding-left: 20px;
+}
+
+.help-body li {
+   margin-bottom: 7px;
+   line-height: 1.55;
+}
+
+.help-body li::marker {
+   color: var(--faint);
+}
+
+.help-body kbd {
+   display: inline-block;
+   padding: 1px 6px;
+   border: 1px solid var(--line);
+   border-radius: 4px;
+   background: var(--surface-raised);
+   font-size: 10px;
+   color: var(--text);
+}
+
+.help-body strong {
+   color: var(--text);
+   font-weight: 600;
+}

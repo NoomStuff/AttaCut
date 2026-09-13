@@ -76,7 +76,7 @@ export function SettingsPanel({
    };
    return (
       <Modal title="Settings" onClose={onClose}>
-         <div className="settings-tabs" role="tablist">
+         <div className="modal-tabs" role="tablist">
             <button
                role="tab"
                aria-selected={tab === "general"}

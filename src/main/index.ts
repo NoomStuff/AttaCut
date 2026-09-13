@@ -111,7 +111,7 @@ async function start(): Promise<void> {
                ...(!app.isPackaged ? [{ role: "toggleDevTools" as const }] : []),
             ],
          },
-         { label: "Help", submenu: [item("Keyboard shortcuts", "shortcuts")] },
+         { label: "Help", submenu: [item("Help", "help"), item("Keyboard shortcuts", "shortcuts"), { type: "separator" }, item("About", "about")] },
       ];
       if (process.platform === "darwin") template.unshift({ role: "appMenu" });
       Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -316,6 +316,20 @@ async function start(): Promise<void> {
       if (!job || !(path === job.directory || job.items.some((item) => item.outputPath === path))) throw new Error("Output not found.");
       if (path === job.directory) return shell.openPath(path);
       shell.showItemInFolder(path);
+   });
+   // The renderer only ever opens links to project-owned sites; the allowlist keeps a
+   // compromised page from reaching shell.openExternal with arbitrary targets.
+   const externalHosts = new Set(["github.com", "noomstuff.com"]);
+   handle("open:external", (value) => {
+      const url = new URL(z.string().parse(value));
+      if (url.protocol !== "https:" || !externalHosts.has(url.hostname)) throw new Error("That link cannot be opened.");
+      return shell.openExternal(url.href);
+   });
+   handle("notices:open", async () => {
+      const path = app.isPackaged ? join(process.resourcesPath, "THIRD_PARTY_NOTICES.md") : resolve(currentDirectory, "../../THIRD_PARTY_NOTICES.md");
+      if (!existsSync(path)) throw new Error("The third-party notices file is missing from this installation.");
+      const failure = await shell.openPath(path);
+      if (failure) throw new Error(failure);
    });
    ipcMain.on("window:action", (event, value: unknown) => {
       if (event.sender !== window.webContents) return;

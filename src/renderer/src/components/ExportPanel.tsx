@@ -1,11 +1,13 @@
-import { useState } from "react";
-import type { Clip, ExportJob, MediaSource, Preferences } from "../../../shared/types";
+import { useEffect, useState } from "react";
+import type { Clip, ExportJob, ExportPlanItem, MediaSource, Preferences } from "../../../shared/types";
 import { exportExtensionFor } from "../../../shared/types";
 import { formatTime } from "../../../shared/time";
-import { faArrowUpFromBracket, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
+import { faArrowUpFromBracket, faCircleExclamation, faCircleInfo, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { Button, Modal, Toggle } from "./Controls";
 import { errorText } from "../lib/errors";
 import { clipColor } from "../editor/colors";
+import type { HelpTab } from "./HelpPanel";
 
 export function ExportPanel({
    source,
@@ -14,6 +16,7 @@ export function ExportPanel({
    onPreferences,
    onClose,
    onStarted,
+   onHelp,
 }: {
    source: MediaSource;
    clips: Clip[];
@@ -21,6 +24,7 @@ export function ExportPanel({
    onPreferences: (value: Preferences) => void;
    onClose: () => void;
    onStarted: (job: ExportJob) => void;
+   onHelp?: (topic: HelpTab) => void;
 }) {
    const [directory, setDirectory] = useState(preferences.outputDirectory || source.directory);
    const [mode, setMode] = useState<Preferences["exportMode"]>(clips.length === 1 ? "combined" : preferences.exportMode);
@@ -43,6 +47,24 @@ export function ExportPanel({
    };
    const [error, setError] = useState<string | null>(null);
    const [starting, setStarting] = useState(false);
+   const [analysis, setAnalysis] = useState<ExportPlanItem[] | null>(null);
+   // One analysis pass feeds the footer note. Mode and names only relabel items, so the plan
+   // runs in "separate" mode and the export click still plans the real layout. Clips are
+   // frozen while the modal is open, so a single pass stays current.
+   useEffect(() => {
+      let cancelled = false;
+      window.desktop
+         .planExport({ sourceId: source.id, directory, items: clips.map((clip) => ({ clip, name: "clip" })) })
+         .then((plan) => {
+            if (!cancelled) setAnalysis(plan.items);
+         })
+         .catch(() => {
+            // The note is informational; click-time planning still reports real problems.
+         });
+      return () => {
+         cancelled = true;
+      };
+   }, []);
    const valid = request.items.length > 0 && !!directory.trim() && (mode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim()));
    const start = async () => {
       if (!valid || starting) return;
@@ -62,6 +84,12 @@ export function ExportPanel({
       }
    };
    const selectedCount = request.items.length;
+   const includedIds = new Set(rows.filter((row) => row.included).map((row) => row.clip.id));
+   const checked = analysis?.filter((item) => includedIds.has(item.clip.id)) ?? [];
+   const problem = checked.find((item) => item.method === "unsupported");
+   const encoded = checked.reduce((sum, item) => sum + item.encodedSeconds, 0);
+   const encodedLabel = (seconds: number) => (seconds < 0.1 ? "~0.1 seconds" : `~${seconds.toFixed(1)} seconds`);
+   const note = problem ? problem.message : encoded > 0 ? `${encodedLabel(encoded)} may be re-encoded.` : "Exporting losslessly.";
    return (
       <Modal
          title="Export clips"
@@ -150,6 +178,22 @@ export function ExportPanel({
             )}
          </div>
          <div className="modal-footer">
+            {analysis && request.items.length > 0 && (
+               <p className={`export-note${problem ? " problem" : ""}`}>
+                  <FontAwesomeIcon icon={problem ? faCircleExclamation : faCircleInfo} />
+                  <span>
+                     {note}{" "}
+                     <button
+                        className="export-note-link"
+                        onClick={() => {
+                           onHelp?.("lossless");
+                        }}
+                     >
+                        Learn More
+                     </button>
+                  </span>
+               </p>
+            )}
             <Button
                variant="primary"
                icon={faArrowUpFromBracket}

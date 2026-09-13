@@ -147,3 +147,25 @@
 .export-modal .modal-footer {
    flex-shrink: 0;
 }
+.export-modal .modal-footer .export-note {
+   display: flex;
+   align-items: center;
+   gap: 7px;
+   margin: 0 auto 0 0;
+   padding-right: 12px;
+   color: var(--muted);
+   font-size: 11px;
+   line-height: 1.5;
+}
+.export-note > svg {
+   flex-shrink: 0;
+   font-size: 12px;
+}
+.export-note.problem {
+   color: var(--danger);
+}
+.export-note-link {
+   font-weight: 500;
+   font-size: 11px;
+   text-decoration: underline;
+}

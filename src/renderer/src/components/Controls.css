@@ -171,6 +171,36 @@
    color: var(--muted);
    margin: 0;
 }
+.modal-tabs {
+   display: flex;
+   padding: 0 24px;
+   border-bottom: 1px solid var(--line);
+   margin-bottom: 15px;
+   gap: 22px;
+}
+
+.modal-tabs button {
+   padding: 10px;
+   font-size: 12px;
+   border-bottom: 2px solid transparent;
+   color: var(--muted);
+   border-radius: 5px;
+   transition:
+      border-color 170ms ease-out,
+      color 170ms ease-out;
+}
+
+.modal-tabs button:hover {
+   color: var(--text);
+   transition-duration: 0ms;
+}
+
+.modal-tabs button[aria-selected="true"] {
+   border-radius: 5px 5px 0 0;
+   border-color: var(--accent);
+   color: var(--text);
+}
+
 .modal-body {
    padding: 0 24px 22px;
    font-size: 13px;

@@ -37,12 +37,15 @@ import { JobProgress } from "./components/JobProgress";
 import { EmptyState } from "./components/EmptyState";
 import { ExportPanel } from "./components/ExportPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { HelpPanel } from "./components/HelpPanel";
+import type { HelpTab } from "./components/HelpPanel";
+import { AboutPanel } from "./components/AboutPanel";
 import { errorText } from "./lib/errors";
 import { useExitValue, usePressFeedback } from "./lib/motion";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faScissors, faFolderOpen, faMinus, faSquare, faXmark, faCircleExclamation } from "@fortawesome/free-solid-svg-icons";
 
-type Panel = "export" | "frame" | "settings" | "shortcuts" | null;
+type Panel = "export" | "frame" | "settings" | "shortcuts" | "help" | "about" | null;
 
 function NavDropdown({
    open,
@@ -88,7 +91,9 @@ export default function App() {
    const [preferences, setPreferences] = useState(defaultPreferences);
    const [ready, setReady] = useState(false);
    const [platform, setPlatform] = useState("win32");
+   const [version, setVersion] = useState("");
    const [panel, setPanel] = useState<Panel>(null);
+   const [helpTab, setHelpTab] = useState<HelpTab>("intro");
    const [menu, setMenu] = useState<string | null>(null);
    const [loading, setLoading] = useState(false);
    const [error, setError] = useState<string | null>(null);
@@ -288,6 +293,7 @@ export default function App() {
             if (cancelled) return;
             setPreferences(data.preferences);
             setPlatform(data.platform);
+            setVersion(data.version);
             setReady(true);
             if (data.initialFile) void openPath(data.initialFile);
             else if (data.session) void openPath(data.session.path, data.session);
@@ -527,6 +533,14 @@ export default function App() {
       zoomOut: { enabled: available, run: () => setZoomRequest((value) => ({ id: value.id + 1, direction: -1 })) },
       settings: { enabled: () => ready, run: () => setPanel("settings") },
       shortcuts: { enabled: () => ready, run: () => setPanel("shortcuts") },
+      help: {
+         enabled: () => ready,
+         run: () => {
+            setHelpTab("intro");
+            setPanel("help");
+         },
+      },
+      about: { enabled: () => ready, run: () => setPanel("about") },
    };
    // Panel dialogs guard themselves: the command handler checks the live dialog state, so the
    // panel's exit fade never blocks shortcuts. Only the menu needs the React-side flag.
@@ -556,7 +570,7 @@ export default function App() {
       Edit: ["undo", "redo", "settings"],
       Clips: ["merge", "split", "setStart", "setEnd", "add", "delete", "preview"],
       View: ["zoomIn", "zoomOut", "fit", "settings"],
-      Help: ["shortcuts"],
+      Help: ["help", "shortcuts", "about"],
    };
    const errorPresence = useExitValue(error, 190);
    const jobPresence = useExitValue(job, 160);
@@ -760,6 +774,10 @@ export default function App() {
                   onPreferences={setPreferences}
                   onClose={() => setPanel(null)}
                   onStarted={setJob}
+                  onHelp={(topic) => {
+                     setHelpTab(topic);
+                     setPanel("help");
+                  }}
                />
             )}
             {panel === "frame" && source && (
@@ -774,6 +792,8 @@ export default function App() {
                   initialTab={panel === "shortcuts" ? "shortcuts" : "general"}
                />
             )}
+            {panel === "help" && <HelpPanel initialTab={helpTab} onClose={() => setPanel(null)} />}
+            {panel === "about" && <AboutPanel version={version} onClose={() => setPanel(null)} />}
             {draggingFile && (
                <div className="drop-overlay">
                   <FontAwesomeIcon icon={faFolderOpen} />

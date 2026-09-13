@@ -28,7 +28,9 @@ export const commandDefinitions = {
    zoomIn: { label: "Zoom in", bindings: ["="], group: "View" },
    zoomOut: { label: "Zoom out", bindings: ["-"], group: "View" },
    settings: { label: "Settings", bindings: ["Mod+,"], group: "View" },
-   shortcuts: { label: "Keyboard shortcuts", bindings: ["?"], group: "Help" },
+   help: { label: "Help", bindings: ["F1"], group: "Help" },
+   shortcuts: { label: "Keyboard shortcuts", bindings: ["/"], group: "Help" },
+   about: { label: "About", bindings: [], group: "Help" },
 } as const;
 export type CommandId = keyof typeof commandDefinitions;
 export interface Command {

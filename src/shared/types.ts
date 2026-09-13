@@ -184,6 +184,8 @@ export interface DesktopApi {
    cancelExport(): Promise<void>;
    retryExport(jobId: string): Promise<ExportJob>;
    revealOutput(path: string): Promise<void>;
+   openExternal(url: string): Promise<void>;
+   openNotices(): Promise<void>;
    windowAction(action: "minimize" | "maximize" | "close"): void;
    onJob(listener: (job: ExportJob) => void): () => void;
    onPreview(listener: (progress: PreviewProgress) => void): () => void;
