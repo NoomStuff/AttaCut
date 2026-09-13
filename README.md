@@ -15,4 +15,4 @@ I'll get built versions up soon, in the meantime, you can build it yourself with
 
 You can get started with the [CONTRIBUTING.md](CONTRIBUTING.md) guide to set up a development environment and build AttaCut from source.
 
-PRs welcome, do whatever you want with it.
+PRs welcome. [MIT licensed](LICENSE), do what you want with it.

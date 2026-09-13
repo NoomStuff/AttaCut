@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { Button, Modal } from "./Controls";
 
 const repositoryUrl = "https://github.com/NoomStuff/AttaCut";
+const licenseUrl = "https://opensource.org/licenses/MIT";
 const websiteUrl = "https://noomstuff.com";
 
 export function AboutPanel({ version, onClose }: { version: string; onClose: () => void }) {
@@ -34,6 +35,13 @@ export function AboutPanel({ version, onClose }: { version: string; onClose: () 
                   }}
                >
                   GitHub
+               </Button>
+               <Button
+                  onClick={() => {
+                     open(licenseUrl);
+                  }}
+               >
+                  MIT License
                </Button>
                <Button
                   onClick={() => {

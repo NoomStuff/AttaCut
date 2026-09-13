@@ -1,7 +1,8 @@
 {
    "name": "attacut",
-   "version": "0.6.2",
+   "version": "0.6.3",
    "description": "Cut your clips, move on.",
+   "license": "MIT",
    "private": false,
    "type": "module",
    "main": "out/main/index.js",
@@ -69,6 +70,10 @@
          {
             "from": "THIRD_PARTY_NOTICES.md",
             "to": "THIRD_PARTY_NOTICES.md"
+         },
+         {
+            "from": "LICENSE",
+            "to": "LICENSE"
          }
       ],
       "win": {

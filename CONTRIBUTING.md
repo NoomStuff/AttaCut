@@ -62,3 +62,9 @@ macOS distribution signing and notarization use electron-builder's certificate a
 | `bun run format`  | Format the code                             |
 
 The finer-grained suites (`test:ui`, `test:formats`, and friends) each exercise one slice of the app, and `test:fixtures` generates the media files they need.
+
+---
+
+## License
+
+AttaCut is released under the [MIT license](LICENSE). By contributing, you agree that your changes are released under the same license.
