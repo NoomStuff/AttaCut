@@ -12,10 +12,10 @@ FFmpeg's license depends on its build configuration and included libraries. Lice
 
 | Package                           | Version | License                       |
 | --------------------------------- | ------- | ----------------------------- |
-| Electron                          | 44.2.0  | MIT                           |
-| react                             | 19.2.8  | MIT                           |
-| react-dom                         | 19.2.8  | MIT                           |
-| zod                               | 4.5.4   | MIT                           |
+| Electron                          | 44.3.0  | MIT                           |
+| react                             | 19.3.0  | MIT                           |
+| react-dom                         | 19.3.0  | MIT                           |
+| zod                               | 4.6.5   | MIT                           |
 | @fortawesome/fontawesome-svg-core | 7.3.1   | MIT                           |
 | @fortawesome/free-solid-svg-icons | 7.3.1   | MIT (code), CC BY 4.0 (icons) |
 | @fortawesome/react-fontawesome    | 3.5.0   | MIT                           |
@@ -26,7 +26,7 @@ Electron's MIT license text (`LICENSE.electron.txt`) and Chromium's licenses (`L
 
 Each package's license text follows, verbatim.
 
-### Electron 44.2.0
+### Electron 44.3.0
 
 ```
 Copyright (c) Electron contributors
@@ -52,7 +52,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### react 19.2.8
+### react 19.3.0
 
 ```
 MIT License
@@ -78,7 +78,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### react-dom 19.2.8
+### react-dom 19.3.0
 
 ```
 MIT License
@@ -104,7 +104,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### zod 4.5.4
+### zod 4.6.5
 
 ```
 MIT License

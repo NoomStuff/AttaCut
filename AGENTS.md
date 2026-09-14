@@ -32,4 +32,4 @@ Re-encoding a small section near a boundary is acceptable when needed for accura
 
 ## Versioning
 
-Pushing to main with a new version number in `package.json` is what triggers a release via GitHub Actions. Bump it appropriately for the changes made, follow ups should not bump again unless pushes to main have been made since. 
+Pushing to main with a new version number in `package.json` is what triggers a release via GitHub Actions. Bump it appropriately for the changes made, follow ups should not bump again unless pushes to main have been made since.

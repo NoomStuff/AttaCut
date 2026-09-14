@@ -18,6 +18,10 @@ You need [Bun](https://bun.sh/) and FFmpeg with ffprobe on your PATH.
 
 Dev mode calls your local FFmpeg, and `FFMPEG_PATH` / `FFPROBE_PATH` can point somewhere unusual if needed.
 
+Dependency updates currently keep Vite on 7.x and `@vitejs/plugin-react` on 5.x because electron-vite 5 does not support Vite 8. TypeScript stays on 6.0.x because typescript-eslint 8.70 does not support TypeScript 7.
+
+Windows and Linux CI keep the BtbN FFmpeg 8.1 release branch. Testing the 9.0 build exposed FLAC decoding errors when merging clips in `test:exports`; the same suite passes with 8.1. Resolve that regression before upgrading these downloads.
+
 ## Building installers
 
 Run `bun run dist` on the operating system and CPU architecture you want to build for. Builds support x64 and arm64 hosts. Output goes into `release/`, with the OS and architecture in each filename. `bun run package` creates an unpacked app for the current host.
@@ -52,7 +56,7 @@ macOS distribution signing and notarization use electron-builder's certificate a
 
 ## Automated builds and releases
 
-The Release workflow builds Windows x64, macOS x64 and arm64, and Linux x64 and arm64. It installs Bun 1.4.0 and the locked dependencies, runs formatting, lint and unit tests, then packages each target with its own FFmpeg binaries. Type checking runs during packaging.
+The Release workflow builds Windows x64, macOS x64 and arm64, and Linux x64 and arm64. It installs Bun 1.4.2 and the locked dependencies, runs formatting, lint and unit tests, then packages each target with its own FFmpeg binaries. Type checking runs during packaging.
 
 Use **Actions → Release → Run workflow** to test a branch without publishing. Download the `dist-*` artifacts from the completed run. The workflow must exist on the default branch before GitHub shows the manual run button.
 

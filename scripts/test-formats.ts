@@ -96,6 +96,7 @@ const fixtures: Fixture[] = [
    {
       name: "hevc-hdr10",
       extension: ".mkv",
+      filter: "setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc",
       video: [
          "-c:v",
          "libx265",

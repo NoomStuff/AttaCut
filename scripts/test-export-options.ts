@@ -121,7 +121,9 @@ await service.waitForIdle();
 assert.equal(service.current!.items[0]!.status, "completed", service.current!.items[0]!.error ?? "");
 assert.equal((await probeSource(whole.items[0]!.outputPath)).streams.filter((stream) => stream.type === "audio").length, 0);
 const keys = await sourceKeyframes(source);
-assert.deepEqual(keys.slice(0, 4), [0, 2, 4, 6]);
+assert.ok(keys.length >= 4);
+// Packet time bases can represent 4 seconds as 3.9999999999999996.
+for (const [index, expected] of [0, 2, 4, 6].entries()) assert.ok(Math.abs(keys[index]! - expected) < 1e-9, `Keyframe ${index} is at ${expected}s`);
 assert.equal((await analyzeCut(source, { id: "snap", color: 0, start: 2, end: 12 })).method, "copy");
 for (const format of ["png", "jpg"] as const) {
    const path = await exportFrame(source, { sourceId: source.id, time: 1.3, directory, name: "frame", format, quality: 95 });

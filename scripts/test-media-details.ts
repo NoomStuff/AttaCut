@@ -80,7 +80,8 @@ assert.equal(result.chapters[0]!.start, 0);
 assert.ok(Math.abs(result.chapters[1]!.end - (analysis.clip.end - analysis.clip.start)) < 0.002);
 const subtitles = await runMedia("ffmpeg", ["-v", "error", "-i", output, "-map", "0:s:0", "-c:s", "srt", "-f", "srt", "-"]);
 assert.match(subtitles, /00:00:00,000 --> 00:00:01,750/);
-assert.match(subtitles, /00:00:05,750 --> 00:00:07,460/);
+// The cue crosses the selected end, so it must stop at the 7.5-second clip boundary.
+assert.match(subtitles, /00:00:05,750 --> 00:00:07,500/);
 await runMedia("ffmpeg", ["-v", "error", "-xerror", "-i", output, "-map", "0:v", "-map", "0:a", "-f", "null", "-"]);
 for (let index = 0; index < 4; index++) {
    const files = [join(folder, `reference-${index}.pcm`), join(folder, `output-${index}.pcm`)];
