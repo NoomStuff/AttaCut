@@ -21,9 +21,27 @@ describe("portable media binaries", () => {
       expect(() => checkMediaBinary("/ffmpeg")).not.toThrow();
    });
 
-   it("rejects Linux shared library dependencies", () => {
+   it.each([
+      "libc.so.6",
+      "libm.so.6",
+      "libmvec.so.1",
+      "libdl.so.2",
+      "librt.so.1",
+      "libpthread.so.0",
+      "libgcc_s.so.1",
+      "ld-linux-x86-64.so.2",
+      "ld-linux-aarch64.so.1",
+   ])("accepts Linux system library %s", (library) => {
       host("linux");
-      exec.mockReturnValueOnce("ELF 64-bit LSB executable, x86-64").mockReturnValueOnce("0x01 (NEEDED) Shared library: [libavcodec.so]");
+      exec.mockReturnValueOnce("ELF 64-bit LSB executable, x86-64").mockReturnValueOnce(`0x01 (NEEDED) Shared library: [${library}]`);
+      expect(() => checkMediaBinary("/ffmpeg")).not.toThrow();
+   });
+
+   it.each(["libavcodec.so", "libx264.so.164", "libstdc++.so.6", "/opt/lib/libc.so.6"])("rejects Linux non-system dependency %s", (library) => {
+      host("linux");
+      exec
+         .mockReturnValueOnce("ELF 64-bit LSB executable, x86-64")
+         .mockReturnValueOnce(`0x01 (NEEDED) Shared library: [libc.so.6]\n0x01 (NEEDED) Shared library: [${library}]`);
       expect(() => checkMediaBinary("/ffmpeg")).toThrow("static Linux builds");
    });
 

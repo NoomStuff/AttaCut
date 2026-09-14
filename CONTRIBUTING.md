@@ -34,7 +34,7 @@ Packaged apps include FFmpeg and ffprobe, so users do not need to install them. 
 
 - Windows can use FFmpeg on PATH. Packaging also copies adjacent DLLs.
 - macOS requires standalone binaries that depend only on `/usr/lib` or `/System/Library`. A regular Homebrew FFmpeg installation depends on other Homebrew libraries and cannot be bundled by this build script.
-- Linux requires static FFmpeg and ffprobe binaries. A regular distro FFmpeg installation uses shared codec libraries and cannot be bundled by this build script.
+- Linux requires FFmpeg and ffprobe with statically linked codecs. System C runtime and GCC support libraries are allowed. A regular distro FFmpeg installation uses shared codec libraries and cannot be bundled by this build script.
 
 For macOS and Linux, point to your standalone binaries before building:
 
@@ -49,6 +49,18 @@ Packaging checks Unix binary format, architecture, and library dependencies, pre
 macOS distribution signing and notarization use electron-builder's certificate and Apple credentials configuration. The build includes both media executables in signing. Without credentials, builds are for local testing and are not notarized. See [electron-builder's macOS signing guide](https://www.electron.build/v26/docs/features/code-signing/code-signing-mac/) before distributing to other users. Build commands never publish artifacts automatically.
 
 ---
+
+## Automated builds and releases
+
+The Release workflow builds Windows x64, macOS x64 and arm64, and Linux x64 and arm64. It installs Bun 1.4.0 and the locked dependencies, runs formatting, lint and unit tests, then packages each target with its own FFmpeg binaries. Type checking runs during packaging.
+
+Use **Actions → Release → Run workflow** to test a branch without publishing. Download the `dist-*` artifacts from the completed run. The workflow must exist on the default branch before GitHub shows the manual run button.
+
+To publish, update the version in `package.json`, commit it, and push or merge into `main`. The workflow compares the version before and after the entire push. A changed version creates a matching tag, such as `v0.6.4`, on the pushed commit and starts the release build. An unchanged version skips packaging. An existing tag on another commit fails the run instead of moving the tag. Failed builds can be retried using GitHub's **Re-run all jobs**.
+
+You can also push a matching `v*` tag manually. Both paths publish a GitHub release only after all five packages succeed. Versions containing a hyphen, such as `v0.6.4-beta.1`, become prereleases. Other branch pushes do not trigger packaging. Automatic tags use the built-in GitHub token; the same workflow builds the release because tags created with that token do not trigger another push workflow.
+
+These CI builds are unsigned and macOS builds are not notarized. FFmpeg downloads follow their providers' current builds, so rebuilding a tag can bundle newer media tools. The bundled provenance records their exact versions and hashes. BtbN Linux builds require glibc 2.28 or newer.
 
 ## Commands
 

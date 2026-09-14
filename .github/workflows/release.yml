@@ -1,0 +1,238 @@
+name: Release
+
+on:
+   workflow_dispatch:
+   push:
+      branches:
+         - main
+      tags:
+         - "v*"
+
+permissions:
+   contents: read
+
+env:
+   BUN_VERSION: "1.4.0"
+
+concurrency:
+   group: release-${{ github.sha }}
+   cancel-in-progress: false
+
+jobs:
+   prepare:
+      name: Select release and tag version changes
+      runs-on: ubuntu-latest
+      timeout-minutes: 5
+      permissions:
+         contents: write
+      outputs:
+         build: ${{ steps.release.outputs.build }}
+         tag: ${{ steps.release.outputs.tag }}
+      steps:
+         - uses: actions/github-script@v7
+           id: release
+           with:
+              script: |
+                 const { owner, repo } = context.repo;
+                 if (context.eventName === 'workflow_dispatch') {
+                   core.setOutput('build', 'true');
+                   return;
+                 }
+                 if (context.ref.startsWith('refs/tags/')) {
+                   core.setOutput('build', 'true');
+                   core.setOutput('tag', context.ref.slice('refs/tags/'.length));
+                   return;
+                 }
+                 const versionAt = async (ref) => {
+                   const { data } = await github.rest.repos.getContent({ owner, repo, path: 'package.json', ref });
+                   return JSON.parse(Buffer.from(data.content, 'base64').toString('utf8')).version;
+                 };
+                 const version = await versionAt(context.sha);
+                 const before = context.payload.before;
+                 const previous = /^0+$/.test(before) ? undefined : await versionAt(before);
+                 if (version === previous) {
+                   core.info(`Version remains ${version}; skipping release.`);
+                   core.setOutput('build', 'false');
+                   return;
+                 }
+                 if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
+                   throw new Error(`Invalid package version: ${version}`);
+                 }
+                 const tag = `v${version}`;
+                 let existing;
+                 try {
+                   existing = (await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` })).data;
+                 } catch (error) {
+                   if (error.status !== 404) throw error;
+                 }
+                 if (existing) {
+                   // Resolve annotated tags as well as lightweight tags when retrying a run.
+                   const commit = (await github.rest.repos.getCommit({ owner, repo, ref: `refs/tags/${tag}` })).data;
+                   if (commit.sha !== context.sha) throw new Error(`${tag} already points to another commit. Choose a new version.`);
+                   core.info(`${tag} already points to this commit.`);
+                 } else {
+                   await github.rest.git.createRef({ owner, repo, ref: `refs/tags/${tag}`, sha: context.sha });
+                   core.info(`Created ${tag} at ${context.sha}.`);
+                 }
+                 core.setOutput('build', 'true');
+                 core.setOutput('tag', tag);
+
+   checks:
+      name: Checks
+      needs: prepare
+      if: needs.prepare.outputs.build == 'true'
+      runs-on: ubuntu-latest
+      timeout-minutes: 15
+      steps:
+         - uses: actions/checkout@v4
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: ${{ env.BUN_VERSION }}
+         - run: bun install --frozen-lockfile
+         - name: Verify tag matches package version
+           if: startsWith(github.ref, 'refs/tags/')
+           run: |
+              tag="${GITHUB_REF_NAME#v}"
+              version="$(node -p 'require("./package.json").version')"
+              if [ "$tag" != "$version" ]; then
+                echo "::error::Tag ($GITHUB_REF_NAME) does not match package.json version ($version)."
+                exit 1
+              fi
+         - name: Lint, format, test
+           run: |
+              bun run format:check
+              bun run lint
+              bun run test
+
+   build:
+      name: Build ${{ matrix.target }}
+      needs: checks
+      strategy:
+         fail-fast: false
+         matrix:
+            include:
+               - { os: windows-latest, platform: win32, target: win-x64 }
+               - { os: macos-15-intel, platform: darwin, target: mac-x64 }
+               - { os: macos-latest, platform: darwin, target: mac-arm64 }
+               - { os: ubuntu-latest, platform: linux, target: linux-x64 }
+               - { os: ubuntu-24.04-arm, platform: linux, target: linux-arm64 }
+      runs-on: ${{ matrix.os }}
+      timeout-minutes: 45
+      steps:
+         - uses: actions/checkout@v4
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: ${{ env.BUN_VERSION }}
+         - uses: actions/cache@v4
+           with:
+              path: |
+                 ${{ runner.temp }}/electron-cache
+                 ${{ runner.temp }}/electron-builder-cache
+              key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+              restore-keys: electron-${{ runner.os }}-${{ runner.arch }}-
+         - run: bun install --frozen-lockfile
+
+         - name: Provision static FFmpeg (Linux)
+           if: runner.os == 'Linux'
+           run: |
+              set -euo pipefail
+              case "$RUNNER_ARCH" in
+                X64) asset="ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz" ;;
+                ARM64) asset="ffmpeg-n8.1-latest-linuxarm64-gpl-8.1.tar.xz" ;;
+                *) echo "::error::Unsupported runner arch: $RUNNER_ARCH"; exit 1 ;;
+              esac
+              mkdir "$RUNNER_TEMP/ffmpeg" && cd "$RUNNER_TEMP/ffmpeg"
+              curl -sSfLO "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/$asset"
+              tar -xf "$asset"
+              echo "FFMPEG_PATH=$(realpath "$(find . -type f -name ffmpeg | head -1)")" >> "$GITHUB_ENV"
+              echo "FFPROBE_PATH=$(realpath "$(find . -type f -name ffprobe | head -1)")" >> "$GITHUB_ENV"
+
+         - name: Provision static FFmpeg (macOS Intel)
+           if: runner.os == 'macOS' && runner.arch == 'X64'
+           run: |
+              set -euo pipefail
+              cd "$RUNNER_TEMP"
+              curl -sSfL -o ffmpeg.zip "https://evermeet.cx/ffmpeg/get/ffmpeg/zip"
+              curl -sSfL -o ffprobe.zip "https://evermeet.cx/ffmpeg/get/ffprobe/zip"
+              unzip -o ffmpeg.zip && unzip -o ffprobe.zip
+              chmod +x ffmpeg ffprobe
+              echo "FFMPEG_PATH=$RUNNER_TEMP/ffmpeg" >> "$GITHUB_ENV"
+              echo "FFPROBE_PATH=$RUNNER_TEMP/ffprobe" >> "$GITHUB_ENV"
+
+         - name: Provision static FFmpeg (macOS Apple silicon)
+           if: runner.os == 'macOS' && runner.arch == 'ARM64'
+           run: |
+              set -euo pipefail
+              page="$(curl -sSfL https://www.osxexperts.net/)"
+              pick() { printf '%s\n' "$page" | grep -oE "${1}[0-9]+arm\.zip" | awk '!found { print; found=1 }'; }
+              [ -n "$(pick ffmpeg)" ] && [ -n "$(pick ffprobe)" ] || {
+                echo "::error::Could not find current osxexperts arm64 build links."; exit 1;
+              }
+              cd "$RUNNER_TEMP"
+              curl -sSfL -o ffmpeg-arm.zip "https://www.osxexperts.net/$(pick ffmpeg)"
+              curl -sSfL -o ffprobe-arm.zip "https://www.osxexperts.net/$(pick ffprobe)"
+              unzip -o ffmpeg-arm.zip && unzip -o ffprobe-arm.zip
+              chmod +x ffmpeg ffprobe
+              echo "FFMPEG_PATH=$RUNNER_TEMP/ffmpeg" >> "$GITHUB_ENV"
+              echo "FFPROBE_PATH=$RUNNER_TEMP/ffprobe" >> "$GITHUB_ENV"
+
+         - name: Provision static FFmpeg (Windows)
+           if: runner.os == 'Windows'
+           shell: pwsh
+           run: |
+              $ErrorActionPreference = "Stop"
+              $dir = "$env:RUNNER_TEMP\ffmpeg"
+              New-Item -ItemType Directory -Force $dir | Out-Null
+              Set-Location $dir
+              curl.exe -sSfLo ffmpeg.zip "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-n8.1-latest-win64-gpl-8.1.zip"
+              if ($LASTEXITCODE -ne 0) { throw "FFmpeg download failed." }
+              Expand-Archive ffmpeg.zip -DestinationPath .
+              $ffmpeg = (Get-ChildItem -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
+              $ffprobe = (Get-ChildItem -Recurse -Filter ffprobe.exe | Select-Object -First 1).FullName
+              if (!$ffmpeg -or !$ffprobe) { throw "FFmpeg archive is missing ffmpeg.exe or ffprobe.exe." }
+              "FFMPEG_PATH=$ffmpeg" >> $env:GITHUB_ENV
+              "FFPROBE_PATH=$ffprobe" >> $env:GITHUB_ENV
+
+         - name: Package
+           run: bun scripts/package-app.ts dist ${{ matrix.platform }}
+           env:
+              CSC_IDENTITY_AUTO_DISCOVERY: false
+              ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+              ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
+
+         - name: Upload artifacts
+           uses: actions/upload-artifact@v4
+           with:
+              name: dist-${{ matrix.target }}
+              path: |
+                 release/AttaCut-*
+                 !release/*.blockmap
+              if-no-files-found: error
+
+   release:
+      name: Publish release
+      if: needs.prepare.outputs.tag != ''
+      needs: [prepare, build]
+      permissions:
+         contents: write
+      runs-on: ubuntu-latest
+      timeout-minutes: 10
+      steps:
+         - uses: actions/download-artifact@v4
+           with:
+              pattern: dist-*
+              merge-multiple: true
+              path: dist
+         - name: Create GitHub release
+           env:
+              GH_TOKEN: ${{ github.token }}
+              GH_REPO: ${{ github.repository }}
+              RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+           run: |
+              case "${RELEASE_TAG#v}" in
+                *-*) flags="--prerelease" ;;
+                *) flags="" ;;
+              esac
+              gh release create "$RELEASE_TAG" dist/AttaCut-* \
+                --title "AttaCut ${RELEASE_TAG#v}" \
+                --generate-notes --verify-tag $flags

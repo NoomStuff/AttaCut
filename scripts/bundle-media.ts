@@ -33,7 +33,7 @@ for (const name of ["ffmpeg", "ffprobe"] as const) {
       for (const entry of await readdir(dirname(source))) if (entry.endsWith(".dll")) await copyFile(join(dirname(source), entry), join(destination, entry));
    // Run the staged executable too, so missing bundled dependencies fail before packaging.
    execFileSync(join(destination, binary), ["-version"], { stdio: "pipe" });
-   for (const candidate of [join(dirname(source), "LICENSE"), join(dirname(source), "../LICENSE")]) {
+   for (const candidate of ["LICENSE", "LICENSE.txt", "../LICENSE", "../LICENSE.txt"].map((file) => join(dirname(source), file))) {
       if (existsSync(candidate)) {
          await copyFile(candidate, join(destination, `${name}-LICENSE.txt`));
          break;

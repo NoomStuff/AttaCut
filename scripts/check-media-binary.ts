@@ -11,8 +11,15 @@ export function checkMediaBinary(source: string): void {
    }
    if (process.platform === "linux") {
       const dynamic = execFileSync("readelf", ["-d", source], { encoding: "utf8" });
-      if (/\(NEEDED\)/.test(dynamic)) {
-         throw new Error(`${source} uses shared libraries. Set FFMPEG_PATH and FFPROBE_PATH to static Linux builds before packaging.`);
+      // Static codec builds still link to the Linux C runtime and GCC support library.
+      const systemLibrary = /^(?:lib(?:c|m|mvec|dl|rt|pthread|resolv|util)\.so\.\d+|libgcc_s\.so\.1|ld-linux(?:-x86-64|-aarch64)?\.so\.[12])$/;
+      const external = dynamic.split(/\r?\n/).filter((line) => {
+         if (!/\(NEEDED\)/.test(line)) return false;
+         const library = /\[([^\]]+)\]/.exec(line)?.[1];
+         return !library || !systemLibrary.test(library);
+      });
+      if (external.length > 0) {
+         throw new Error(`${source} uses non-system shared libraries. Use static Linux builds. Dependencies: ${external.join(", ")}`);
       }
    } else {
       const dependencies = execFileSync("otool", ["-L", source], { encoding: "utf8" });

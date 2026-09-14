@@ -1,0 +1,3 @@
+# Match Prettier's line endings on every build host.
+* text=auto eol=crlf
+*.sh text eol=lf

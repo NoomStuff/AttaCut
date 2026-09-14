@@ -29,3 +29,7 @@ Re-encoding a small section near a boundary is acceptable when needed for accura
 - **Protect originals explicitly**: The source file is never modified. Editing mistakes should be reversible.”
 - **Define unacceptable compromises**: Do not silently shift cuts, discard tracks or metadata, or re-encode an entire long clip to make an export succeed. Explain limitations in a brief and simple manner so non-technical users can grasp it instantly.
 - **Separate preview from output**. Preview settings do not change exported content. Export changes require an explicit choice.
+
+## Versioning
+
+Pushing to main with a new version number in `package.json` is what triggers a release via GitHub Actions. Bump it appropriately for the changes made, follow ups should not bump again unless pushes to main have been made since. 
