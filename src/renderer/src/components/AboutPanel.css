@@ -61,7 +61,7 @@
 }
 
 .about-heart {
-   color: #f19a96;
+   color: var(--danger);
    font-size: 10px;
 }
 

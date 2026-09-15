@@ -48,7 +48,7 @@
    padding: 11px 20px;
 }
 .button.primary:is(:hover:not(:disabled), .shortcut-active) {
-   background: color-mix(in srgb, var(--accent) 85%, white);
+   background: var(--accent-hover);
 }
 .button.danger {
    color: var(--danger);
@@ -112,7 +112,7 @@
    border-radius: 12px;
    width: min(720px, calc(100vw - 60px));
    max-height: calc(100vh - 70px);
-   box-shadow: 0 24px 80px #0006;
+   box-shadow: var(--modal-shadow);
    overflow: auto;
    /* Closed shape, faded; the allow-discrete overlay and display entries keep the panel
       rendered through the fade after the dialog closes natively, so the exit animates while
@@ -126,7 +126,7 @@
       display 130ms ease-in allow-discrete;
 }
 .modal::backdrop {
-   background: #06090b94;
+   background: var(--backdrop);
    backdrop-filter: blur(3px);
    opacity: 0;
    transition:

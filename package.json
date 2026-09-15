@@ -1,6 +1,6 @@
 {
    "name": "attacut",
-   "version": "0.6.5",
+   "version": "0.6.6",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -39,6 +39,7 @@
       "test:motion": "node scripts/test-rapid-drag.mjs",
       "test:polish": "node scripts/test-polish.mjs",
       "test:ui": "node scripts/test-ui.mjs",
+      "test:appearance": "node scripts/test-appearance.mjs",
       "test:help": "node scripts/test-help.mjs",
       "test:regressions": "node scripts/test-regressions.mjs",
       "test:clip-priority": "node scripts/test-clip-priority.mjs"

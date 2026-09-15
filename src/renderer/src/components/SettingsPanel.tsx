@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { faMoon, faSun, faPlus, faXmark } from "@fortawesome/free-solid-svg-icons";
+import { faMoon, faSun, faDesktop, faCheck, faPlus, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { Preferences } from "../../../shared/types";
 import { commandDefinitions, bindingsFor, displayBinding, bindingFromEvent } from "../editor/commands";
@@ -96,18 +96,40 @@ export function SettingsPanel({
                <>
                   <div className="setting-row">
                      <div>
-                        Appearance<small>Your preferred app theme.</small>
+                        Theme<small>System follows your device's appearance.</small>
                      </div>
                      <div className="theme-picker" role="group" aria-label="Appearance">
-                        {(["dark", "light"] as const).map((theme) => (
+                        {(["dark", "system", "light"] as const).map((theme) => (
                            <button
                               key={theme}
-                              aria-label={theme === "dark" ? "Dark theme" : "Light theme"}
-                              title={theme === "dark" ? "Dark theme" : "Light theme"}
+                              aria-label={`${theme[0]!.toUpperCase()}${theme.slice(1)} theme`}
                               aria-pressed={preferences.theme === theme}
                               onClick={() => onChange({ ...preferences, theme })}
                            >
-                              <FontAwesomeIcon icon={theme === "dark" ? faMoon : faSun} />
+                              <FontAwesomeIcon icon={theme === "dark" ? faMoon : theme === "system" ? faDesktop : faSun} />
+                              <span>
+                                 {theme[0]!.toUpperCase()}
+                                 {theme.slice(1)}
+                              </span>
+                           </button>
+                        ))}
+                     </div>
+                  </div>
+                  <div className="setting-row">
+                     <div>
+                        Accent colour<small>Used for buttons, active controls, and focus.</small>
+                     </div>
+                     <div className="accent-picker" role="group" aria-label="Accent colour">
+                        {["Blue", "Purple", "Green", "Amber", "Red", "Teal"].map((name, accent) => (
+                           <button
+                              key={name}
+                              aria-label={`${name} accent`}
+                              title={name}
+                              aria-pressed={preferences.accent === accent}
+                              style={{ background: `var(--clip-${accent})` }}
+                              onClick={() => onChange({ ...preferences, accent })}
+                           >
+                              {preferences.accent === accent && <FontAwesomeIcon icon={faCheck} />}
                            </button>
                         ))}
                      </div>

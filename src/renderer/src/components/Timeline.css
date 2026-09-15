@@ -184,7 +184,7 @@
    }
 }
 .clip-number {
-   color: var(--clip-color);
+   color: var(--text);
    font-size: 9px;
    position: absolute;
    left: 14px;
@@ -328,7 +328,7 @@
    width: 1px;
    height: 8px;
    top: 7px;
-   background: #ffffff60;
+   background: color-mix(in srgb, var(--text) 45%, transparent);
    pointer-events: none;
 }
 .timeline-edge {

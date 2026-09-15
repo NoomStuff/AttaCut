@@ -5,7 +5,7 @@
    display: flex;
    align-items: center;
    justify-content: center;
-   background: #0c0e10;
+   background: var(--preview-background);
    border: 1px solid #ffffff05;
    border-radius: 9px;
    overflow: hidden;
@@ -16,13 +16,13 @@
    object-fit: contain;
 }
 .player-stage video:fullscreen {
-   background: #000;
+   background: var(--preview-background);
 }
 video:fullscreen {
    width: 100vw;
    height: 100vh;
    object-fit: contain;
-   background: #000;
+   background: var(--preview-background);
 }
 .player-excluded {
    position: absolute;
@@ -57,7 +57,7 @@ video:fullscreen {
 }
 .player-fallback > svg {
    font-size: 28px;
-   color: var(--muted);
+   color: #999fa9;
    margin-bottom: 18px;
 }
 .player-fallback h3 {

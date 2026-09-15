@@ -27,15 +27,17 @@
 }
 
 .theme-picker button {
-   display: grid;
-   place-items: center;
-   width: 44px;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   gap: 7px;
+   padding: 0 12px;
    height: 40px;
    border: 1px solid var(--line);
    border-radius: 6px;
    background: var(--surface);
    color: var(--muted);
-   font-size: 17px;
+   font-size: 12px;
    transition:
       background-color 140ms ease-out,
       border-color 140ms ease-out,
@@ -51,6 +53,40 @@
    background: var(--accent-soft);
    border-color: var(--accent);
    color: var(--accent);
+}
+
+.accent-picker {
+   display: flex;
+   flex-shrink: 0;
+   gap: 10px;
+   padding: 4px;
+}
+
+.accent-picker button {
+   display: grid;
+   place-items: center;
+   width: 30px;
+   height: 30px;
+   border-radius: 50%;
+   color: var(--accent-text);
+   transition: transform 120ms ease-out;
+}
+
+.accent-picker button:hover {
+   transform: scale(1.1);
+}
+
+.accent-picker button[aria-pressed="true"] {
+   outline: 2px solid var(--text);
+   outline-offset: 3px;
+}
+
+@media (max-width: 580px) {
+   .setting-row {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 12px;
+   }
 }
 
 .shortcut-list {

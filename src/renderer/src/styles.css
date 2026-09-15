@@ -25,7 +25,8 @@
       sans-serif;
    color-scheme: dark;
    font-size: 14px;
-   --background: #17191c;
+   --background: #1c1f24;
+   --preview-background: #191c21;
    --surface: #202327;
    --surface-raised: #292d32;
    --surface-hover: #32373d;
@@ -33,9 +34,12 @@
    --muted: #969da7;
    --faint: #646c77;
    --line: #343940;
-   --accent: #9bc9f0;
-   --accent-text: #142737;
-   --accent-soft: #9bc9f01c;
+   --accent: var(--clip-0);
+   --accent-text: #17191c;
+   --accent-soft: color-mix(in srgb, var(--accent) 11%, transparent);
+   --accent-hover: color-mix(in srgb, var(--accent) 85%, white);
+   --backdrop: #06090b94;
+   --modal-shadow: 0 24px 80px #0006;
    --danger: #f19a96;
    --success: #99cda9;
    --clip-0: #91c3eb;
@@ -43,29 +47,30 @@
    --clip-2: #9cccaa;
    --clip-3: #e7be87;
    --clip-4: #de9994;
-   --clip-5: #9ea7e4;
+   --clip-5: #79cfc8;
 }
 :root[data-theme="light"] {
    color-scheme: light;
-   --background: #f1f2f4;
-   --surface: #fff;
-   --surface-raised: #f6f7f8;
-   --surface-hover: #e7eaee;
-   --text: #242b33;
-   --muted: #626c78;
-   --faint: #858d97;
-   --line: #d7dce2;
-   --accent: #336c9c;
-   --accent-text: #fff;
-   --accent-soft: #336c9c15;
-   --danger: #b53f3b;
-   --success: #37764c;
-   --clip-0: #3c7db0;
-   --clip-1: #9d60ab;
-   --clip-2: #47855b;
-   --clip-3: #a17738;
-   --clip-4: #aa5b56;
-   --clip-5: #6371b3;
+   --background: #f1f3f7;
+   --surface: #f7f8fb;
+   --surface-raised: color-mix(in srgb, var(--accent) 3%, #f7f8fb);
+   --surface-hover: color-mix(in srgb, var(--accent) 9%, #f7f8fb);
+   --text: color-mix(in srgb, var(--accent) 20%, #252830);
+   --muted: color-mix(in srgb, var(--accent) 35%, #515965);
+   --faint: color-mix(in srgb, var(--accent) 30%, #5a626e);
+   --line: color-mix(in srgb, var(--accent) 15%, #e7eaf0);
+   --accent-text: #f7f8fb;
+   --accent-hover: color-mix(in srgb, var(--accent) 88%, black);
+   --backdrop: color-mix(in srgb, var(--text) 27%, transparent);
+   --modal-shadow: 0 16px 48px #25334826, 0 2px 8px #25334814;
+   --danger: #ad2929;
+   --success: #27663c;
+   --clip-0: #0969cf;
+   --clip-1: #a02bb5;
+   --clip-2: #168342;
+   --clip-3: #a36300;
+   --clip-4: #cb3e37;
+   --clip-5: #007e80;
 }
 * {
    box-sizing: border-box;

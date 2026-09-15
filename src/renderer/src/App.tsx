@@ -314,9 +314,23 @@ export default function App() {
       // Desktop initialization runs once. Later source changes use explicit open commands.
    }, []);
    useEffect(() => {
-      document.documentElement.dataset["theme"] = preferences.theme;
       if (ready) void window.desktop.savePreferences(preferences).catch((value: unknown) => setError(errorText(value)));
    }, [preferences, ready]);
+   useEffect(() => {
+      const system = window.matchMedia("(prefers-color-scheme: dark)");
+      const applyTheme = () => {
+         document.documentElement.dataset["theme"] = preferences.theme === "system" ? (system.matches ? "dark" : "light") : preferences.theme;
+      };
+      applyTheme();
+      system.addEventListener("change", applyTheme);
+      return () => system.removeEventListener("change", applyTheme);
+   }, [preferences.theme]);
+   useEffect(() => {
+      document.documentElement.style.setProperty("--accent", `var(--clip-${preferences.accent})`);
+      for (let index = 0; index < 6; index++) {
+         document.documentElement.style.setProperty(`--clip-sequence-${index}`, `var(--clip-${(index + preferences.accent) % 6})`);
+      }
+   }, [preferences.accent]);
    useEffect(() => {
       if (source)
          void window.desktop

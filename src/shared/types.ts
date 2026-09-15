@@ -50,7 +50,8 @@ export interface MediaSource {
    chapters: { start: number; end: number; title: string }[];
 }
 export const preferencesSchema = z.object({
-   theme: z.enum(["dark", "light"]).default("dark"),
+   theme: z.enum(["dark", "system", "light"]).default("dark"),
+   accent: z.number().int().min(0).max(5).default(0),
    outputDirectory: z.string().default(""),
    keptOnly: z.boolean().default(false),
    keepPlaying: z.boolean().default(false),

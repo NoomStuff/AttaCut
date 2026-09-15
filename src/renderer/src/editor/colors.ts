@@ -20,7 +20,7 @@ export function distinctClipColors(clips: Clip[]): Clip[] {
 
 /** Subtle hue variations extend the theme palette without changing a clip on selection. */
 export function clipColor(color: number): string {
-   const base = `var(--clip-${color % 6})`;
+   const base = `var(--clip-sequence-${color % 6}, var(--clip-${color % 6}))`;
    const cycle = Math.floor(color / 6);
    if (cycle === 0) return base;
    const shift = ((cycle * 137.508) % 24) - 12;

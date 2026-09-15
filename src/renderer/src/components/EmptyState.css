@@ -21,8 +21,8 @@
    stroke: var(--line);
 }
 .hero-body.kept {
-   fill: color-mix(in srgb, var(--clip-0) 32%, var(--surface));
-   stroke: color-mix(in srgb, var(--clip-0) 45%, transparent);
+   fill: color-mix(in srgb, var(--clip-sequence-0, var(--clip-0)) 32%, var(--surface));
+   stroke: color-mix(in srgb, var(--clip-sequence-0, var(--clip-0)) 45%, transparent);
 }
 .hero-hole {
    fill: var(--background);
@@ -157,17 +157,17 @@
       var(--clip-color);
 }
 .empty-clip.c0 {
-   --clip-color: var(--clip-0);
+   --clip-color: var(--clip-sequence-0, var(--clip-0));
    left: 0;
    width: 31%;
 }
 .empty-clip.c1 {
-   --clip-color: var(--clip-1);
+   --clip-color: var(--clip-sequence-1, var(--clip-1));
    left: 38%;
    width: 24%;
 }
 .empty-clip.c2 {
-   --clip-color: var(--clip-2);
+   --clip-color: var(--clip-sequence-2, var(--clip-2));
    left: 69%;
    width: 31%;
 }
