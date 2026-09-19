@@ -1,6 +1,6 @@
 {
    "name": "attacut",
-   "version": "0.6.6",
+   "version": "0.6.7",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -34,6 +34,7 @@
       "test:jobs": "bun scripts/test-jobs.ts",
       "test:exports": "bun scripts/test-export-options.ts",
       "test:workflow": "node scripts/test-workflow.mjs",
+      "test:feedback": "node scripts/test-user-feedback.mjs",
       "test:interactions": "node scripts/test-interactions.mjs",
       "test:shortcuts": "node scripts/test-shortcuts.mjs",
       "test:motion": "node scripts/test-rapid-drag.mjs",

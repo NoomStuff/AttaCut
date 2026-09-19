@@ -127,6 +127,7 @@ export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: Abor
 
 export interface CutOptions extends RunOptions {
    muteAudio?: boolean;
+   overwrite?: boolean;
 }
 export async function exportCut(source: ProbedSource, analysis: CutAnalysis, destination: string, options: CutOptions = {}): Promise<void> {
    if (analysis.method === "unsupported") throw new Error(analysis.message);
@@ -248,7 +249,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
       }
       options.signal?.throwIfAborted();
       if (analysis.verifyTimes?.length) await verifyCopiedFrames(source, finalTemporary, clip.start, analysis.verifyTimes, options.signal);
-      await publishOutput(finalTemporary, destination);
+      await publishOutput(finalTemporary, destination, options.overwrite, source.path);
       options.onProgress?.(1);
    } finally {
       await rm(temporary, { recursive: true, force: true });

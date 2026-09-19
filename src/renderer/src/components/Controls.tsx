@@ -111,12 +111,14 @@ export function Modal({
    onClose,
    children,
    className = "",
+   closeDisabled = false,
 }: {
    title: string;
    description?: string;
    onClose: () => void;
    children: ReactNode;
    className?: string;
+   closeDisabled?: boolean;
 }) {
    const ref = useRef<HTMLDialogElement>(null);
    const titleId = useId();
@@ -135,7 +137,7 @@ export function Modal({
    // right away: its backdrop ignores pointer-events while fading and would swallow a click
    // aimed at the app behind it.
    const requestClose = () => {
-      if (closing) return;
+      if (closing || closeDisabled) return;
       setClosing(true);
       ref.current?.close();
       timer.current = window.setTimeout(onClose, 140);
@@ -162,7 +164,7 @@ export function Modal({
                <h2 id={titleId}>{title}</h2>
                {description && <p>{description}</p>}
             </div>
-            <IconButton icon={faXmark} label="Close panel" onClick={requestClose} />
+            <IconButton icon={faXmark} label="Close panel" disabled={closeDisabled} onClick={requestClose} />
          </div>
          {children}
       </dialog>

@@ -1,5 +1,5 @@
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faArrowUpFromBracket, faCircleExclamation, faCheck, faXmark, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
+import { faArrowUpFromBracket, faCircleExclamation, faCheck, faXmark, faFolderOpen, faPlay } from "@fortawesome/free-solid-svg-icons";
 import type { ExportJob } from "../../../shared/types";
 import { Button, IconButton } from "./Controls";
 import { errorText } from "../lib/errors";
@@ -70,6 +70,17 @@ export function JobProgress({
                         }}
                      >
                         Retry unfinished
+                     </Button>
+                  )}
+                  {complete > 0 && (
+                     <Button
+                        icon={faPlay}
+                        onClick={() => {
+                           const item = job.items.find((item) => item.status === "completed")!;
+                           void window.desktop.openOutput(item.outputPath).catch((value: unknown) => onError(errorText(value)));
+                        }}
+                     >
+                        {complete === 1 ? "Open file" : "Open first file"}
                      </Button>
                   )}
                   <Button

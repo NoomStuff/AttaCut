@@ -130,6 +130,12 @@ export interface ExportPlan {
    directory: string;
    items: ExportPlanItem[];
    mode: "separate" | "combined";
+   directoryMissing: boolean;
+   existingPaths: string[];
+}
+export interface ExportApproval {
+   createDirectory?: boolean | undefined;
+   overwrite?: boolean | undefined;
 }
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export interface JobItem {
@@ -181,10 +187,11 @@ export interface DesktopApi {
    scrubAudio(sourceId: string, streamIndex: number): Promise<ScrubAudio | null>;
    exportFrame(request: FrameRequest): Promise<string>;
    planExport(request: PlanRequest): Promise<ExportPlan>;
-   startExport(planId: string): Promise<ExportJob>;
+   startExport(planId: string, approval?: ExportApproval): Promise<ExportJob>;
    cancelExport(): Promise<void>;
    retryExport(jobId: string): Promise<ExportJob>;
    revealOutput(path: string): Promise<void>;
+   openOutput(path: string): Promise<void>;
    openExternal(url: string): Promise<void>;
    openNotices(): Promise<void>;
    windowAction(action: "minimize" | "maximize" | "close"): void;

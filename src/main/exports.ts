@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { access, constants, stat } from "node:fs/promises";
+import { access, constants, mkdir, stat } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
-import type { ExportJob, ExportPlan, PlanRequest } from "../shared/types.ts";
+import type { ExportApproval, ExportJob, ExportPlan, PlanRequest } from "../shared/types.ts";
 import { exportExtensionFor, planRequestSchema } from "../shared/types.ts";
 import { analyzeCut, exportCut } from "./media/cut.ts";
 import type { CutAnalysis } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
+import { protectSource } from "./media/publish.ts";
 import { exportCombined } from "./media/combine.ts";
 
 interface StoredPlan {
@@ -13,6 +14,7 @@ interface StoredPlan {
    source: ProbedSource;
    analyses: Map<string, CutAnalysis[]>;
    muteAudio: boolean;
+   approval?: ExportApproval;
 }
 export class ExportService {
    private plans = new Map<string, StoredPlan>();
@@ -33,9 +35,12 @@ export class ExportService {
    async plan(source: ProbedSource, request: PlanRequest): Promise<ExportPlan> {
       const settings = planRequestSchema.parse(request);
       const directoryPath = resolve(request.directory);
-      const directory = await stat(directoryPath);
-      if (!directory.isDirectory()) throw new Error("Choose an output folder.");
-      await access(directoryPath, constants.W_OK);
+      const directory = await stat(directoryPath).catch((error: NodeJS.ErrnoException) => {
+         if (error.code === "ENOENT") return null;
+         throw new Error(`Cannot access the output folder: ${error.message}`);
+      });
+      if (directory && !directory.isDirectory()) throw new Error("Choose an output folder, not a file.");
+      if (directory) await access(directoryPath, constants.W_OK);
       const used = new Set<string>();
       const analyses = new Map<string, CutAnalysis[]>();
       const items = [];
@@ -44,7 +49,7 @@ export class ExportService {
          const stem = sanitizeName(item.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
          let name = `${stem}${extension}`;
          let suffix = 2;
-         while (used.has(name.toLowerCase()) || (await exists(join(directoryPath, name)))) name = `${stem} (${suffix++})${extension}`;
+         while (used.has(name.toLowerCase())) name = `${stem} (${suffix++})${extension}`;
          used.add(name.toLowerCase());
          const analysis = await analyzeCut(source, item.clip);
          const id = randomUUID();
@@ -63,8 +68,7 @@ export class ExportService {
          const cuts = items.flatMap((item) => analyses.get(item.id)!);
          const extension = source.exportExtension;
          const stem = sanitizeName(settings.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
-         let name = `${stem}${extension}`;
-         for (let suffix = 2; await exists(join(directoryPath, name)); suffix++) name = `${stem} (${suffix})${extension}`;
+         const name = `${stem}${extension}`;
          const first = items[0]!;
          const unsupported = cuts.filter((cut) => cut.method === "unsupported");
          const combined = {
@@ -78,17 +82,33 @@ export class ExportService {
          analyses.set(first.id, cuts);
          items.splice(0, items.length, combined);
       }
-      const plan: ExportPlan = { id: randomUUID(), sourceId: source.id, directory: directoryPath, items, mode: settings.mode };
+      const existingPaths: string[] = [];
+      for (const item of items) {
+         await protectSource(source.path, item.outputPath);
+         if (await exists(item.outputPath)) existingPaths.push(item.outputPath);
+      }
+      const plan: ExportPlan = {
+         id: randomUUID(),
+         sourceId: source.id,
+         directory: directoryPath,
+         items,
+         mode: settings.mode,
+         directoryMissing: !directory,
+         existingPaths,
+      };
       if (this.plans.size >= 20) this.plans.delete(this.plans.keys().next().value!);
       this.plans.set(plan.id, { plan, source, analyses, muteAudio: settings.muteAudio });
       return plan;
    }
-   start(planId: string): ExportJob {
+   start(planId: string, approval: ExportApproval = {}): ExportJob {
       if (this.running) throw new Error("An export is already running.");
       const stored = this.plans.get(planId);
       if (!stored) throw new Error("The export plan expired. Review the clips again.");
+      if (stored.plan.directoryMissing && !approval.createDirectory) throw new Error("Confirm creating the output folder before exporting.");
+      if (stored.plan.existingPaths.length && !approval.overwrite) throw new Error("Confirm replacing the existing files before exporting.");
       if (stored.plan.items.some((item) => item.method === "unsupported")) throw new Error("Some clips cannot be exported with these boundaries.");
       this.runningPlan = stored;
+      stored.approval = approval;
       this.job = {
          id: randomUUID(),
          directory: stored.plan.directory,
@@ -138,10 +158,13 @@ export class ExportService {
          item.status = "running";
          this.emit(structuredClone(job));
          try {
+            if (stored.approval?.createDirectory) await mkdir(stored.plan.directory, { recursive: true });
+            await protectSource(stored.source.path, item.outputPath);
             const cuts = stored.analyses.get(item.id)!;
             const options = {
                signal,
                muteAudio: stored.muteAudio,
+               overwrite: !!stored.approval?.overwrite && stored.plan.existingPaths.includes(item.outputPath),
                onProgress: (value: number) => {
                   item.progress = value;
                   this.emit(structuredClone(job));
@@ -174,8 +197,9 @@ async function exists(path: string): Promise<boolean> {
    try {
       await access(path);
       return true;
-   } catch {
-      return false;
+   } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
    }
 }
 export function sourceStem(path: string): string {

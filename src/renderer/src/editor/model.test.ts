@@ -102,6 +102,24 @@ it("keeps two frames at maximum zoom and scales the drag floor with the view", (
 });
 
 describe("merge and playhead targeting", () => {
+   it("only joins near a shared boundary", () => {
+      const document = {
+         selectedId: "b",
+         clips: [
+            { id: "a", start: 0, end: 10, color: 0 },
+            { id: "b", start: 10, end: 20, color: 1 },
+            { id: "c", start: 20, end: 30, color: 2 },
+         ],
+      };
+      expect(mergePair(document, 2, 1 / 30, 0.1)).toBe(-1);
+      expect(mergePair(document, 12, 1 / 30, 0.1)).toBe(-1);
+      expect(mergePair(document, 18, 1 / 30, 0.1)).toBe(-1);
+      expect(mergePair(document, 28, 1 / 30, 0.1)).toBe(-1);
+      expect(mergePair(document, 9.95, 1 / 30, 0.1)).toBe(0);
+      expect(mergePair(document, 10.05, 1 / 30, 0.1)).toBe(0);
+      expect(mergePair(document, 20.05, 1 / 30, 0.1)).toBe(1);
+      expect(mergePair(document, 35, 1 / 30, 0.1)).toBe(-1);
+   });
    it("merges a split in one undoable edit", () => {
       const split = splitClip(source, 40);
       expect(mergePair(split, 40, 1 / 30, 0.1)).toBe(0);

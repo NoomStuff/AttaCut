@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Clip, ExportJob, ExportPlanItem, MediaSource, Preferences } from "../../../shared/types";
+import type { Clip, ExportJob, ExportPlan, ExportPlanItem, MediaSource, Preferences } from "../../../shared/types";
 import { exportExtensionFor } from "../../../shared/types";
 import { formatTime } from "../../../shared/time";
 import { faArrowUpFromBracket, faCircleExclamation, faCircleInfo, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
@@ -9,8 +9,19 @@ import { errorText } from "../lib/errors";
 import { clipColor } from "../editor/colors";
 import type { HelpTab } from "./HelpPanel";
 
+export interface ExportDraft {
+   sourceId: string;
+   directory: string;
+   mode: Preferences["exportMode"];
+   muteAudio: boolean;
+   name: string;
+   rows: { clip: Clip; included: boolean; name: string }[];
+}
+
 export function ExportPanel({
    source,
+   draft,
+   onDraft,
    clips,
    preferences,
    onPreferences,
@@ -19,6 +30,8 @@ export function ExportPanel({
    onHelp,
 }: {
    source: MediaSource;
+   draft: ExportDraft | null;
+   onDraft: (draft: ExportDraft) => void;
    clips: Clip[];
    preferences: Preferences;
    onPreferences: (value: Preferences) => void;
@@ -26,17 +39,26 @@ export function ExportPanel({
    onStarted: (job: ExportJob) => void;
    onHelp?: (topic: HelpTab) => void;
 }) {
-   const [directory, setDirectory] = useState(preferences.outputDirectory || source.directory);
-   const [mode, setMode] = useState<Preferences["exportMode"]>(clips.length === 1 ? "combined" : preferences.exportMode);
-   const [muteAudio, setMuteAudio] = useState(preferences.exportMuted);
-   const [name, setName] = useState(`${source.name.slice(0, -source.extension.length)} (Trim)`);
+   const saved = draft?.sourceId === source.id ? draft : null;
+   const [directory, setDirectory] = useState(saved?.directory ?? (preferences.outputDirectory || source.directory));
+   const [mode, setMode] = useState<Preferences["exportMode"]>(saved?.mode ?? (clips.length === 1 ? "combined" : preferences.exportMode));
+   const [muteAudio, setMuteAudio] = useState(saved?.muteAudio ?? preferences.exportMuted);
+   const [name, setName] = useState(saved?.name ?? `${source.name.slice(0, -source.extension.length)} (Trim)`);
    const [rows, setRows] = useState(() =>
       clips.map((clip, index) => ({
          clip,
-         included: true,
-         name: `${source.name.slice(0, -source.extension.length)} (${index + 1})`,
+         included: saved?.rows.find((row) => row.clip.id === clip.id)?.included ?? true,
+         name: saved?.rows.find((row) => row.clip.id === clip.id)?.name ?? `${source.name.slice(0, -source.extension.length)} (${index + 1})`,
       }))
    );
+   useEffect(() => {
+      onDraft({ sourceId: source.id, directory, mode, muteAudio, name, rows });
+   }, [source.id, directory, mode, muteAudio, name, rows, onDraft]);
+   useEffect(() => {
+      if (preferences.outputDirectory !== directory || preferences.exportMode !== mode || preferences.exportMuted !== muteAudio)
+         onPreferences({ ...preferences, outputDirectory: directory, exportMode: mode, exportMuted: muteAudio });
+   }, [directory, mode, muteAudio, preferences, onPreferences]);
+   const [confirmation, setConfirmation] = useState<ExportPlan | null>(null);
    const request = {
       sourceId: source.id,
       directory,
@@ -66,23 +88,68 @@ export function ExportPanel({
       };
    }, []);
    const valid = request.items.length > 0 && !!directory.trim() && (mode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim()));
-   const start = async () => {
+   const start = async (approved?: ExportPlan) => {
       if (!valid || starting) return;
       setStarting(true);
       setError(null);
       try {
-         const plan = await window.desktop.planExport(request);
+         const plan = approved ?? (await window.desktop.planExport(request));
          const unsupported = plan.items.find((item) => item.method === "unsupported");
          if (unsupported) throw new Error(unsupported.message);
-         const job = await window.desktop.startExport(plan.id);
+         if (!approved && (plan.directoryMissing || plan.existingPaths.length)) {
+            setConfirmation(plan);
+            setStarting(false);
+            return;
+         }
+         const job = await window.desktop.startExport(
+            plan.id,
+            approved ? { createDirectory: plan.directoryMissing, overwrite: plan.existingPaths.length > 0 } : undefined
+         );
+         setConfirmation(null);
          onPreferences({ ...preferences, outputDirectory: directory, exportMode: mode, exportMuted: muteAudio });
          onStarted(job);
          onClose();
       } catch (value) {
+         setConfirmation(null);
          setError(errorText(value));
          setStarting(false);
       }
    };
+   if (confirmation)
+      return (
+         <Modal
+            key="confirmation"
+            closeDisabled={starting}
+            title={confirmation.directoryMissing ? "Create output folder?" : "Replace existing files?"}
+            onClose={() => setConfirmation(null)}
+            className="export-confirmation"
+         >
+            <div className="modal-body">
+               <p>
+                  {confirmation.directoryMissing
+                     ? "This folder does not exist. Create it and export your clips?"
+                     : "These files already exist. Exporting will replace them. This cannot be undone."}
+               </p>
+               <div className="export-conflicts">
+                  {confirmation.directoryMissing ? confirmation.directory : confirmation.existingPaths.map((path) => <div key={path}>{path}</div>)}
+               </div>
+            </div>
+            <div className="modal-footer">
+               <Button disabled={starting} onClick={() => setConfirmation(null)}>
+                  Cancel
+               </Button>
+               <Button
+                  variant="danger"
+                  disabled={starting}
+                  onClick={() => {
+                     void start(confirmation);
+                  }}
+               >
+                  {starting ? "Exporting…" : confirmation.directoryMissing ? "Create folder and export" : "Replace and export"}
+               </Button>
+            </div>
+         </Modal>
+      );
    const selectedCount = request.items.length;
    const includedIds = new Set(rows.filter((row) => row.included).map((row) => row.clip.id));
    const checked = analysis?.filter((item) => includedIds.has(item.clip.id)) ?? [];
@@ -92,6 +159,8 @@ export function ExportPanel({
    const note = problem ? problem.message : encoded > 0 ? `${encodedLabel(encoded)} may be re-encoded.` : "Exporting losslessly.";
    return (
       <Modal
+         key="options"
+         closeDisabled={starting}
          title="Export clips"
          onClose={() => {
             if (!starting) onClose();
@@ -103,7 +172,7 @@ export function ExportPanel({
                <button disabled={starting} aria-pressed={mode === "combined"} onClick={() => setMode("combined")}>
                   Merged Video
                </button>
-               <button disabled={starting || clips.length === 1} aria-pressed={mode === "separate"} onClick={() => setMode("separate")}>
+               <button disabled={starting} aria-pressed={mode === "separate"} onClick={() => setMode("separate")}>
                   Separate clips
                </button>
             </div>
@@ -116,9 +185,12 @@ export function ExportPanel({
                   icon={faFolderOpen}
                   disabled={starting}
                   onClick={() => {
-                     void window.desktop.chooseDirectory(directory).then((path) => {
-                        if (path) setDirectory(path);
-                     });
+                     void window.desktop
+                        .chooseDirectory(directory)
+                        .then((path) => {
+                           if (path) setDirectory(path);
+                        })
+                        .catch((value: unknown) => setError(errorText(value)));
                   }}
                >
                   Browse

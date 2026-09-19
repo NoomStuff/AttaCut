@@ -22,7 +22,7 @@ try {
    await page.waitForFunction(() => !document.fullscreenElement);
    await page.getByRole("button", { name: "Export", exact: true }).click();
    await expect(page.getByRole("textbox", { name: "Combined filename", exact: true })).toHaveValue("fixture (Trim)");
-   await expect(page.getByRole("button", { name: "Separate clips", exact: true })).toBeDisabled();
+   await expect(page.getByRole("button", { name: "Separate clips", exact: true })).toBeEnabled();
    await expect(page.getByRole("button", { name: "Export video", exact: true })).toBeEnabled();
    await expect(page.getByRole("textbox", { name: "Clip 1 filename", exact: true })).toHaveCount(0);
    await page.keyboard.press("Escape");

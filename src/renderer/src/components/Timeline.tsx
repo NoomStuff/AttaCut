@@ -243,6 +243,7 @@ export function Timeline({
    };
    const endDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
       if (drag.current?.pointerId !== event.pointerId) return;
+      const current = drag.current;
       const next = draftRef.current;
       drag.current = null;
       draftRef.current = null;
@@ -250,6 +251,7 @@ export function Timeline({
       onTrimming(false);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       if (next) onCommit(next);
+      else onSeek(current.original.clips.find((clip) => clip.id === current.id)![current.side], true);
    };
    // Stationary ruler ticks: fixed times from the ladder, so labels keep their meaning while
    // zooming; the next-finer step fades in between as spacing allows.
@@ -429,12 +431,23 @@ export function Timeline({
                               key={side}
                               className={`trim-handle ${side}${draggingHere && dragging?.side === side ? " dragging" : ""}${hoveredEdge?.id === clip.id && hoveredEdge.side === side ? " nearby" : ""}${presence.flashes.get(clip.id)?.includes(side) ? " split-edge" : ""}`}
                               role="slider"
+                              data-adjacent={
+                                 side === "start"
+                                    ? clip.start - (visible.clips[index - 1]?.end ?? -Infinity) <= frameStep
+                                    : (visible.clips[index + 1]?.start ?? Infinity) - clip.end <= frameStep
+                              }
                               aria-label={`Clip ${index + 1} ${side}`}
                               aria-valuemin={0}
                               aria-valuemax={duration}
                               aria-valuenow={clip[side]}
                               aria-valuetext={formatTime(clip[side])}
                               onPointerDown={(event) => startDrag(event, clip.id, side)}
+                              onClick={(event) => {
+                                 if (event.detail === 0) {
+                                    onSelect(clip.id);
+                                    onSeek(clip[side], true);
+                                 }
+                              }}
                               onPointerMove={moveDrag}
                               onPointerUp={endDrag}
                               onPointerCancel={cancel}

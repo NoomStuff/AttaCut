@@ -35,6 +35,7 @@ import { Transport } from "./components/Transport";
 import { TopActions } from "./components/TopActions";
 import { JobProgress } from "./components/JobProgress";
 import { EmptyState } from "./components/EmptyState";
+import type { ExportDraft } from "./components/ExportPanel";
 import { ExportPanel } from "./components/ExportPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { HelpPanel } from "./components/HelpPanel";
@@ -92,6 +93,7 @@ export default function App() {
    const [ready, setReady] = useState(false);
    const [platform, setPlatform] = useState("win32");
    const [version, setVersion] = useState("");
+   const [exportDraft, setExportDraft] = useState<ExportDraft | null>(null);
    const [panel, setPanel] = useState<Panel>(null);
    const [helpTab, setHelpTab] = useState<HelpTab>("intro");
    const [menu, setMenu] = useState<string | null>(null);
@@ -436,7 +438,13 @@ export default function App() {
       snap: { enabled: () => available() && !readingKeys, run: () => setPreferences((current) => ({ ...current, snapping: !current.snapping })) },
       merge: {
          enabled: () => available() && joinAtPlayhead() >= 0,
-         run: () => commit(mergeClips(editor.document, joinAtPlayhead())),
+         run: () => {
+            const index = joinAtPlayhead();
+            if (index < 0) return;
+            const boundary = editor.document.clips[index]!.end;
+            commit(mergeClips(editor.document, index));
+            seek(boundary, true);
+         },
       },
       toggleClip: {
          ...resolvedCommand(() => {
@@ -490,6 +498,7 @@ export default function App() {
       split: {
          enabled: () =>
             available() &&
+            joinAtPlayhead() < 0 &&
             (!snapping || !readingKeys) &&
             canSplit(activeDocument, clock.get(), minimumClipLength()) &&
             canSplit(activeDocument, splitTime(), minimumClipLength()),
@@ -782,6 +791,8 @@ export default function App() {
             )}
             {panel === "export" && source && (
                <ExportPanel
+                  draft={exportDraft}
+                  onDraft={setExportDraft}
                   source={source}
                   clips={editor.document.clips}
                   preferences={preferences}

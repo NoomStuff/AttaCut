@@ -303,10 +303,21 @@ async function start(): Promise<void> {
       const request = planRequestSchema.parse(value);
       return exportsService.plan(getSource(request.sourceId), request);
    });
-   handle("export:start", (value) => exportsService.start(z.string().parse(value)));
+   handle("export:start", (value) => {
+      const request = z
+         .object({ id: z.string(), approval: z.object({ createDirectory: z.boolean().optional(), overwrite: z.boolean().optional() }).optional() })
+         .parse(value);
+      return exportsService.start(request.id, request.approval);
+   });
    handle("export:cancel", () => exportsService.cancel());
    handle("export:retry", (value) => exportsService.retry(z.string().parse(value)));
-   handle("output:reveal", (value) => {
+   handle("output:open", async (value) => {
+      const path = z.string().parse(value);
+      if (!exportsService.current?.items.some((item) => item.outputPath === path && item.status === "completed")) throw new Error("Exported file not found.");
+      const failure = await shell.openPath(path);
+      if (failure) throw new Error(failure);
+   });
+   handle("output:reveal", async (value) => {
       const path = z.string().parse(value);
       if (frameOutputs.has(path)) {
          shell.showItemInFolder(path);
@@ -314,7 +325,11 @@ async function start(): Promise<void> {
       }
       const job = exportsService.current;
       if (!job || !(path === job.directory || job.items.some((item) => item.outputPath === path))) throw new Error("Output not found.");
-      if (path === job.directory) return shell.openPath(path);
+      if (path === job.directory) {
+         const failure = await shell.openPath(path);
+         if (failure) throw new Error(failure);
+         return;
+      }
       shell.showItemInFolder(path);
    });
    // The renderer only ever opens links to project-owned sites; the allowlist keeps a

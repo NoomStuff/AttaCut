@@ -250,6 +250,13 @@
 .trim-handle.end::after {
    right: -8px;
 }
+/* At a seam each handle owns its side; its hitbox must not cover its neighbor. */
+.trim-handle.start[data-adjacent="true"]::after {
+   left: 0;
+}
+.trim-handle.end[data-adjacent="true"]::after {
+   right: 0;
+}
 .trim-handle:hover,
 .trim-handle.nearby,
 .trim-handle.dragging {

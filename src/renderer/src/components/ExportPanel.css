@@ -169,3 +169,14 @@
    font-size: 11px;
    text-decoration: underline;
 }
+
+.export-conflicts {
+   overflow-wrap: anywhere;
+   max-height: 220px;
+   overflow-y: auto;
+   color: var(--muted);
+}
+
+.export-confirmation {
+   width: min(560px, calc(100vw - 60px));
+}

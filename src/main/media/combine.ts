@@ -129,7 +129,7 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
          offset += cut.clip.end - cut.clip.start;
       }
       options.signal?.throwIfAborted();
-      await publishOutput(output, destination);
+      await publishOutput(output, destination, options.overwrite, source.path);
    } finally {
       await rm(temporary, { recursive: true, force: true });
    }
