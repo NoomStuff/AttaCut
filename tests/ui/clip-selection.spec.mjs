@@ -14,6 +14,10 @@ test("clip selection", async ({ launchApp, profile }) => {
    };
    const ranges = () => page.locator(".clip-range:not(.exiting)");
    const selected = () => page.locator(".clip-range.selected:not(.exiting)");
+   const expectSliderTime = async (name, time) => {
+      const slider = page.getByRole("slider", { name, exact: true });
+      await expect.poll(async () => Number(await slider.getAttribute("aria-valuenow"))).toBeCloseTo(time, 6);
+   };
    await seek(6);
    await page.keyboard.press("s");
    await expect(ranges()).toHaveCount(2);
@@ -61,7 +65,7 @@ test("clip selection", async ({ launchApp, profile }) => {
    // Toggle uses normal Add semantics; Undo restores the original trimmed range.
    await seek(12);
    await page.keyboard.press("d");
-   await expect(page.getByRole("slider", { name: "Clip 2 end", exact: true })).toHaveAttribute("aria-valuenow", "12");
+   await expectSliderTime("Clip 2 end", 12);
    await page.keyboard.press("w");
    await expect(ranges()).toHaveCount(1);
    await page.keyboard.press("w");
@@ -71,7 +75,7 @@ test("clip selection", async ({ launchApp, profile }) => {
    await expect(ranges()).toHaveCount(1);
    await page.keyboard.press("ControlOrMeta+z");
    await expect(ranges()).toHaveCount(2);
-   await expect(page.getByRole("slider", { name: "Clip 2 end", exact: true })).toHaveAttribute("aria-valuenow", "12");
+   await expectSliderTime("Clip 2 end", 12);
    // Explicit Delete keeps removing existing clips, while Toggle preserves the gap priority.
    await seek(8);
    await page.keyboard.press("Alt+ArrowLeft");
