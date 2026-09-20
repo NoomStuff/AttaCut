@@ -50,11 +50,6 @@ jobs:
                  const version = await versionAt(context.sha);
                  const before = context.payload.before;
                  const previous = /^0+$/.test(before) ? undefined : await versionAt(before);
-                 if (version === previous) {
-                   core.info(`Version remains ${version}; skipping release.`);
-                   core.setOutput('build', 'false');
-                   return;
-                 }
                  if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
                    throw new Error(`Invalid package version: ${version}`);
                  }
@@ -65,14 +60,17 @@ jobs:
                  } catch (error) {
                    if (error.status !== 404) throw error;
                  }
+                 if (version === previous && existing) {
+                   core.info(`Version remains ${version} and ${tag} already exists; skipping release.`);
+                   core.setOutput('build', 'false');
+                   return;
+                 }
                  if (existing) {
-                   // Resolve annotated tags as well as lightweight tags when retrying a run.
                    const commit = (await github.rest.repos.getCommit({ owner, repo, ref: `refs/tags/${tag}` })).data;
                    if (commit.sha !== context.sha) throw new Error(`${tag} already points to another commit. Choose a new version.`);
                    core.info(`${tag} already points to this commit.`);
                  } else {
-                   await github.rest.git.createRef({ owner, repo, ref: `refs/tags/${tag}`, sha: context.sha });
-                   core.info(`Created ${tag} at ${context.sha}.`);
+                   core.info(`${tag} will be created after every package passes verification.`);
                  }
                  core.setOutput('build', 'true');
                  core.setOutput('tag', tag);
@@ -180,4 +178,4 @@ jobs:
               esac
               gh release create "$RELEASE_TAG" dist/AttaCut-* \
                 --title "AttaCut ${RELEASE_TAG#v}" \
-                --generate-notes --verify-tag $flags
+                --target "$GITHUB_SHA" --generate-notes $flags

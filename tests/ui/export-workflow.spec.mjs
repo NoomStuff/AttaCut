@@ -8,6 +8,7 @@ test("export workflow", async ({ launchApp, profile }) => {
    await mkdir(output);
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
+   const waitForTime = (time) => page.waitForFunction((target) => Math.abs(document.querySelector("video").currentTime - target) < 0.05, time);
    await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
    await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
    await page.waitForFunction(() => document.fullscreenElement?.tagName === "VIDEO");
@@ -36,13 +37,13 @@ test("export workflow", async ({ launchApp, profile }) => {
    await page.locator("video").evaluate((v) => {
       v.currentTime = 12;
    });
-   await page.waitForFunction(() => document.querySelector("video").currentTime === 12);
+   await waitForTime(12);
    await page.getByRole("button", { name: "Previous clip", exact: true }).click();
-   await page.waitForFunction(() => document.querySelector("video").currentTime === 9);
+   await waitForTime(9);
    await page.getByRole("button", { name: "Previous clip", exact: true }).click();
    await page.waitForFunction(() => Math.abs(document.querySelector("video").currentTime - 7.2) < 0.05);
    await page.getByRole("button", { name: "Next clip", exact: true }).click();
-   await page.waitForFunction(() => document.querySelector("video").currentTime === 9);
+   await waitForTime(9);
    const originalUrl = await page.locator("video").getAttribute("src");
    await page.getByRole("button", { name: "Preview audio tracks", exact: true }).click();
    await page.getByRole("option").nth(1).click();
