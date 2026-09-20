@@ -54,6 +54,13 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
          `ffconcat version 1.0\n${paths.map((path, index) => `file '${path.replaceAll("\\", "/").replaceAll("'", "'\\''")}'\nduration ${cuts[index]!.clip.end - cuts[index]!.clip.start}`).join("\n")}\n`
       );
       const output = join(temporary, `combined${extname(destination)}`);
+      // Separately trimmed lossless streams can carry encoder settings that differ between
+      // clips. Concatenating those packets under the first clip's codec header corrupts the
+      // result on stricter decoders. Re-encode these tracks losslessly at the final join so the
+      // output has one consistent stream configuration.
+      const joinedAudioCodecs = selectedAudio.flatMap((audio, index) =>
+         ["flac", "alac", "wavpack"].includes(audio.codec) || audio.codec.startsWith("pcm_") ? [`-c:a:${index}`, audio.codec] : []
+      );
       const trackMetadata = (["audio", "subtitle"] as const).flatMap((type) =>
          source.streams
             .filter((stream) => stream.type === type && (type !== "audio" || selectedAudio.some((audio) => audio.index === stream.index)))
@@ -114,6 +121,7 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
             `1:s:${source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!.index}`,
             "-c",
             "copy",
+            ...joinedAudioCodecs,
             "-map_chapters",
             chapters.length ? "2" : "-1",
             ...([".mp4", ".mov", ".m4v"].includes(extname(destination)) ? ["-movflags", "+faststart"] : []),
