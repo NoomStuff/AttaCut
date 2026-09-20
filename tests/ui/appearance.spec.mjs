@@ -1,16 +1,12 @@
-import { _electron as electron, expect } from "@playwright/test";
-import { resolve } from "node:path";
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { expect } from "@playwright/test";
+import { test } from "./app.mjs";
 
-await mkdir("work/screenshots", { recursive: true });
-const profile = await mkdtemp(resolve("work/appearance-profile-"));
-const launch = () => electron.launch({ args: ["."], env: { ...process.env, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: "" } });
-const application = await launch();
-try {
-   const page = await application.firstWindow();
-   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
+test("appearance", async ({ launchApp, profile }) => {
+   const launch = () => launchApp(profile, "");
+   const application = await launch();
+   let page = await application.firstWindow();
    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-   await page.keyboard.press("Control+,");
+   await page.keyboard.press("ControlOrMeta+,");
    await page.getByRole("dialog", { name: "Settings" }).waitFor();
    await expect(page.getByRole("button", { name: "Dark theme", exact: true })).toHaveAttribute("aria-pressed", "true");
    await expect(page.getByRole("group", { name: "Appearance" }).getByRole("button")).toHaveCount(3);
@@ -64,7 +60,6 @@ try {
          expect(contrast.text).toBeGreaterThanOrEqual(4.5);
          if (theme === "Light") for (const ratio of contrast.neutrals) expect(ratio).toBeGreaterThanOrEqual(4.5);
       }
-      await page.screenshot({ path: `work/screenshots/appearance-${theme.toLowerCase()}.png` });
    }
    await page.getByRole("button", { name: "System theme", exact: true }).click();
    for (const colorScheme of ["light", "dark", "light"]) {
@@ -78,17 +73,11 @@ try {
    await page.getByRole("button", { name: "Blue accent", exact: true }).click();
    await page.getByRole("button", { name: "Close panel", exact: true }).click();
    await page.getByRole("dialog").waitFor({ state: "detached" });
-   await page.screenshot({ path: "work/screenshots/appearance-empty.png" });
-} finally {
    await application.close();
-}
-const restored = await launch();
-try {
-   const page = await restored.firstWindow();
+   const restored = await launch();
+   page = await restored.firstWindow();
    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-   await page.keyboard.press("Control+,");
+   await page.keyboard.press("ControlOrMeta+,");
    await expect(page.getByRole("button", { name: "Blue accent", exact: true })).toHaveAttribute("aria-pressed", "true");
    console.log("Appearance passed: defaults, all accents, contrast, live system changes, explicit override, and persistence.");
-} finally {
-   await restored.close();
-}
+});

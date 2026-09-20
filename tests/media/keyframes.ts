@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { indexedKeyframes } from "../src/main/media/mp4-index.ts";
-import { probeSource, sourceKeyframes } from "../src/main/media/probe.ts";
-import { runMedia } from "../src/main/media/process.ts";
+import { indexedKeyframes } from "../../src/main/media/mp4-index.ts";
+import { probeSource, sourceKeyframes } from "../../src/main/media/probe.ts";
+import { runMedia } from "../../src/main/media/process.ts";
 const files = (await readdir("work/formats"))
    .filter((name) => /\.(mp4|mov)$/.test(name) && !name.includes("-cut."))
    .map((name) => resolve("work/formats", name));

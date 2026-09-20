@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { runMedia, ffmpegBase } from "../src/main/media/process.ts";
-import { probeSource } from "../src/main/media/probe.ts";
-import { analyzeCut, exportCut } from "../src/main/media/cut.ts";
-import { preparePreview } from "../src/main/media/preview.ts";
+import { runMedia, ffmpegBase } from "../../src/main/media/process.ts";
+import { probeSource } from "../../src/main/media/probe.ts";
+import { analyzeCut, exportCut } from "../../src/main/media/cut.ts";
+import { preparePreview } from "../../src/main/media/preview.ts";
 const folder = resolve("work/details");
 await mkdir(folder, { recursive: true });
 await writeFile(join(folder, "captions.srt"), "1\n00:00:00,500 --> 00:00:03,000\nAcross the start\n\n2\n00:00:07,000 --> 00:00:09,500\nAcross the end\n");

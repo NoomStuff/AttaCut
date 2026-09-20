@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, readdir } from "node:fs/promises";
 import sharp from "sharp";
-import { analyzeCut } from "../src/main/media/cut.ts";
+import { analyzeCut } from "../../src/main/media/cut.ts";
 import { resolve, join } from "node:path";
-import { ExportService } from "../src/main/exports.ts";
-import { probeSource, sourceKeyframes } from "../src/main/media/probe.ts";
-import { exportFrame } from "../src/main/media/frame.ts";
-import { runMedia } from "../src/main/media/process.ts";
+import { ExportService } from "../../src/main/exports.ts";
+import { probeSource, sourceKeyframes } from "../../src/main/media/probe.ts";
+import { exportFrame } from "../../src/main/media/frame.ts";
+import { runMedia } from "../../src/main/media/process.ts";
 
 const source = await probeSource(resolve("work/fixture.mp4"));
 const directory = await mkdtemp(resolve("work/export-options-"));

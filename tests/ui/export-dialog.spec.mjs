@@ -1,15 +1,10 @@
-import { _electron as electron, expect } from "@playwright/test";
-import { mkdtemp } from "node:fs/promises";
+import { expect } from "@playwright/test";
+import { test } from "./app.mjs";
 import { resolve } from "node:path";
-const profile = await mkdtemp(resolve("work/user-testing-"));
-const app = await electron.launch({
-   args: ["."],
-   env: { ...process.env, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: resolve("work/fixture.mp4") },
-});
-try {
+
+test("export dialog", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
-   page.setDefaultTimeout(15000);
-   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
    await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
    const bar = await page.locator(".timeline-viewport").boundingBox();
    await page.mouse.click(bar.x + bar.width / 3, bar.y + 36);
@@ -48,7 +43,6 @@ try {
    await page.getByRole("button", { name: "Export video", exact: true }).click();
    await expect(page.getByRole("dialog", { name: "Create output folder?", exact: true })).toBeVisible();
    await page.waitForTimeout(200);
-   await page.screenshot({ path: resolve("work/export-create-warning.png") });
    await page.getByRole("button", { name: "Cancel", exact: true }).click();
    await expect(page.getByRole("dialog", { name: "Export video", exact: true })).toBeVisible();
    await page.getByRole("button", { name: "Export video", exact: true }).click();
@@ -58,7 +52,6 @@ try {
    await page.getByRole("button", { name: "Export video", exact: true }).click();
    await expect(page.getByRole("dialog", { name: "Replace existing file?", exact: true })).toBeVisible();
    await page.waitForTimeout(200);
-   await page.screenshot({ path: resolve("work/export-overwrite-warning.png") });
    await page.getByRole("button", { name: "Replace and export", exact: true }).click();
    await expect(page.getByRole("dialog")).toHaveCount(0);
    await expect(page.getByRole("button", { name: "Open file", exact: true })).toBeVisible({ timeout: 60000 });
@@ -73,6 +66,4 @@ try {
    await expect(page.getByRole("textbox", { name: "Clip 1 filename", exact: true })).toHaveValue("first-kept-name");
    await expect(page.getByRole("checkbox", { name: "Export clip 2", exact: true })).not.toBeChecked();
    console.log("Export persistence, missing folder, cancel and overwrite passed");
-} finally {
-   await app.close();
-}
+});

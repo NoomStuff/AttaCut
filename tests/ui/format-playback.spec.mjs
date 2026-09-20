@@ -1,23 +1,14 @@
-import { _electron as electron, expect } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./app.mjs";
 import { resolve, basename } from "node:path";
-import { mkdtemp, readFile, writeFile, readdir, mkdir } from "node:fs/promises";
+import { readFile, writeFile, readdir } from "node:fs/promises";
 
-const profile = await mkdtemp(resolve("work/preview-profile-"));
-await mkdir("work/screenshots", { recursive: true });
-const formats = JSON.parse(await readFile("work/formats/results.json", "utf8"));
-const files = await readdir("work/formats");
-const application = await electron.launch({
-   args: process.env.ATTACUT_EXECUTABLE ? [] : ["."],
-   ...(process.env.ATTACUT_EXECUTABLE ? { executablePath: process.env.ATTACUT_EXECUTABLE } : {}),
-   env: { ...process.env, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: resolve("work/formats/h264.mp4") },
-});
-const results = [];
-const errors = [];
-try {
+test("format playback", async ({ launchApp, profile }) => {
+   const formats = JSON.parse(await readFile("work/formats/results.json", "utf8"));
+   const files = await readdir("work/formats");
+   const application = await launchApp(profile, resolve("work/formats/h264.mp4"));
+   const results = [];
    const page = await application.firstWindow();
-   page.setDefaultTimeout(20000);
-   page.on("pageerror", (error) => errors.push(error.message));
-   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
    await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
    for (const format of formats) {
       // Test exports too: these exercise the exact codec joins users will open later.
@@ -51,15 +42,11 @@ try {
             await page.getByRole("textbox", { name: "Clip start", exact: true }).press("Tab");
             await page.getByRole("button", { name: "Export", exact: true }).click();
             await expect(page.getByRole("button", { name: "Export video", exact: true })).toBeEnabled();
-            await page.screenshot({ path: "work/screenshots/format-export.png" });
             await page.keyboard.press("Escape");
          }
          results.push({ name: basename(path), playback: "ready" });
          console.log("PASS", basename(path));
       }
    }
-   expect(errors).toEqual([]);
    await writeFile("work/formats/playback-results.json", JSON.stringify(results, null, 2));
-} finally {
-   await application.close();
-}
+});

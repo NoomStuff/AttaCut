@@ -1,15 +1,11 @@
 import assert from "node:assert/strict";
-import { _electron as electron, expect } from "@playwright/test";
-import { mkdtemp } from "node:fs/promises";
+import { expect } from "@playwright/test";
+import { test } from "./app.mjs";
 import { resolve } from "node:path";
-const profile = await mkdtemp(resolve("work/clip-priority-"));
-const app = await electron.launch({
-   args: ["."],
-   env: { ...process.env, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: resolve("work/fixture.mp4") },
-});
-try {
+
+test("clip selection", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
-   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
    await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
    const seek = async (time) => {
       const bar = await page.locator(".timeline-viewport").boundingBox();
@@ -71,9 +67,9 @@ try {
    await page.keyboard.press("w");
    await expect(ranges()).toHaveCount(2);
    await expect(page.getByRole("slider", { name: "Clip 2 end", exact: true })).toHaveAttribute("aria-valuenow", "18");
-   await page.keyboard.press("Control+z");
+   await page.keyboard.press("ControlOrMeta+z");
    await expect(ranges()).toHaveCount(1);
-   await page.keyboard.press("Control+z");
+   await page.keyboard.press("ControlOrMeta+z");
    await expect(ranges()).toHaveCount(2);
    await expect(page.getByRole("slider", { name: "Clip 2 end", exact: true })).toHaveAttribute("aria-valuenow", "12");
    // Explicit Delete keeps removing existing clips, while Toggle preserves the gap priority.
@@ -86,8 +82,8 @@ try {
    await page.keyboard.press("Delete");
    await expect(ranges()).toHaveCount(0);
    await expect(page.locator("[data-command=delete]")).toBeDisabled();
-   await page.keyboard.press("Control+z");
-   await page.keyboard.press("Control+z");
+   await page.keyboard.press("ControlOrMeta+z");
+   await page.keyboard.press("ControlOrMeta+z");
    await expect(ranges()).toHaveCount(2);
    const handle = page.getByRole("slider", { name: "Clip 2 start", exact: true });
    await handle.click();
@@ -102,8 +98,8 @@ try {
    await expect(ranges()).toHaveCount(1);
    await page.locator("[data-command=delete]").click();
    await expect(ranges()).toHaveCount(0);
-   await page.keyboard.press("Control+z");
-   await page.keyboard.press("Control+z");
+   await page.keyboard.press("ControlOrMeta+z");
+   await page.keyboard.press("ControlOrMeta+z");
    await expect(ranges()).toHaveCount(2);
    await page.getByRole("slider", { name: "Clip 1 end", exact: true }).focus();
    await page.keyboard.press("Tab");
@@ -111,8 +107,5 @@ try {
    assert.equal(await handle.evaluate((element) => element.matches(":focus-visible")), true);
    await handle.click();
    await expect(handle).not.toBeFocused();
-   await page.screenshot({ path: "work/screenshots/clip-priority.png" });
    console.log("Clip priority, repeated toggle, explicit add, and mouse/keyboard navigation passed");
-} finally {
-   await app.close();
-}
+});

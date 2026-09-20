@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, writeFile, readFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import { ExportService } from "../src/main/exports.ts";
-import { probeSource } from "../src/main/media/probe.ts";
-import { preparePreview } from "../src/main/media/preview.ts";
+import { ExportService } from "../../src/main/exports.ts";
+import { probeSource } from "../../src/main/media/probe.ts";
+import { preparePreview } from "../../src/main/media/preview.ts";
 
 const source = await probeSource(resolve("work/fixture.mp4"));
 const directory = await mkdtemp(resolve("work/job-test-"));

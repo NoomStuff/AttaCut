@@ -58,7 +58,15 @@ macOS distribution signing and notarization use electron-builder's certificate a
 | `bun run format`  | Format the code                             |
 | `bun run verify`  | Run formatting, lint, unit tests, and build |
 
-The finer-grained suites (`test:ui`, `test:formats`, and friends) each exercise one slice of the app, and `test:fixtures` generates the media files they need. `format` and `verify` are going to be your best buds here before committing.
+## Tests
+
+- `bun run test` runs the unit tests.
+- `bun run test:media` generates fixtures and checks cut accuracy, format support, metadata, keyframes, cancellation, and exports against real FFmpeg.
+- `bun run test:ui` generates the basic fixtures, builds the app, and runs the Playwright UI tests.
+- `bun run test:playback` runs the media suite, builds the app, and checks that each format and its exported clip actually play in Electron.
+- `bun run test:all` runs all of the above without repeating the media suite or build.
+
+Integration tests live in `tests/media` and `tests/ui`. They need FFmpeg and ffprobe on PATH, or `FFMPEG_PATH` and `FFPROBE_PATH`. UI tests also need a desktop session. They run one at a time because Electron windows share keyboard focus.
 
 ---
 

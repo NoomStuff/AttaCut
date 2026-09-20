@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { mkdir, rm, readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { probeSource } from "../src/main/media/probe.ts";
-import { analyzeCut, exportCut } from "../src/main/media/cut.ts";
-import { runMedia } from "../src/main/media/process.ts";
+import { probeSource } from "../../src/main/media/probe.ts";
+import { analyzeCut, exportCut } from "../../src/main/media/cut.ts";
+import { runMedia } from "../../src/main/media/process.ts";
 
 const path = resolve(process.env["ATTACUT_MEDIA_FILE"] || "work/fixture.mp4");
 const source = await probeSource(path);

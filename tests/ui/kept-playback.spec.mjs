@@ -1,19 +1,10 @@
-import { _electron as electron, expect } from "@playwright/test";
-import { mkdtemp } from "node:fs/promises";
+import { expect } from "@playwright/test";
+import { test } from "./app.mjs";
 import { resolve } from "node:path";
 
-const profile = await mkdtemp(resolve("work/kept-playback-"));
-const app = await electron.launch({
-   args: process.env.ATTACUT_EXECUTABLE ? [] : ["."],
-   ...(process.env.ATTACUT_EXECUTABLE ? { executablePath: process.env.ATTACUT_EXECUTABLE } : {}),
-   env: { ...process.env, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: resolve("work/fixture.mp4") },
-});
-try {
+test("kept playback", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
-   page.setDefaultTimeout(15000);
-   const errors = [];
-   page.on("pageerror", (error) => errors.push(error.message));
-   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
    await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
    const video = page.locator("video");
    const bar = await page.locator(".timeline-viewport").boundingBox();
@@ -103,9 +94,6 @@ try {
    await page.keyboard.press("p");
    await at(1);
    await at(3, 3.001, true);
-   expect(errors).toEqual([]);
-   expect(await video.evaluate((video) => video.paused)).toBe(true);
+   await expect(video).toHaveJSProperty("paused", true);
    console.log("PASS kept-only natural gaps, paused/playing gap clicks, rapid scrubbing, final stop/restart, pending seek + Play, one-clip preview");
-} finally {
-   await app.close();
-}
+});

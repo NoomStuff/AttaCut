@@ -1,14 +1,10 @@
-import { _electron as electron, expect } from "@playwright/test";
-import { mkdtemp } from "node:fs/promises";
+import { expect } from "@playwright/test";
+import { test } from "./app.mjs";
 import { resolve } from "node:path";
-const profile = await mkdtemp(resolve("work/shortcuts-"));
-const app = await electron.launch({
-   args: ["."],
-   env: { ...process.env, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: resolve("work/fixture.mp4") },
-});
-try {
+
+test("shortcuts", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
-   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
    await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
    const seek = async (time) => {
       const bar = await page.locator(".timeline-viewport").boundingBox();
@@ -21,7 +17,7 @@ try {
    await expect(page.locator("[data-command=merge]")).toBeEnabled();
    await page.keyboard.press("e");
    await expect(page.locator(".clip-range")).toHaveCount(1);
-   await page.keyboard.press("Control+z");
+   await page.keyboard.press("ControlOrMeta+z");
    await expect(page.locator(".clip-range")).toHaveCount(2);
    await seek(8);
    await page.keyboard.press("w");
@@ -50,8 +46,5 @@ try {
    await page.keyboard.press(",");
    await page.waitForTimeout(100);
    expect(await page.locator("video").evaluate((video) => video.currentTime)).toBeCloseTo(10, 3);
-   await page.screenshot({ path: "work/screenshots/shortcuts.png" });
    console.log("Shortcut and merge workflow passed");
-} finally {
-   await app.close();
-}
+});

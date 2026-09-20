@@ -1,22 +1,13 @@
-import { _electron as electron, expect } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./app.mjs";
 import { resolve, join } from "node:path";
-import { mkdir, mkdtemp, readdir } from "node:fs/promises";
-await mkdir("work/screenshots", { recursive: true });
-const profile = await mkdtemp(resolve("work/ui-profile-"));
-const output = join(profile, "exports");
-await mkdir(output);
-const application = await electron.launch({
-   args: process.env.ATTACUT_EXECUTABLE ? [] : ["."],
-   ...(process.env.ATTACUT_EXECUTABLE ? { executablePath: process.env.ATTACUT_EXECUTABLE } : {}),
-   env: { ...process.env, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: resolve("work/fixture.mp4") },
-});
-const errors = [];
-try {
-   const page = await application.firstWindow();
-   // Chromium can stop producing screenshots for a window that has never been shown.
-   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
-   page.setDefaultTimeout(15000);
-   page.on("pageerror", (error) => errors.push(error.message));
+import { mkdir, readdir } from "node:fs/promises";
+
+test("editor session", async ({ launchApp, profile }) => {
+   const output = join(profile, "exports");
+   await mkdir(output);
+   const application = await launchApp(profile, resolve("work/fixture.mp4"));
+   let page = await application.firstWindow();
    await page.getByRole("slider", { name: "Clip 1 start", exact: true }).waitFor();
    await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
    const start = page.getByRole("textbox", { name: "Clip start", exact: true });
@@ -45,11 +36,10 @@ try {
    await page.keyboard.press("Escape");
    await page.mouse.up();
    await expect(second).toHaveAttribute("aria-valuenow", "10.2");
-   await page.keyboard.press("Control+z");
+   await page.keyboard.press("ControlOrMeta+z");
    await expect(second).toHaveAttribute("aria-valuenow", "9.7");
-   await page.keyboard.press("Control+Shift+z");
+   await page.keyboard.press("ControlOrMeta+Shift+z");
    await expect(second).toHaveAttribute("aria-valuenow", "10.2");
-   await page.screenshot({ path: "work/screenshots/editor.png" });
    await page.getByRole("button", { name: "Export", exact: true }).click();
    await page.getByRole("dialog", { name: "Export clips" }).waitFor();
    await expect(page.getByRole("textbox", { name: "Clip 1 filename", exact: true })).toHaveValue("fixture (1)");
@@ -57,7 +47,6 @@ try {
    await page.getByLabel("Save to", { exact: true }).fill(output);
    const exportButton = page.getByRole("button", { name: "Export 2 clips", exact: true });
    await expect(exportButton).toBeEnabled({ timeout: 20000 });
-   await page.screenshot({ path: "work/screenshots/export.png" });
    await exportButton.click();
    await page.getByText("2 of 2 exported", { exact: true }).waitFor({ timeout: 30000 });
    expect((await readdir(output)).filter((name) => name.endsWith(".mp4"))).toHaveLength(2);
@@ -69,35 +58,19 @@ try {
    await page.keyboard.press("x");
    await page.getByRole("button", { name: "Save binding" }).click();
    await page.getByRole("button", { name: "Change X for Split at playhead" }).waitFor();
-   await page.screenshot({ path: "work/screenshots/shortcuts.png" });
    await page.getByRole("tab", { name: "General", exact: true }).click();
    await page.getByRole("button", { name: "Light theme", exact: true }).click();
    await expect(page.getByRole("button", { name: "Light theme", exact: true })).toHaveAttribute("aria-pressed", "true");
    await page.getByRole("button", { name: "Close panel", exact: true }).click();
    await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 640));
-   await page.screenshot({ path: "work/screenshots/small-light.png" });
    const playBox = await page.getByRole("button", { name: "Play", exact: true }).boundingBox();
    expect(playBox.y + playBox.height).toBeLessThanOrEqual(640);
-   expect(errors).toEqual([]);
    console.log("UI passed: seeking, trim, split, cancelled drag, undo/redo, actual export, shortcuts, themes, and 960×640 layout.");
-} catch (error) {
-   const page = await application.firstWindow();
-   await page.screenshot({ path: "work/screenshots/failure.png" });
-   throw error;
-} finally {
    await application.close();
-}
-const restored = await electron.launch({
-   args: process.env.ATTACUT_EXECUTABLE ? [] : ["."],
-   ...(process.env.ATTACUT_EXECUTABLE ? { executablePath: process.env.ATTACUT_EXECUTABLE } : {}),
-   env: { ...process.env, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: "" },
-});
-try {
-   const page = await restored.firstWindow();
+   const restored = await launchApp(profile, "");
+   page = await restored.firstWindow();
    await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toHaveAttribute("aria-valuenow", "10.2");
    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
    console.log("Session restoration passed.");
-} finally {
-   await restored.close();
-}
+});
