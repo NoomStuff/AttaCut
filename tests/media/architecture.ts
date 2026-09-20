@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import { mkdtemp } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { ffmpegBase, runMedia } from "../../src/main/media/process.ts";
+import { probeSource } from "../../src/main/media/probe.ts";
+import { ExportService } from "../../src/main/exports.ts";
+import { extractScrubPcm } from "../../src/main/media/scrub-audio.ts";
+
+const directory = await mkdtemp(resolve("work/architecture-test-"));
+const path = join(directory, "two-video.mkv");
+await runMedia("ffmpeg", [...ffmpegBase, "-i", resolve("work/fixture.mp4"), "-map", "0:v:0", "-map", "0:v:0", "-map", "0:a:0", "-t", "2", "-c", "copy", path]);
+const source = await probeSource(path);
+const service = new ExportService(() => {});
+const plan = await service.plan(source, {
+   sourceId: source.id,
+   directory,
+   audioTracks: [],
+   items: [{ name: "muted", clip: { id: "x", color: 0, start: 0, end: source.duration } }],
+});
+service.start(plan.id);
+await service.waitForIdle();
+assert.equal(service.current?.items[0]?.status, "completed", service.current?.items[0]?.error ?? "");
+const output = await probeSource(plan.items[0]!.outputPath);
+assert.deepEqual(
+   output.streams.map((stream) => stream.type),
+   ["video", "video"]
+);
+const partial = await service.plan(source, { sourceId: source.id, directory, items: [{ name: "partial", clip: { id: "y", color: 0, start: 0.5, end: 1.5 } }] });
+assert.equal(partial.items[0]!.method, "unsupported");
+const audio = await extractScrubPcm({ ...source, duration: 10 * 60 * 60 }, [source.streams.find((stream) => stream.type === "audio")!.index]);
+assert.ok(audio && audio.pcm.byteLength <= 22050 * 2 * 30 + 4096);
+const longerPath = join(directory, "longer.mp4");
+await runMedia("ffmpeg", [...ffmpegBase, "-stream_loop", "1", "-i", resolve("work/fixture.mp4"), "-t", "36", "-c", "copy", longerPath]);
+const longer = await probeSource(longerPath);
+const track = longer.streams.find((stream) => stream.type === "audio")!.index;
+const first = await extractScrubPcm(longer, [track]);
+const second = await extractScrubPcm(longer, [track], undefined, 30);
+assert.ok(first && first.pcm.byteLength <= 22050 * 2 * 30 + 4096);
+assert.ok(second && second.start === 30 && second.pcm.byteLength > 22050 * 2);
+console.log("PASS whole-source multi-video preservation and bounded scrub extraction");

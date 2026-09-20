@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Clip, ExportJob, ExportPlan, ExportPlanItem, MediaSource, Preferences } from "../../../shared/types";
+import type { Clip, ExportJob, ExportPlan, CutReport, MediaSource, Preferences } from "../../../shared/types";
 import { exportExtensionFor } from "../../../shared/types";
 import { formatTime } from "../../../shared/time";
 import { faArrowUpFromBracket, faCircleExclamation, faCircleInfo, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
@@ -77,25 +77,25 @@ export function ExportPanel({
    };
    const [error, setError] = useState<string | null>(null);
    const [starting, setStarting] = useState(false);
-   const [analysis, setAnalysis] = useState<ExportPlanItem[] | null>(null);
+   const [analysis, setAnalysis] = useState<CutReport[] | null>(null);
    const selectedCount = request.items.length;
-   // One analysis pass feeds the footer note. Mode and names only relabel items, so the plan
-   // runs in "separate" mode and the export click still plans the real layout. Clips are
-   // frozen while the modal is open, so a single pass stays current.
+   // Media analysis is independent of filenames and destination checks, and reused at export.
    useEffect(() => {
       let cancelled = false;
+      setAnalysis(null);
       window.desktop
-         .planExport({ sourceId: source.id, directory, items: clips.map((clip) => ({ clip, name: "clip" })) })
-         .then((plan) => {
-            if (!cancelled) setAnalysis(plan.items);
+         .analyzeExport({ sourceId: source.id, directory, mode, audioTracks, items: clips.map((clip) => ({ clip, name: "clip" })) })
+         .then((items) => {
+            if (!cancelled) setAnalysis(items);
          })
          .catch(() => {
             // The note is informational; click-time planning still reports real problems.
          });
       return () => {
          cancelled = true;
+         void window.desktop.cancelExportPlanning();
       };
-   }, []);
+   }, [source.id, mode, audioTracks]);
    const valid = request.items.length > 0 && !!directory.trim() && (mode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim()));
    const start = async (approved?: ExportPlan) => {
       if (!valid || starting) return;

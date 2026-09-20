@@ -3,6 +3,7 @@
  * and stepping are audible. Runs through WebAudio beside the video element, which stays
  * untouched; bursts are cut short the moment real playback starts.
  */
+import type { ScrubAudio } from "../../../shared/types";
 export class AudioScrubber {
    private context: AudioContext | null = null;
    private buffer: AudioBuffer | null = null;
@@ -10,6 +11,49 @@ export class AudioScrubber {
    private decoding: { view: DataView; frames: number; position: number } | null = null;
    private timer = 0;
    private lastScrub = -Infinity;
+   private start = 0;
+   private generation = 0;
+   private loading = -1;
+   private load: ((time: number) => Promise<ScrubAudio | null>) | null = null;
+
+   configure(load: ((time: number) => Promise<ScrubAudio | null>) | null): void {
+      this.reset();
+      this.load = load;
+      if (load) this.request(0);
+   }
+   reset(): void {
+      this.generation++;
+      this.loading = -1;
+      this.load = null;
+      this.stop();
+      this.cancelDecode();
+      this.lastScrub = -Infinity;
+   }
+   dispose(): void {
+      this.reset();
+      void this.context?.close();
+      this.context = null;
+   }
+   private request(time: number): void {
+      const start = Math.floor(time / 30) * 30;
+      if (!this.load || this.loading === start) return;
+      const generation = ++this.generation;
+      this.loading = start;
+      this.stop();
+      this.cancelDecode();
+      void this.load(start)
+         .then((data) => {
+            if (generation !== this.generation) return;
+            this.loading = -1;
+            if (data) {
+               this.start = data.start;
+               this.setPcm(data.pcm, data.sampleRate);
+            }
+         })
+         .catch(() => {
+            if (generation === this.generation) this.loading = -1;
+         });
+   }
 
    /** Decode mono 16-bit PCM progressively so long recordings never block the interface. */
    setPcm(pcm: ArrayBuffer, sampleRate: number): void {
@@ -49,10 +93,15 @@ export class AudioScrubber {
       pointer input re-triggers at most every 50ms — the playing burst already covers that. */
    scrub(time: number, volume: number): void {
       const buffer = this.buffer;
-      if (!buffer || volume <= 0 || time >= buffer.duration) {
+      if (volume <= 0) {
          this.stop();
          return;
       }
+      if (!buffer || time < this.start || time >= this.start + buffer.duration) {
+         this.request(time);
+         return;
+      }
+      time -= this.start;
       const stamp = performance.now();
       if (stamp - this.lastScrub < 50) return;
       this.lastScrub = stamp;

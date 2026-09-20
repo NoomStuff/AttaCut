@@ -4,13 +4,43 @@ import sharp from "sharp";
 import { analyzeCut } from "../../src/main/media/cut.ts";
 import { resolve, join } from "node:path";
 import { ExportService } from "../../src/main/exports.ts";
-import { probeSource, sourceKeyframes } from "../../src/main/media/probe.ts";
+import { packetsAround, probeSource, sourceKeyframes } from "../../src/main/media/probe.ts";
+import { resolveFrameTime } from "../../src/shared/frames.ts";
 import { exportFrame } from "../../src/main/media/frame.ts";
 import { runMedia } from "../../src/main/media/process.ts";
 
 const source = await probeSource(resolve("work/fixture.mp4"));
 const directory = await mkdtemp(resolve("work/export-options-"));
 const service = new ExportService(() => {});
+for (const input of ["h264-vfr.mp4", "mpeg4.avi"]) {
+   const media = await probeSource(resolve("work/formats", input));
+   const points = (await packetsAround(media, 1)).map((point) => point.time);
+   const index = points.findIndex((time) => time >= 1);
+   const time = points[index]! + (points[index + 1]! - points[index]!) * 0.75;
+   const resolved = resolveFrameTime(points, time, media.duration);
+   assert.equal(resolved, points[index + 1]);
+   assert.equal(resolveFrameTime(points, time, media.duration, -1), points[index]);
+   const analysis = await analyzeCut(media, { id: "frame-policy", color: 0, start: time, end: 3 });
+   assert.equal(analysis.clip.start, resolved);
+   const still = await exportFrame(media, { sourceId: media.id, time, directory, name: input, format: "png", quality: 100 });
+   const reference = join(directory, `${input}-reference.png`);
+   await runMedia("ffmpeg", [
+      "-v",
+      "error",
+      "-copyts",
+      "-i",
+      media.path,
+      "-vf",
+      `trim=start=${resolved + media.startOffset - 0.0001},setpts=PTS-STARTPTS`,
+      "-frames:v",
+      "1",
+      "-update",
+      "1",
+      reference,
+   ]);
+   assert.deepEqual(await sharp(still).raw().toBuffer(), await sharp(reference).raw().toBuffer());
+   console.log("PASS shared navigation/cut/still-frame timestamp", input);
+}
 for (const muteAudio of [false, true]) {
    const plan = await service.plan(source, {
       sourceId: source.id,

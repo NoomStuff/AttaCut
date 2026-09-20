@@ -2,20 +2,20 @@ import { spawn } from "node:child_process";
 import type { ProbedSource } from "./probe.ts";
 import { binaryPath } from "./process.ts";
 
-/** Compact mono PCM for scrub bursts; 22 kHz keeps two hours under ~320 MB. */
+/** Keep only a short working set, independent of recording length. */
 const sampleRate = 22050;
-const maxSeconds = 2 * 60 * 60;
+export const scrubChunkSeconds = 30;
 
 export async function extractScrubPcm(
    source: ProbedSource,
    streamIndices: number[],
-   signal?: AbortSignal
-): Promise<{ sampleRate: number; pcm: ArrayBuffer } | null> {
-   if (source.duration > maxSeconds) return null;
+   signal?: AbortSignal,
+   start = 0
+): Promise<{ sampleRate: number; pcm: ArrayBuffer; start: number } | null> {
    const tracks = source.streams.filter((stream) => stream.type === "audio" && !stream.attachedPicture);
    const selected = streamIndices.map((index) => tracks.findIndex((stream) => stream.index === index));
    if (!selected.length || selected.some((track) => track < 0)) return null;
-   const limit = sampleRate * 2 * Math.ceil(source.duration) + 4096;
+   const limit = sampleRate * 2 * scrubChunkSeconds + 4096;
    return new Promise((resolve, reject) => {
       const child = spawn(
          binaryPath("ffmpeg"),
@@ -24,8 +24,12 @@ export async function extractScrubPcm(
             "-loglevel",
             "error",
             "-nostdin",
+            "-ss",
+            String(start),
             "-i",
             source.path,
+            "-t",
+            String(scrubChunkSeconds),
             "-vn",
             ...(selected.length === 1
                ? ["-map", `0:a:${selected[0]}`]
@@ -69,7 +73,7 @@ export async function extractScrubPcm(
             pcm.set(chunk, offset);
             offset += chunk.length;
          }
-         resolve({ sampleRate, pcm: pcm.buffer });
+         resolve({ sampleRate, pcm: pcm.buffer, start });
       });
    });
 }

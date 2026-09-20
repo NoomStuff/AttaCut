@@ -1,0 +1,30 @@
+import type { DesktopApi, ExportApproval, FrameRequest, PlanRequest, Preferences, SavedSession } from "./types";
+type Result<K extends keyof DesktopApi> = Awaited<ReturnType<DesktopApi[K]>>;
+type Call<Request, Response> = { request: Request; response: Response };
+export interface IpcCalls {
+   "app:bootstrap": Call<void, Result<"bootstrap">>;
+   "source:choose": Call<void, string | null>;
+   "source:open": Call<string, Result<"openSource">>;
+   "source:keyframes": Call<string, number[]>;
+   "source:frame-time": Call<{ sourceId: string; time: number; direction: -1 | 0 | 1 }, number>;
+   "directory:choose": Call<string, string | null>;
+   "preferences:save": Call<Preferences, void>;
+   "session:save": Call<SavedSession, void>;
+   "session:clear": Call<void, void>;
+   "state:flush": Call<{ preferences: Preferences; session: SavedSession | null }, void>;
+   "preview:prepare": Call<{ sourceId: string; audioIndices: number[]; transcode: boolean }, string>;
+   "preview:cancel": Call<void, void>;
+   "audio:scrub": Call<{ sourceId: string; streamIndices: number[]; time: number }, Result<"scrubAudio">>;
+   "audio:cancel": Call<void, void>;
+   "frame:export": Call<FrameRequest, string>;
+   "export:plan": Call<PlanRequest, Result<"planExport">>;
+   "export:analyze": Call<PlanRequest, Result<"analyzeExport">>;
+   "export:cancel-planning": Call<void, void>;
+   "export:start": Call<{ id: string; approval: ExportApproval | undefined }, Result<"startExport">>;
+   "export:cancel": Call<void, void>;
+   "export:retry": Call<string, Result<"retryExport">>;
+   "output:open": Call<string, void>;
+   "output:reveal": Call<string, void>;
+   "open:external": Call<string, void>;
+   "notices:open": Call<void, void>;
+}

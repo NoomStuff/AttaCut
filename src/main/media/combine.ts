@@ -5,7 +5,7 @@ import type { ProbedSource } from "./probe.ts";
 import { exportCut } from "./cut.ts";
 import type { CutAnalysis, CutOptions } from "./cut.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
-import { verifyCopiedFrames } from "./verify.ts";
+import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
 
 export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], destination: string, options: CutOptions): Promise<void> {
    const temporary = await mkdtemp(join(dirname(destination), ".attacut-combined-"));
@@ -126,9 +126,18 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
       let offset = 0;
       for (const cut of cuts) {
          if (cut.verifyTimes?.length) await verifyCopiedFrames(source, output, cut.clip.start - offset, cut.verifyTimes, options.signal);
+         if (cut.encodedVerifyTimes?.length) await verifyEncodedFrames(source, output, cut.clip.start - offset, cut.encodedVerifyTimes, options.signal);
          offset += cut.clip.end - cut.clip.start;
       }
       options.signal?.throwIfAborted();
+      await verifyOutputStructure(
+         source,
+         output,
+         selectedAudio.map((stream) => stream.index),
+         duration,
+         options.signal,
+         cuts[0]!.clip.start
+      );
       await publishOutput(output, destination, options.overwrite, source.path);
    } finally {
       await rm(temporary, { recursive: true, force: true });

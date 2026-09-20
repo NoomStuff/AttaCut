@@ -80,8 +80,11 @@ assert.equal(result.chapters[0]!.start, 0);
 assert.ok(Math.abs(result.chapters[1]!.end - (analysis.clip.end - analysis.clip.start)) < 0.002);
 const subtitles = await runMedia("ffmpeg", ["-v", "error", "-i", output, "-map", "0:s:0", "-c:s", "srt", "-f", "srt", "-"]);
 assert.match(subtitles, /00:00:00,000 --> 00:00:01,750/);
-// The cue crosses the selected end, so it must stop at the 7.5-second clip boundary.
-assert.match(subtitles, /00:00:05,750 --> 00:00:07,500/);
+// ASS has centisecond precision. The endpoint follows the resolved source frames.
+const captionEnd = /Across the start\s+2\s+[\d:,]+ --> (\d{2}):(\d{2}):(\d{2}),(\d{3})/.exec(subtitles);
+assert.ok(captionEnd);
+const captionEndSeconds = Number(captionEnd[1]) * 3600 + Number(captionEnd[2]) * 60 + Number(captionEnd[3]) + Number(captionEnd[4]) / 1000;
+assert.ok(Math.abs(captionEndSeconds - (analysis.clip.end - analysis.clip.start)) <= 0.01);
 await runMedia("ffmpeg", ["-v", "error", "-xerror", "-i", output, "-map", "0:v", "-map", "0:a", "-f", "null", "-"]);
 for (let index = 0; index < 4; index++) {
    const files = [join(folder, `reference-${index}.pcm`), join(folder, `output-${index}.pcm`)];

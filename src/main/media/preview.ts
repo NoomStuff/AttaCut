@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProbedSource } from "./probe.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
 import type { RunOptions } from "./process.ts";
+import { probeSource } from "./probe.ts";
+const previewByteLimit = 1024 * 1024 * 1024;
 
 export async function preparePreview(
    source: ProbedSource,
@@ -62,6 +64,8 @@ export async function preparePreview(
             ...(audioIndices.length ? ["-c:a", "aac"] : []),
             "-movflags",
             "+faststart",
+            "-fs",
+            String(previewByteLimit),
             "-progress",
             "pipe:1",
             partial,
@@ -77,6 +81,9 @@ export async function preparePreview(
          await run(true);
       }
       options.signal?.throwIfAborted();
+      const preview = await probeSource(partial, options.signal);
+      if ((await stat(partial)).size >= previewByteLimit || preview.duration < source.duration - 0.25)
+         throw new Error("This preview exceeds the cache limit. The original can still be exported.");
       await rename(partial, path);
       return { id, path };
    } finally {

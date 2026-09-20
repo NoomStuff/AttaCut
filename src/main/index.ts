@@ -7,17 +7,39 @@ import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { z } from "zod";
 import { preferencesSchema, planRequestSchema, savedSessionSchema, frameRequestSchema } from "../shared/types.ts";
-import { probeSource, sourceKeyframes } from "./media/probe.ts";
-import { extractScrubPcm } from "./media/scrub-audio.ts";
+import { packetsAround } from "./media/probe.ts";
 import { exportFrame } from "./media/frame.ts";
 import type { ProbedSource } from "./media/probe.ts";
-import { preparePreview } from "./media/preview.ts";
+import { SourceSession } from "./source-session.ts";
+import { resolveFrameTime } from "../shared/frames.ts";
 import { ExportService } from "./exports.ts";
 import { Storage } from "./storage.ts";
 import { serveMedia } from "./media/serve.ts";
 import { videoExtensions } from "./media/formats.ts";
+import type { IpcCalls } from "../shared/ipc.ts";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
+if (process.env["ATTACUT_USER_DATA"]) app.setPath("userData", process.env["ATTACUT_USER_DATA"]);
+const ownsInstance = app.requestSingleInstanceLock();
+let appWindow: BrowserWindow | null = null;
+let rendererReady = false;
+const fileArgument = (args: string[]): string | null =>
+   args.find((arg) => videoExtensions.some((extension) => arg.toLowerCase().endsWith(`.${extension}`)) && existsSync(arg)) ?? null;
+let pendingFile = process.env["ATTACUT_OPEN_FILE"] ?? fileArgument(process.argv.slice(1));
+const receiveFile = (path: string | null) => {
+   if (path && rendererReady && appWindow && !appWindow.isDestroyed()) appWindow.webContents.send("app:open-file", path);
+   else if (path) pendingFile = path;
+   if (appWindow && !appWindow.isDestroyed()) {
+      if (appWindow.isMinimized()) appWindow.restore();
+      appWindow.show();
+      appWindow.focus();
+   }
+};
+app.on("second-instance", (_event, args) => receiveFile(fileArgument(args.slice(1))));
+app.on("open-file", (event, path) => {
+   event.preventDefault();
+   receiveFile(path);
+});
 // Use the same assets for native windows and Windows shell entries in every build.
 function windowIcon(): string | undefined {
    if (process.platform === "darwin") return undefined;
@@ -46,14 +68,7 @@ protocol.registerSchemesAsPrivileged([
    { scheme: "media", privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
    { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
-if (process.env["ATTACUT_USER_DATA"]) app.setPath("userData", process.env["ATTACUT_USER_DATA"]);
 async function start(): Promise<void> {
-   let sourceController: AbortController | null = null;
-   let previewController: AbortController | null = null;
-   const sources = new Map<string, ProbedSource>();
-   const mediaPaths = new Map<string, string>();
-   const keyframes = new Map<string, number[]>();
-   const scrubAudio = new Map<string, Promise<{ sampleRate: number; pcm: ArrayBuffer } | null>>();
    const frameOutputs = new Set<string>();
    const exportsService = new ExportService((job) => {
       if (!window.isDestroyed()) window.webContents.send("export:progress", job);
@@ -61,16 +76,14 @@ async function start(): Promise<void> {
    function validSender(event: IpcMainInvokeEvent): void {
       if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error("Invalid application request.");
    }
-   function handle(channel: string, action: (value: unknown) => unknown): void {
+   function handle<K extends keyof IpcCalls>(channel: K, action: (value: unknown) => IpcCalls[K]["response"] | Promise<IpcCalls[K]["response"]>): void {
       ipcMain.handle(channel, (event, value: unknown) => {
          validSender(event);
          return action(value);
       });
    }
    function getSource(value: unknown): ProbedSource {
-      const source = sources.get(z.string().parse(value));
-      if (!source) throw new Error("Reopen the source video.");
-      return source;
+      return sourceSession.get(z.string().parse(value));
    }
    function sendCommand(id: string): void {
       window.webContents.send("app:command", id);
@@ -123,13 +136,14 @@ async function start(): Promise<void> {
    const previewFolder = resolve(app.getPath("userData"), "previews");
    if (resolve(previewFolder, "..") !== resolve(app.getPath("userData"))) throw new Error("Invalid preview cache path.");
    await rm(previewFolder, { recursive: true, force: true });
+   const sourceSession = new SourceSession(previewFolder);
    session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
       callback(contents === window.webContents && permission === "fullscreen")
    );
    session.defaultSession.setPermissionCheckHandler((contents, permission) => contents === window.webContents && permission === "fullscreen");
    protocol.handle("media", async (request) => {
       const id = new URL(request.url).pathname.slice(1);
-      const path = mediaPaths.get(id);
+      const path = sourceSession.mediaPaths.get(id);
       return path ? serveMedia(path, request) : new Response("Not found", { status: 404 });
    });
    protocol.handle("app", (request) => {
@@ -157,6 +171,7 @@ async function start(): Promise<void> {
          nodeIntegration: false,
       },
    });
+   appWindow = window;
    if (process.platform === "win32" && icon) {
       window.setAppDetails({
          appId: "dev.attacut.app",
@@ -172,44 +187,69 @@ async function start(): Promise<void> {
       if (process.env["ATTACUT_HIDDEN"] !== "1") window.show();
    });
    let confirmedClose = false;
+   let closing = false;
+   let resolveFlush: (() => void) | null = null;
    window.on("close", (event) => {
-      if (exportsService.running && !confirmedClose) {
-         event.preventDefault();
-         void dialog
-            .showMessageBox(window, {
+      if (confirmedClose) return;
+      event.preventDefault();
+      if (closing) return;
+      closing = true;
+      void (async () => {
+         if (exportsService.running) {
+            const { response } = await dialog.showMessageBox(window, {
                type: "question",
                message: "Cancel the unfinished export and close?",
                detail: "Finished files will be kept.",
                buttons: ["Keep exporting", "Cancel and close"],
                defaultId: 0,
                cancelId: 0,
-            })
-            .then(({ response }) => {
-               if (response === 1) {
-                  confirmedClose = true;
-                  exportsService.cancel();
-                  void exportsService.waitForIdle().then(() => window.close());
-               }
             });
-      }
+            if (response !== 1) return;
+            exportsService.cancel();
+            await exportsService.waitForIdle();
+         }
+         if (rendererReady && !window.webContents.isDestroyed()) {
+            await new Promise<void>((resolve, reject) => {
+               const timer = setTimeout(() => {
+                  resolveFlush = null;
+                  reject(new Error("The editor did not finish saving. Try closing again."));
+               }, 10000);
+               resolveFlush = () => {
+                  clearTimeout(timer);
+                  resolve();
+               };
+               window.webContents.send("app:flush");
+            });
+         }
+         await storage.flush();
+         confirmedClose = true;
+         window.close();
+      })()
+         .catch((error: unknown) => dialog.showErrorBox("Could not save before closing", error instanceof Error ? error.message : String(error)))
+         .finally(() => {
+            closing = false;
+         });
    });
    app.on("window-all-closed", () => {
-      sourceController?.abort();
-      previewController?.abort();
+      sourceSession.dispose();
+      exportsService.cancelPlanning();
       exportsService.cancel();
       app.quit();
    });
    installMenu();
-   handle("app:bootstrap", () => ({
-      preferences: storage.preferences,
-      session: storage.session,
-      platform: process.platform,
-      version: app.getVersion(),
-      initialFile:
-         process.env["ATTACUT_OPEN_FILE"] ??
-         process.argv.slice(1).find((arg) => videoExtensions.some((extension) => arg.toLowerCase().endsWith(`.${extension}`)) && existsSync(arg)) ??
-         null,
-   }));
+   handle("app:bootstrap", () => {
+      rendererReady = true;
+      const initialFile = pendingFile;
+      pendingFile = null;
+      return {
+         warning: storage.warning,
+         preferences: storage.preferences,
+         session: storage.session,
+         platform: process.platform,
+         version: app.getVersion(),
+         initialFile,
+      };
+   });
    handle("source:choose", async () => {
       const result = await dialog.showOpenDialog(window, {
          title: "Import video",
@@ -222,12 +262,9 @@ async function start(): Promise<void> {
       return result.filePaths[0] ?? null;
    });
    handle("source:open", async (value) => {
-      sourceController?.abort();
-      previewController?.abort();
-      sourceController = new AbortController();
-      const source = await probeSource(z.string().min(1).parse(value), sourceController.signal);
-      sources.set(source.id, source);
-      mediaPaths.set(source.id, source.path);
+      const source = await sourceSession.open(z.string().min(1).parse(value));
+      exportsService.cancelPlanning();
+      frameOutputs.clear();
       window.setTitle(`${source.name} — AttaCut`);
       return source;
    });
@@ -240,27 +277,39 @@ async function start(): Promise<void> {
       return result.filePaths[0] ?? null;
    });
    handle("source:keyframes", async (value) => {
-      const source = getSource(value);
-      const cached = keyframes.get(source.id);
-      if (cached) return cached;
-      const points = await sourceKeyframes(source, sourceController?.signal);
-      keyframes.set(source.id, points);
-      return points;
+      return sourceSession.keyframes(z.string().parse(value));
+   });
+   handle("source:frame-time", async (value) => {
+      const request = z
+         .object({ sourceId: z.string(), time: z.number().finite().nonnegative(), direction: z.union([z.literal(-1), z.literal(0), z.literal(1)]) })
+         .parse(value);
+      const source = getSource(request.sourceId);
+      const points = await packetsAround(source, request.time, sourceSession.signal);
+      return resolveFrameTime(
+         points.map((point) => point.time),
+         request.time,
+         source.duration,
+         request.direction
+      );
    });
    handle("audio:scrub", async (value) => {
-      const { sourceId, streamIndices } = z.object({ sourceId: z.string(), streamIndices: z.array(z.number().int()).min(1) }).parse(value);
+      const { sourceId, streamIndices, time } = z
+         .object({ sourceId: z.string(), streamIndices: z.array(z.number().int()).min(1), time: z.number().finite().nonnegative().default(0) })
+         .parse(value);
       const source = getSource(sourceId);
       if (streamIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
          throw new Error("Audio track not found.");
-      const key = `${source.id}:${streamIndices.join("-")}`;
-      const cached = scrubAudio.get(key);
-      if (cached) return cached;
-      const extraction = extractScrubPcm(source, streamIndices).catch((error: unknown) => {
-         scrubAudio.delete(key);
-         throw error;
-      });
-      scrubAudio.set(key, extraction);
-      return extraction;
+      return sourceSession.scrubAudio(source.id, streamIndices, time);
+   });
+   handle("audio:cancel", () => sourceSession.cancelScrub());
+   handle("export:cancel-planning", () => exportsService.cancelPlanning());
+   handle("state:flush", async (value) => {
+      const snapshot = z.object({ preferences: preferencesSchema, session: savedSessionSchema.nullable() }).parse(value);
+      storage.preferences = snapshot.preferences;
+      storage.session = snapshot.session;
+      await storage.save();
+      resolveFlush?.();
+      resolveFlush = null;
    });
    handle("frame:export", async (value) => {
       const request = frameRequestSchema.parse(value);
@@ -285,19 +334,18 @@ async function start(): Promise<void> {
       const source = getSource(request.sourceId);
       if (request.audioIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
          throw new Error("Audio track not found.");
-      previewController?.abort();
-      const controller = new AbortController();
-      previewController = controller;
-      const { id, path } = await preparePreview(source, previewFolder, request.audioIndices, request.transcode, { signal: controller.signal });
-      mediaPaths.set(id, path);
-      return `media://source/${id}`;
+      return sourceSession.prepare(source.id, request.audioIndices, request.transcode);
    });
    handle("preview:cancel", () => {
-      previewController?.abort();
+      sourceSession.cancelPreview();
    });
    handle("export:plan", (value) => {
       const request = planRequestSchema.parse(value);
       return exportsService.plan(getSource(request.sourceId), request);
+   });
+   handle("export:analyze", (value) => {
+      const request = planRequestSchema.parse(value);
+      return exportsService.inspect(getSource(request.sourceId), request);
    });
    handle("export:start", (value) => {
       const request = z
@@ -354,8 +402,10 @@ async function start(): Promise<void> {
    if (process.env["ELECTRON_RENDERER_URL"]) await window.loadURL(process.env["ELECTRON_RENDERER_URL"]);
    else await window.loadURL("app://editor/index.html");
 }
-void start().catch((error: unknown) => {
-   console.error(error);
-   dialog.showErrorBox("Could not start AttaCut", error instanceof Error ? error.message : String(error));
-   app.exit(1);
-});
+if (!ownsInstance) app.quit();
+else
+   void start().catch((error: unknown) => {
+      console.error(error);
+      dialog.showErrorBox("Could not start AttaCut", error instanceof Error ? error.message : String(error));
+      app.exit(1);
+   });

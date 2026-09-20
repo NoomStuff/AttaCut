@@ -7,8 +7,9 @@ import { packetsAround, assertSourceUnchanged } from "./probe.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
 import type { RunOptions } from "./process.ts";
 import { metadataInputs, textSubtitleCodecs } from "./metadata.ts";
-import { verifyCopiedFrames } from "./verify.ts";
+import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
 import { encoderArguments, isIntraCodec, segmentExtension, colorArguments } from "./formats.ts";
+import { resolveFrameTime } from "../../shared/frames.ts";
 
 export interface Span {
    start: number;
@@ -17,28 +18,41 @@ export interface Span {
    readStart?: number;
 }
 export interface CutAnalysis {
+   execution: "file-copy" | "remux" | "trim";
    clip: Clip;
    spans: Span[];
    method: ExportPlanItem["method"];
    encodedSeconds: number;
    message: string;
    verifyTimes?: number[];
+   encodedVerifyTimes?: number[];
 }
 const epsilon = 0.0001;
 function closestFrame(points: PacketPoint[], time: number, duration: number): number {
-   if (time < epsilon) return Math.max(0, points[0]?.time ?? 0);
-   if (Math.abs(time - duration) < 0.02) return duration;
-   const closest = points.reduce<PacketPoint | null>(
-      (best, packet) => (!best || Math.abs(packet.time - time) < Math.abs(best.time - time) ? packet : best),
-      null
+   return resolveFrameTime(
+      points.map((point) => point.time),
+      time,
+      duration
    );
-   return closest?.time ?? time;
 }
-export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: AbortSignal): Promise<CutAnalysis> {
-   const unsupported = (message: string): CutAnalysis => ({ clip, spans: [], method: "unsupported", encodedSeconds: 0, message });
+export interface CutIntent {
+   audioTracks?: number[];
+   extension?: string;
+   combined?: boolean;
+}
+export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: AbortSignal, intent: CutIntent = {}): Promise<CutAnalysis> {
+   const unsupported = (message: string): CutAnalysis => ({ execution: "trim", clip, spans: [], method: "unsupported", encodedSeconds: 0, message });
    if (clip.start < 0 || clip.end > source.duration + epsilon || clip.end <= clip.start) return unsupported("The selected range is outside the video.");
    if (clip.start === 0 && Math.abs(clip.end - source.duration) < epsilon) {
       return {
+         execution:
+            !intent.combined &&
+            (intent.extension ?? source.extension).toLowerCase() === source.extension.toLowerCase() &&
+            source.streams
+               .filter((stream) => stream.type === "audio")
+               .every((stream) => intent.audioTracks === undefined || intent.audioTracks.includes(stream.index))
+               ? "file-copy"
+               : "remux",
          clip,
          spans: [{ start: 0, end: source.duration, encode: false }],
          method: "copy",
@@ -97,6 +111,16 @@ export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: Abor
       ),
    ];
    const encodedSeconds = spans.filter((span) => span.encode).reduce((sum, span) => sum + span.end - span.start, 0);
+   const encodedVerifyTimes = [
+      ...new Set(
+         spans
+            .filter((span) => span.encode)
+            .flatMap((span) => {
+               const frames = points.filter((point) => point.time >= span.start - epsilon && point.time < span.end - epsilon);
+               return frames.length ? [frames[0]!.time, frames.at(-1)!.time] : [];
+            })
+      ),
+   ];
    if (encodedSeconds > 12 || (snapped.end - snapped.start > 12 && encodedSeconds > (snapped.end - snapped.start) * 0.5)) {
       return unsupported("This cut would need more than a small section re-encoded. Try a nearby boundary or a shorter selection.");
    }
@@ -116,12 +140,14 @@ export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: Abor
    if (encodedSeconds > epsilon && video.fieldOrder && !["unknown", "progressive"].includes(video.fieldOrder))
       return unsupported("Precise boundary encoding for interlaced video is not supported yet.");
    return {
+      execution: "trim",
       clip: snapped,
       spans,
       method: encodedSeconds > epsilon ? "boundary" : "copy",
       encodedSeconds,
       message: encodedSeconds > epsilon ? `${encodedSeconds.toFixed(2)}s near the cuts re-encoded; remaining video copied` : "Original streams copied",
       verifyTimes,
+      encodedVerifyTimes,
    };
 }
 
@@ -141,8 +167,30 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
    const selectedAudio = options.audioTracks === undefined ? sourceAudio : sourceAudio.filter((stream) => options.audioTracks!.includes(stream.index));
    const allAudio = selectedAudio.length === sourceAudio.length;
    try {
-      if (allAudio && clip.start === 0 && Math.abs(clip.end - source.duration) < epsilon && extname(destination) === source.extension) {
+      if (analysis.execution === "file-copy" && allAudio && extname(destination).toLowerCase() === source.extension.toLowerCase()) {
          await copyFile(source.path, finalTemporary, constants.COPYFILE_EXCL);
+      } else if (clip.start === 0 && Math.abs(clip.end - source.duration) < epsilon) {
+         // A whole-source remux preserves every non-audio stream, including secondary video,
+         // cover art, attachments and data. Unsupported container mappings fail explicitly.
+         await runMedia(
+            "ffmpeg",
+            [
+               ...ffmpegBase,
+               "-i",
+               source.path,
+               "-map",
+               "0",
+               ...sourceAudio.filter((stream) => !selectedAudio.includes(stream)).flatMap((stream) => ["-map", `-0:${stream.index}`]),
+               "-map_metadata",
+               "0",
+               "-map_chapters",
+               "0",
+               "-c",
+               "copy",
+               finalTemporary,
+            ],
+            options
+         );
       } else {
          const video = source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!;
          const segmentPaths: string[] = [];
@@ -251,7 +299,17 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
          });
       }
       options.signal?.throwIfAborted();
+      if (analysis.execution !== "file-copy" || !allAudio || extname(destination).toLowerCase() !== source.extension.toLowerCase())
+         await verifyOutputStructure(
+            source,
+            finalTemporary,
+            selectedAudio.map((stream) => stream.index),
+            duration,
+            options.signal,
+            clip.start
+         );
       if (analysis.verifyTimes?.length) await verifyCopiedFrames(source, finalTemporary, clip.start, analysis.verifyTimes, options.signal);
+      if (analysis.encodedVerifyTimes?.length) await verifyEncodedFrames(source, finalTemporary, clip.start, analysis.encodedVerifyTimes, options.signal);
       await publishOutput(finalTemporary, destination, options.overwrite, source.path);
       options.onProgress?.(1);
    } finally {

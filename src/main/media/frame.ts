@@ -5,7 +5,8 @@ import type { FrameRequest } from "../../shared/types.ts";
 import { assertSourceUnchanged, packetsAround } from "./probe.ts";
 import type { ProbedSource } from "./probe.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
-import { sanitizeName } from "../exports.ts";
+import { sanitizeName } from "./filename.ts";
+import { resolveFrameTime } from "../../shared/frames.ts";
 
 export async function exportFrame(source: ProbedSource, request: FrameRequest): Promise<string> {
    await assertSourceUnchanged(source);
@@ -14,8 +15,12 @@ export async function exportFrame(source: ProbedSource, request: FrameRequest): 
    const path = join(temporary, `frame.${request.format}`);
    try {
       const points = await packetsAround(source, Math.min(request.time, source.duration));
-      const time = points.filter((point) => point.time <= request.time + 0.0001).at(-1)?.time ?? points[0]?.time;
-      if (time === undefined) throw new Error("No frame is available at this time.");
+      if (!points.length) throw new Error("No frame is available at this time.");
+      const time = resolveFrameTime(
+         points.map((point) => point.time),
+         Math.min(request.time, points.at(-1)!.time),
+         source.duration
+      );
       const video = source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!;
       const hdr = ["smpte2084", "arib-std-b67"].includes(video.colorTransfer);
       const filter =
@@ -24,8 +29,7 @@ export async function exportFrame(source: ProbedSource, request: FrameRequest): 
       await runMedia("ffmpeg", [
          ...ffmpegBase,
          "-copyts",
-         "-ss",
-         String(Math.max(0, time - 5)),
+         ...(time > 5 ? ["-ss", String(time - 5)] : []),
          "-i",
          source.path,
          "-map",

@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DesktopApi, ExportJob } from "../shared/types";
+import type { IpcCalls } from "../shared/ipc";
+function invoke<K extends keyof IpcCalls>(
+   channel: K,
+   ...args: IpcCalls[K]["request"] extends void ? [] : [IpcCalls[K]["request"]]
+): Promise<IpcCalls[K]["response"]> {
+   return ipcRenderer.invoke(channel, ...args) as Promise<IpcCalls[K]["response"]>;
+}
 function listen<T>(channel: string, callback: (value: T) => void): () => void {
    const handler = (_event: Electron.IpcRendererEvent, value: T) => callback(value);
    ipcRenderer.on(channel, handler);
@@ -8,27 +15,34 @@ function listen<T>(channel: string, callback: (value: T) => void): () => void {
    };
 }
 const api: DesktopApi = {
-   bootstrap: () => ipcRenderer.invoke("app:bootstrap"),
-   chooseSource: () => ipcRenderer.invoke("source:choose"),
-   openSource: (path) => ipcRenderer.invoke("source:open", path),
+   bootstrap: () => invoke("app:bootstrap"),
+   chooseSource: () => invoke("source:choose"),
+   openSource: (path) => invoke("source:open", path),
    filePath: (file) => webUtils.getPathForFile(file),
-   chooseDirectory: (current) => ipcRenderer.invoke("directory:choose", current),
-   savePreferences: (value) => ipcRenderer.invoke("preferences:save", value),
-   saveSession: (value) => ipcRenderer.invoke("session:save", value),
-   clearSession: () => ipcRenderer.invoke("session:clear"),
-   preparePreview: (sourceId, audioIndices, transcode) => ipcRenderer.invoke("preview:prepare", { sourceId, audioIndices, transcode }),
-   cancelPreview: () => ipcRenderer.invoke("preview:cancel"),
-   keyframes: (sourceId) => ipcRenderer.invoke("source:keyframes", sourceId),
-   scrubAudio: (sourceId, streamIndices) => ipcRenderer.invoke("audio:scrub", { sourceId, streamIndices }),
-   exportFrame: (request) => ipcRenderer.invoke("frame:export", request),
-   planExport: (request) => ipcRenderer.invoke("export:plan", request),
-   startExport: (id, approval) => ipcRenderer.invoke("export:start", { id, approval }),
-   cancelExport: () => ipcRenderer.invoke("export:cancel"),
-   retryExport: (id) => ipcRenderer.invoke("export:retry", id),
-   revealOutput: (path) => ipcRenderer.invoke("output:reveal", path),
-   openOutput: (path) => ipcRenderer.invoke("output:open", path),
-   openExternal: (url) => ipcRenderer.invoke("open:external", url),
-   openNotices: () => ipcRenderer.invoke("notices:open"),
+   chooseDirectory: (current) => invoke("directory:choose", current),
+   savePreferences: (value) => invoke("preferences:save", value),
+   saveSession: (value) => invoke("session:save", value),
+   clearSession: () => invoke("session:clear"),
+   preparePreview: (sourceId, audioIndices, transcode) => invoke("preview:prepare", { sourceId, audioIndices, transcode }),
+   cancelPreview: () => invoke("preview:cancel"),
+   keyframes: (sourceId) => invoke("source:keyframes", sourceId),
+   scrubAudio: (sourceId, streamIndices, time = 0) => invoke("audio:scrub", { sourceId, streamIndices, time }),
+   cancelScrub: () => invoke("audio:cancel"),
+   frameTime: (sourceId, time, direction) => invoke("source:frame-time", { sourceId, time, direction }),
+   cancelExportPlanning: () => invoke("export:cancel-planning"),
+   flushState: (value) => invoke("state:flush", value),
+   onFlush: (callback) => listen<void>("app:flush", callback),
+   onOpenFile: (callback) => listen<string>("app:open-file", callback),
+   exportFrame: (request) => invoke("frame:export", request),
+   planExport: (request) => invoke("export:plan", request),
+   analyzeExport: (request) => invoke("export:analyze", request),
+   startExport: (id, approval) => invoke("export:start", { id, approval }),
+   cancelExport: () => invoke("export:cancel"),
+   retryExport: (id) => invoke("export:retry", id),
+   revealOutput: (path) => invoke("output:reveal", path),
+   openOutput: (path) => invoke("output:open", path),
+   openExternal: (url) => invoke("open:external", url),
+   openNotices: () => invoke("notices:open"),
    windowAction: (action) => ipcRenderer.send("window:action", action),
    onJob: (callback) => listen<ExportJob>("export:progress", callback),
    onCommand: (callback) => listen<string>("app:command", callback),

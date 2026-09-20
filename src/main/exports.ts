@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { access, constants, mkdir, stat } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
-import type { ExportApproval, ExportJob, ExportPlan, PlanRequest } from "../shared/types.ts";
+import type { Clip, ExportApproval, ExportJob, ExportPlan, PlanRequest, CutReport } from "../shared/types.ts";
 import { exportExtensionFor, planRequestSchema } from "../shared/types.ts";
 import { analyzeCut, exportCut } from "./media/cut.ts";
 import type { CutAnalysis } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import { protectSource } from "./media/publish.ts";
 import { exportCombined } from "./media/combine.ts";
+import { sanitizeName } from "./media/filename.ts";
+export { sanitizeName } from "./media/filename.ts";
 
 interface StoredPlan {
    plan: ExportPlan;
@@ -18,6 +20,14 @@ interface StoredPlan {
 }
 export class ExportService {
    private plans = new Map<string, StoredPlan>();
+   private analysisController = new AbortController();
+   private analyses = new Map<string, Promise<CutAnalysis>>();
+   cancelPlanning(): void {
+      this.analysisController.abort();
+      this.analysisController = new AbortController();
+      this.analyses.clear();
+      this.plans.clear();
+   }
    private controller: AbortController | null = null;
    private job: ExportJob | null = null;
    private runningPlan: StoredPlan | null = null;
@@ -32,8 +42,59 @@ export class ExportService {
    get current(): ExportJob | null {
       return this.job;
    }
+   private async cut(
+      source: ProbedSource,
+      clip: Clip,
+      audioTracks: number[],
+      extension: string,
+      mode: "separate" | "combined",
+      signal: AbortSignal
+   ): Promise<CutAnalysis> {
+      const settings = { mode };
+      signal.throwIfAborted();
+      const key = JSON.stringify([source.id, source.size, source.modified, clip.start, clip.end, audioTracks, extension, settings.mode]);
+      let pending = this.analyses.get(key);
+      if (!pending) {
+         pending = analyzeCut(source, clip, signal, { audioTracks, extension, combined: settings.mode === "combined" }).catch((error: unknown) => {
+            if (this.analyses.get(key) === pending) this.analyses.delete(key);
+            throw error;
+         });
+         if (this.analyses.size >= 500) this.analyses.delete(this.analyses.keys().next().value!);
+         this.analyses.set(key, pending);
+      }
+      const cached = await pending;
+      const analysis = { ...cached, clip: { ...cached.clip, id: clip.id, color: clip.color } };
+      return analysis;
+   }
+   private async analyze(source: ProbedSource, request: PlanRequest): Promise<CutAnalysis[]> {
+      const settings = planRequestSchema.parse(request);
+      const signal = this.analysisController.signal;
+      const audio = source.streams.filter((stream) => stream.type === "audio");
+      const tracks = settings.audioTracks ?? audio.map((stream) => stream.index);
+      if (new Set(tracks).size !== tracks.length || tracks.some((index) => !audio.some((stream) => stream.index === index)))
+         throw new Error("One or more selected audio tracks were not found.");
+      const items = [...settings.items].sort((a, b) => a.clip.start - b.clip.start);
+      const results: CutAnalysis[] = new Array(items.length);
+      let next = 0;
+      await Promise.all(
+         Array.from({ length: Math.min(2, items.length) }, async () => {
+            while (next < items.length) {
+               const index = next++;
+               const item = items[index]!;
+               const extension = exportExtensionFor(source, item.clip, { separate: settings.mode === "separate", allAudio: tracks.length === audio.length });
+               results[index] = await this.cut(source, item.clip, tracks, extension, settings.mode, signal);
+            }
+         })
+      );
+      signal.throwIfAborted();
+      return results;
+   }
+   async inspect(source: ProbedSource, request: PlanRequest): Promise<CutReport[]> {
+      return (await this.analyze(source, request)).map(({ clip, method, encodedSeconds, message }) => ({ clip, method, encodedSeconds, message }));
+   }
    async plan(source: ProbedSource, request: PlanRequest): Promise<ExportPlan> {
       const settings = planRequestSchema.parse(request);
+      const signal = this.analysisController.signal;
       const sourceAudio = source.streams.filter((stream) => stream.type === "audio");
       const audioTracks = settings.audioTracks ?? sourceAudio.map((stream) => stream.index);
       if (new Set(audioTracks).size !== audioTracks.length || audioTracks.some((index) => !sourceAudio.some((stream) => stream.index === index)))
@@ -46,6 +107,8 @@ export class ExportService {
       if (directory && !directory.isDirectory()) throw new Error("Choose an output folder, not a file.");
       if (directory) await access(directoryPath, constants.W_OK);
       const used = new Set<string>();
+      const cuts = await this.analyze(source, request);
+      let cutIndex = 0;
       const analyses = new Map<string, CutAnalysis[]>();
       const items = [];
       for (const item of [...request.items].sort((a, b) => a.clip.start - b.clip.start)) {
@@ -58,7 +121,7 @@ export class ExportService {
          let suffix = 2;
          while (used.has(name.toLowerCase())) name = `${stem} (${suffix++})${extension}`;
          used.add(name.toLowerCase());
-         const analysis = await analyzeCut(source, item.clip);
+         const analysis = cuts[cutIndex++]!;
          const id = randomUUID();
          analyses.set(id, [analysis]);
          items.push({
@@ -103,6 +166,7 @@ export class ExportService {
          directoryMissing: !directory,
          existingPaths,
       };
+      signal.throwIfAborted();
       if (this.plans.size >= 20) this.plans.delete(this.plans.keys().next().value!);
       this.plans.set(plan.id, { plan, source, analyses, audioTracks });
       return plan;
@@ -190,15 +254,6 @@ export class ExportService {
       job.running = false;
       this.emit(structuredClone(job));
    }
-}
-export function sanitizeName(value: string): string {
-   const clean = Array.from(value, (character) => (character.charCodeAt(0) < 32 ? "_" : character))
-      .join("")
-      .replace(/[<>:"/\\|?*]/g, "_")
-      .replace(/[. ]+$/, "")
-      .trim();
-   if (!clean || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(clean)) return `clip-${clean || "untitled"}`;
-   return clean.slice(0, 180);
 }
 async function exists(path: string): Promise<boolean> {
    try {

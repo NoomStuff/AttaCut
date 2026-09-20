@@ -1,0 +1,21 @@
+name: Checks
+on:
+   pull_request:
+   push:
+      branches: [main]
+permissions:
+   contents: read
+jobs:
+   verify:
+      runs-on: windows-latest
+      timeout-minutes: 30
+      steps:
+         - uses: actions/checkout@v7
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: "1.4.2"
+         - run: bun install --frozen-lockfile
+         - run: bun scripts/provision-media.ts
+         - run: bun run verify
+         - run: bun run test:media
+         - run: bun x --no-install playwright test

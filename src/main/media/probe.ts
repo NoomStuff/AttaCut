@@ -15,6 +15,7 @@ const probeSchema = z.object({
          index: z.number(),
          codec_type: z.string().optional(),
          codec_name: z.string().optional(),
+         start_time: numberLike,
          width: z.number().optional(),
          height: z.number().optional(),
          pix_fmt: z.string().optional(),
@@ -64,6 +65,7 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
    const id = randomUUID();
    const streams = result.streams.map((stream) => ({
       index: stream.index,
+      startTime: Number(stream.start_time ?? result.format.start_time) || 0,
       type: stream.codec_type ?? "unknown",
       codec: stream.codec_name ?? "unknown",
       title: stream.codec_type === "audio" ? streamTitle(stream.tags) : (stream.tags?.["title"] ?? ""),
@@ -88,9 +90,24 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
       disposition: stream.disposition ?? {},
    }));
    const video = streams.find((stream) => stream.type === "video" && !stream.attachedPicture);
-   if (video && ["smpte2084", "arib-std-b67"].includes(video.colorTransfer)) {
+   if (
+      video &&
+      (["smpte2084", "arib-std-b67"].includes(video.colorTransfer) ||
+         ["bt2020", "bt2020nc", "bt2020c"].includes(video.colorPrimaries || video.colorSpace) ||
+         /(?:10|12|16)(?:le|be)$/.test(video.pixelFormat))
+   ) {
       const frameData = z
-         .object({ frames: z.array(z.object({ side_data_list: z.array(z.record(z.string(), z.unknown())).optional() })) })
+         .object({
+            frames: z.array(
+               z.object({
+                  color_transfer: z.string().optional(),
+                  color_primaries: z.string().optional(),
+                  color_space: z.string().optional(),
+                  color_range: z.string().optional(),
+                  side_data_list: z.array(z.record(z.string(), z.unknown())).optional(),
+               })
+            ),
+         })
          .parse(
             JSON.parse(
                await runMedia(
@@ -100,6 +117,17 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
                )
             )
          );
+      // Some demuxers expose HDR descriptors only on decoded frames, not stream headers.
+      const first = frameData.frames[0];
+      if (first) {
+         for (const [key, field] of [
+            ["colorTransfer", "color_transfer"],
+            ["colorPrimaries", "color_primaries"],
+            ["colorSpace", "color_space"],
+            ["colorRange", "color_range"],
+         ] as const)
+            if ((!video[key] || ["unknown", "unspecified"].includes(video[key])) && first[field]) video[key] = first[field];
+      }
       const sideData = frameData.frames.flatMap((frame) => frame.side_data_list ?? []);
       const mastering = sideData.find((item) => item["side_data_type"] === "Mastering display metadata");
       const cll = sideData.find((item) => item["side_data_type"] === "Content light level metadata");
@@ -174,8 +202,38 @@ export async function sourceKeyframes(source: ProbedSource, signal?: AbortSignal
       ),
    ].sort((a, b) => a - b);
 }
+const packetWindows = new WeakMap<ProbedSource, Map<number, { points: number; value: Promise<PacketPoint[]> }>>();
 export async function packetsAround(source: ProbedSource, time: number, signal?: AbortSignal): Promise<PacketPoint[]> {
-   const begin = Math.max(0, time - 30);
+   signal?.throwIfAborted();
+   const begin = Math.floor(Math.max(0, time - 30) / 30) * 30;
+   let windows = packetWindows.get(source);
+   if (!windows) {
+      windows = new Map();
+      packetWindows.set(source, windows);
+   }
+   let pending = windows.get(begin)?.value;
+   if (!pending) {
+      const cache = windows;
+      pending = readPacketWindow(source, begin, signal)
+         .then((points) => {
+            const entry = cache.get(begin);
+            if (entry && entry.value === pending) entry.points = points.length;
+            // Bound retained timestamp objects as well as the number of windows.
+            while ([...cache.values()].reduce((sum, value) => sum + value.points, 0) > 200_000) cache.delete(cache.keys().next().value!);
+            return points;
+         })
+         .catch((error: unknown) => {
+            if (cache.get(begin)?.value === pending) cache.delete(begin);
+            throw error;
+         });
+      if (windows.size >= 16) windows.delete(windows.keys().next().value!);
+      windows.set(begin, { points: 0, value: pending });
+   }
+   const points = await pending;
+   signal?.throwIfAborted();
+   return points;
+}
+async function readPacketWindow(source: ProbedSource, begin: number, signal?: AbortSignal): Promise<PacketPoint[]> {
    const output = await runMedia(
       "ffprobe",
       [
@@ -186,7 +244,7 @@ export async function packetsAround(source: ProbedSource, time: number, signal?:
          "-select_streams",
          String(source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!.index),
          "-read_intervals",
-         begin > 0 ? `${begin + source.startOffset}%+65` : "%+65",
+         begin > 0 ? `${begin + source.startOffset}%+95` : "%+95",
          "-show_packets",
          "-show_entries",
          "packet=pts_time,dts_time,flags",

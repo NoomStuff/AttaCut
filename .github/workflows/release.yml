@@ -132,66 +132,8 @@ jobs:
               restore-keys: electron-${{ runner.os }}-${{ runner.arch }}-
          - run: bun install --frozen-lockfile
 
-         - name: Provision static FFmpeg (Linux)
-           if: runner.os == 'Linux'
-           run: |
-              set -euo pipefail
-              case "$RUNNER_ARCH" in
-                X64) asset="ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz" ;;
-                ARM64) asset="ffmpeg-n8.1-latest-linuxarm64-gpl-8.1.tar.xz" ;;
-                *) echo "::error::Unsupported runner arch: $RUNNER_ARCH"; exit 1 ;;
-              esac
-              mkdir "$RUNNER_TEMP/ffmpeg" && cd "$RUNNER_TEMP/ffmpeg"
-              curl -sSfLO "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/$asset"
-              tar -xf "$asset"
-              echo "FFMPEG_PATH=$(realpath "$(find . -type f -name ffmpeg | head -1)")" >> "$GITHUB_ENV"
-              echo "FFPROBE_PATH=$(realpath "$(find . -type f -name ffprobe | head -1)")" >> "$GITHUB_ENV"
-
-         - name: Provision static FFmpeg (macOS Intel)
-           if: runner.os == 'macOS' && runner.arch == 'X64'
-           run: |
-              set -euo pipefail
-              cd "$RUNNER_TEMP"
-              curl -sSfL -o ffmpeg.zip "https://evermeet.cx/ffmpeg/get/ffmpeg/zip"
-              curl -sSfL -o ffprobe.zip "https://evermeet.cx/ffmpeg/get/ffprobe/zip"
-              unzip -o ffmpeg.zip && unzip -o ffprobe.zip
-              chmod +x ffmpeg ffprobe
-              echo "FFMPEG_PATH=$RUNNER_TEMP/ffmpeg" >> "$GITHUB_ENV"
-              echo "FFPROBE_PATH=$RUNNER_TEMP/ffprobe" >> "$GITHUB_ENV"
-
-         - name: Provision static FFmpeg (macOS Apple silicon)
-           if: runner.os == 'macOS' && runner.arch == 'ARM64'
-           run: |
-              set -euo pipefail
-              page="$(curl -sSfL https://www.osxexperts.net/)"
-              pick() { printf '%s\n' "$page" | grep -oE "${1}[0-9]+arm\.zip" | awk '!found { print; found=1 }'; }
-              [ -n "$(pick ffmpeg)" ] && [ -n "$(pick ffprobe)" ] || {
-                echo "::error::Could not find current osxexperts arm64 build links."; exit 1;
-              }
-              cd "$RUNNER_TEMP"
-              curl -sSfL -o ffmpeg-arm.zip "https://www.osxexperts.net/$(pick ffmpeg)"
-              curl -sSfL -o ffprobe-arm.zip "https://www.osxexperts.net/$(pick ffprobe)"
-              unzip -o ffmpeg-arm.zip && unzip -o ffprobe-arm.zip
-              chmod +x ffmpeg ffprobe
-              echo "FFMPEG_PATH=$RUNNER_TEMP/ffmpeg" >> "$GITHUB_ENV"
-              echo "FFPROBE_PATH=$RUNNER_TEMP/ffprobe" >> "$GITHUB_ENV"
-
-         - name: Provision static FFmpeg (Windows)
-           if: runner.os == 'Windows'
-           shell: pwsh
-           run: |
-              $ErrorActionPreference = "Stop"
-              $dir = "$env:RUNNER_TEMP\ffmpeg"
-              New-Item -ItemType Directory -Force $dir | Out-Null
-              Set-Location $dir
-              curl.exe -sSfLo ffmpeg.zip "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-n8.1-latest-win64-gpl-8.1.zip"
-              if ($LASTEXITCODE -ne 0) { throw "FFmpeg download failed." }
-              Expand-Archive ffmpeg.zip -DestinationPath .
-              $ffmpeg = (Get-ChildItem -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
-              $ffprobe = (Get-ChildItem -Recurse -Filter ffprobe.exe | Select-Object -First 1).FullName
-              if (!$ffmpeg -or !$ffprobe) { throw "FFmpeg archive is missing ffmpeg.exe or ffprobe.exe." }
-              "FFMPEG_PATH=$ffmpeg" >> $env:GITHUB_ENV
-              "FFPROBE_PATH=$ffprobe" >> $env:GITHUB_ENV
+         - name: Provision pinned media binaries
+           run: bun scripts/provision-media.ts
 
          - name: Package
            run: bun scripts/package-app.ts dist ${{ matrix.platform }}
@@ -199,6 +141,9 @@ jobs:
               CSC_IDENTITY_AUTO_DISCOVERY: false
               ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
               ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
+
+         - name: Verify packaged media and editor workflows
+           run: bun scripts/verify-package.ts
 
          - name: Upload artifacts
            uses: actions/upload-artifact@v7

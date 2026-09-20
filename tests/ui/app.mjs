@@ -15,7 +15,7 @@ export const test = base.extend({
       const errors = [];
       await use(async (profile, file) => {
          const app = await electron.launch({
-            args: process.env.ATTACUT_EXECUTABLE ? [] : ["."],
+            args: [...(process.env.ATTACUT_EXECUTABLE ? [] : ["."]), ...(process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : [])],
             ...(process.env.ATTACUT_EXECUTABLE ? { executablePath: process.env.ATTACUT_EXECUTABLE } : {}),
             env: { ...process.env, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: file },
          });

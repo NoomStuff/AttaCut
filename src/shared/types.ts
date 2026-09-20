@@ -13,6 +13,7 @@ export const clipSchema = z
 export type Clip = z.infer<typeof clipSchema>;
 
 export interface MediaStream {
+   startTime?: number;
    index: number;
    type: string;
    codec: string;
@@ -112,6 +113,7 @@ export const savedSessionSchema = z
    .refine(savedDocumentInvariant, "Saved clips are inconsistent.");
 export type SavedSession = z.infer<typeof savedSessionSchema>;
 export interface Bootstrap {
+   warning: string | null;
    preferences: Preferences;
    session: SavedSession | null;
    platform: string;
@@ -155,6 +157,7 @@ export interface ExportPlan {
    directoryMissing: boolean;
    existingPaths: string[];
 }
+export type CutReport = Pick<ExportPlanItem, "clip" | "method" | "encodedSeconds" | "message">;
 export interface ExportApproval {
    createDirectory?: boolean | undefined;
    overwrite?: boolean | undefined;
@@ -174,8 +177,9 @@ export interface ExportJob {
    items: JobItem[];
    running: boolean;
 }
-/** Mono 16-bit PCM used for scrub bursts; null when the source is too large to keep. */
+/** One bounded chunk of mono 16-bit PCM for scrub bursts. */
 export interface ScrubAudio {
+   start: number;
    sampleRate: number;
    pcm: ArrayBuffer;
 }
@@ -201,9 +205,16 @@ export interface DesktopApi {
    preparePreview(sourceId: string, audioIndices: number[], transcode: boolean): Promise<string>;
    cancelPreview(): Promise<void>;
    keyframes(sourceId: string): Promise<number[]>;
-   scrubAudio(sourceId: string, streamIndices: number[]): Promise<ScrubAudio | null>;
+   scrubAudio(sourceId: string, streamIndices: number[], time?: number): Promise<ScrubAudio | null>;
+   cancelScrub(): Promise<void>;
+   frameTime(sourceId: string, time: number, direction: -1 | 0 | 1): Promise<number>;
+   cancelExportPlanning(): Promise<void>;
+   flushState(value: { preferences: Preferences; session: SavedSession | null }): Promise<void>;
+   onFlush(listener: () => void): () => void;
+   onOpenFile(listener: (path: string) => void): () => void;
    exportFrame(request: FrameRequest): Promise<string>;
    planExport(request: PlanRequest): Promise<ExportPlan>;
+   analyzeExport(request: PlanRequest): Promise<CutReport[]>;
    startExport(planId: string, approval?: ExportApproval): Promise<ExportJob>;
    cancelExport(): Promise<void>;
    retryExport(jobId: string): Promise<ExportJob>;
