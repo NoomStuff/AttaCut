@@ -126,7 +126,7 @@ export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: Abor
 }
 
 export interface CutOptions extends RunOptions {
-   muteAudio?: boolean;
+   audioTracks?: number[];
    overwrite?: boolean;
 }
 export async function exportCut(source: ProbedSource, analysis: CutAnalysis, destination: string, options: CutOptions = {}): Promise<void> {
@@ -137,8 +137,11 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
    const finalTemporary = join(temporary, `output${extname(destination)}`);
    const { clip } = analysis;
    const duration = clip.end - clip.start;
+   const sourceAudio = source.streams.filter((stream) => stream.type === "audio");
+   const selectedAudio = options.audioTracks === undefined ? sourceAudio : sourceAudio.filter((stream) => options.audioTracks!.includes(stream.index));
+   const allAudio = selectedAudio.length === sourceAudio.length;
    try {
-      if (!options.muteAudio && clip.start === 0 && Math.abs(clip.end - source.duration) < epsilon && extname(destination) === source.extension) {
+      if (allAudio && clip.start === 0 && Math.abs(clip.end - source.duration) < epsilon && extname(destination) === source.extension) {
          await copyFile(source.path, finalTemporary, constants.COPYFILE_EXCL);
       } else {
          const video = source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!;
@@ -196,7 +199,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             `ffconcat version 1.0\n${segmentPaths.map((path, index) => `file '${path.replaceAll("\\", "/").replaceAll("'", "'\\''")}'\nduration ${analysis.spans[index]!.end - analysis.spans[index]!.start}`).join("\n")}\n`
          );
          const metadata = await metadataInputs(
-            options.muteAudio ? { ...source, streams: source.streams.filter((stream) => stream.type !== "audio") } : source,
+            { ...source, streams: source.streams.filter((stream) => stream.type !== "audio" || selectedAudio.some((audio) => audio.index === stream.index)) },
             clip,
             temporary,
             destination,
@@ -221,7 +224,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             ...metadata.inputs,
             "-map",
             "0:v:0",
-            ...(options.muteAudio ? [] : ["-map", "1:a?"]),
+            ...selectedAudio.flatMap((audio) => ["-map", `1:${audio.index}`]),
             "-map_metadata",
             "1",
             "-map_metadata:s:v:0",
@@ -235,7 +238,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
          if ([".mp4", ".mov", ".m4v"].includes(extname(destination).toLowerCase()))
             args.push("-movflags", "+faststart", ...(video.codec === "hevc" ? ["-tag:v", "hvc1"] : []));
          else args.push("-bsf:a", `noise=drop='lt(pts*tb,0)+gte(pts*tb,${duration})'`, "-avoid_negative_ts", "disabled");
-         for (const [index, audio] of source.streams.filter((stream) => !options.muteAudio && stream.type === "audio").entries()) {
+         for (const [index, audio] of selectedAudio.entries()) {
             if (["flac", "alac", "wavpack"].includes(audio.codec) || audio.codec.startsWith("pcm_")) {
                args.push(`-c:a:${index}`, audio.codec, `-filter:a:${index}`, `atrim=start=0:end=${duration}`, `-bsf:a:${index}`, "null");
             }

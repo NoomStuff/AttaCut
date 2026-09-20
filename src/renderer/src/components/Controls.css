@@ -50,8 +50,16 @@
 .button.primary:is(:hover:not(:disabled), .shortcut-active) {
    background: var(--accent-hover);
 }
+.button.secondary {
+   border: 1px solid var(--line);
+   background: var(--surface-raised);
+}
 .button.danger {
    color: var(--danger);
+}
+.modal .button.danger {
+   border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+   background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 .button.active {
    color: var(--accent);
@@ -216,6 +224,20 @@
    position: sticky;
    bottom: 0;
    background: var(--surface);
+}
+.panel-modal {
+   height: min(620px, calc(100vh - 70px));
+   overflow: hidden;
+}
+.panel-modal[open] {
+   display: flex;
+   flex-direction: column;
+}
+.panel-modal .modal-body {
+   flex: 1;
+   min-height: 0;
+   overflow-y: auto;
+   scrollbar-gutter: stable;
 }
 .field-label {
    display: block;

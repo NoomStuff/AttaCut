@@ -53,7 +53,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    icon?: IconDefinition;
    shortcut?: string;
    active?: boolean;
-   variant?: "primary" | "quiet" | "danger";
+   variant?: "primary" | "secondary" | "quiet" | "danger";
 }
 export function Button({ command, icon, shortcut, active, variant = "quiet", children, className = "", ...props }: ButtonProps) {
    const context = useContext(CommandContext);

@@ -116,7 +116,7 @@ export function HelpPanel({ initialTab = "intro", onClose }: { initialTab?: Help
    const [tab, setTab] = useState<HelpTab>(initialTab);
    const body = useRef<HTMLDivElement>(null);
    return (
-      <Modal title="Help" onClose={onClose} className="help-modal">
+      <Modal title="Help" onClose={onClose} className="panel-modal help-modal">
          <div className="modal-tabs" role="tablist">
             {topics.map((topic) => (
                <button

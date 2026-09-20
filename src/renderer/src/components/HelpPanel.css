@@ -5,7 +5,6 @@
 /* The body scrolls instead of the dialog, so switching tabs can reset the scroll. */
 .help-modal .modal-body {
    overflow-y: auto;
-   max-height: calc(100vh - 195px);
 }
 
 .help-body {

@@ -21,15 +21,13 @@ export function AboutPanel({ version, onClose }: { version: string; onClose: () 
                </div>
             </div>
             <p className="about-tagline">Cut your clips, move on.</p>
+            <p>A trimmer for getting clips out of a recording with as little effort as possible. Mark the ranges you want to keep, then export them.</p>
             <p>
-               A trimmer for getting clips out of a recording with as little effort as possible. Mark the ranges you want to keep, and seamlessly export them.
-            </p>
-            <p>
-               The name is based on <strong>genera Atta</strong>, commonly known as leafcutter ants. Famous for their ability to cut leaves into pieces with
-               impressive precision.
+               The name comes from <strong>Atta</strong>, a genus of leafcutter ants known for cutting leaves with remarkable precision.
             </p>
             <div className="about-links">
                <Button
+                  variant="secondary"
                   onClick={() => {
                      open(repositoryUrl);
                   }}
@@ -37,6 +35,7 @@ export function AboutPanel({ version, onClose }: { version: string; onClose: () 
                   GitHub
                </Button>
                <Button
+                  variant="secondary"
                   onClick={() => {
                      open(licenseUrl);
                   }}
@@ -44,6 +43,7 @@ export function AboutPanel({ version, onClose }: { version: string; onClose: () 
                   MIT License
                </Button>
                <Button
+                  variant="secondary"
                   onClick={() => {
                      void window.desktop.openNotices().catch(() => {});
                   }}

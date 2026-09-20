@@ -1,64 +1,30 @@
-.audio-picker {
-   position: relative;
-   display: flex;
+.audio-picker .select-trigger {
+   width: 42px;
+   min-height: 36px;
+   padding: 0;
+   justify-content: center;
+   gap: 4px;
+   border-color: transparent;
+   background: transparent;
 }
-.audio-menu {
-   position: absolute;
-   z-index: 30;
-   right: 0;
-   bottom: calc(100% + 10px);
-   min-width: 200px;
-   max-width: 300px;
-   max-height: 260px;
-   overflow: auto;
-   background: var(--surface-raised);
-   border: 1px solid var(--line);
-   border-radius: 7px;
-   padding: 5px;
-   box-shadow: 0 6px 18px #0003;
-   transform-origin: right bottom;
-   animation: audio-menu-in 140ms cubic-bezier(0.2, 0.9, 0.3, 1);
-}
-.audio-menu.closing {
-   animation: audio-menu-out 110ms ease-in both;
-   pointer-events: none;
-}
-@keyframes audio-menu-in {
-   from {
-      opacity: 0;
-      transform: translateY(5px) scale(0.97);
-   }
-   to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-   }
-}
-@keyframes audio-menu-out {
-   from {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-   }
-   to {
-      opacity: 0;
-      transform: translateY(4px) scale(0.98);
-   }
-}
-.audio-menu button {
-   width: 100%;
+.audio-picker .select-trigger > span {
    display: flex;
    align-items: center;
-   justify-content: space-between;
-   gap: 16px;
-   padding: 9px 11px;
-   border-radius: 4px;
-   text-align: left;
-   transition: background-color 150ms ease-out;
+   gap: 4px;
+   overflow: visible;
 }
-.audio-menu button:hover,
-.audio-menu button:focus-visible {
-   background: var(--surface-hover);
-   transition-duration: 0ms;
+.audio-picker .select-trigger b {
+   min-width: 10px;
+   font-size: 9px;
+   font-weight: 600;
+   color: var(--muted);
 }
-.audio-menu button[aria-checked="true"] {
-   color: var(--accent);
+.audio-picker .select-chevron {
+   display: none;
+}
+.audio-picker .select-menu {
+   left: auto;
+   right: 0;
+   min-width: 220px;
+   transform-origin: right bottom;
 }

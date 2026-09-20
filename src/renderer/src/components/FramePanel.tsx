@@ -4,6 +4,7 @@ import { formatTime } from "../../../shared/time";
 import { Button, Modal } from "./Controls";
 import { errorText } from "../lib/errors";
 import { faFolderOpen, faCamera } from "@fortawesome/free-solid-svg-icons";
+import { DropdownSelect } from "./DropdownSelect";
 
 export function FramePanel({
    source,
@@ -54,6 +55,7 @@ export function FramePanel({
                <div className="directory-field">
                   <input aria-label="Save frame to" value={directory} onChange={(event) => setDirectory(event.target.value)} />
                   <Button
+                     variant="secondary"
                      icon={faFolderOpen}
                      onClick={() => {
                         void window.desktop
@@ -72,13 +74,19 @@ export function FramePanel({
                Filename
                <input aria-label="Frame filename" value={name} onChange={(event) => setName(event.target.value)} />
             </label>
-            <label className="field-label">
+            <div className="field-label">
                Format
-               <select aria-label="Image format" value={format} onChange={(event) => setFormat(event.target.value as "png" | "jpg")}>
-                  <option value="png">PNG</option>
-                  <option value="jpg">JPEG</option>
-               </select>
-            </label>
+               <DropdownSelect
+                  label="Image format"
+                  options={[
+                     { value: "png", label: "PNG" },
+                     { value: "jpg", label: "JPEG" },
+                  ]}
+                  value={[format]}
+                  onChange={([value]) => setFormat(value as "png" | "jpg")}
+                  trigger={format === "png" ? "PNG" : "JPEG"}
+               />
+            </div>
             {format === "jpg" && (
                <label className="field-label">
                   Quality {quality}
@@ -105,6 +113,7 @@ export function FramePanel({
          <div className="modal-footer">
             {saved && (
                <Button
+                  variant="secondary"
                   onClick={() => {
                      void window.desktop.revealOutput(saved).catch((value) => setError(errorText(value)));
                   }}

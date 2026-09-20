@@ -9,6 +9,9 @@ import { verifyCopiedFrames } from "./verify.ts";
 
 export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], destination: string, options: CutOptions): Promise<void> {
    const temporary = await mkdtemp(join(dirname(destination), ".attacut-combined-"));
+   const selectedAudio = source.streams.filter(
+      (stream) => stream.type === "audio" && (options.audioTracks === undefined || options.audioTracks.includes(stream.index))
+   );
    try {
       const paths: string[] = [];
       const duration = cuts.reduce((sum, cut) => sum + cut.clip.end - cut.clip.start, 0);
@@ -36,9 +39,7 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
                "0:s?",
                "-c",
                "copy",
-               ...(!options.muteAudio && source.streams.some((stream) => stream.type === "audio")
-                  ? ["-bsf:a", `noise=drop='lt(pts*tb,0)+gte(pts*tb,${cut.clip.end - cut.clip.start})'`]
-                  : []),
+               ...(selectedAudio.length ? ["-bsf:a", `noise=drop='lt(pts*tb,0)+gte(pts*tb,${cut.clip.end - cut.clip.start})'`] : []),
                "-avoid_negative_ts",
                "disabled",
                path,
@@ -55,7 +56,7 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
       const output = join(temporary, `combined${extname(destination)}`);
       const trackMetadata = (["audio", "subtitle"] as const).flatMap((type) =>
          source.streams
-            .filter((stream) => stream.type === type && !(type === "audio" && options.muteAudio))
+            .filter((stream) => stream.type === type && (type !== "audio" || selectedAudio.some((audio) => audio.index === stream.index)))
             .flatMap((stream, index) => {
                const specifier = `${type === "audio" ? "a" : "s"}:${index}`;
                return [
@@ -115,7 +116,6 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
             "copy",
             "-map_chapters",
             chapters.length ? "2" : "-1",
-            ...(options.muteAudio ? ["-an"] : []),
             ...([".mp4", ".mov", ".m4v"].includes(extname(destination)) ? ["-movflags", "+faststart"] : []),
             "-t",
             String(duration),

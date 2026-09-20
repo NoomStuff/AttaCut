@@ -14,10 +14,10 @@ try {
    await page.getByRole("dialog", { name: "Settings" }).waitFor();
    await expect(page.getByRole("button", { name: "Dark theme", exact: true })).toHaveAttribute("aria-pressed", "true");
    await expect(page.getByRole("group", { name: "Appearance" }).getByRole("button")).toHaveCount(3);
-   await expect(page.getByRole("group", { name: "Accent colour" }).getByRole("button")).toHaveCount(6);
+   await expect(page.getByRole("group", { name: "Accent colour" }).getByRole("button")).toHaveCount(5);
    for (const theme of ["Light", "Dark"]) {
       await page.getByRole("button", { name: `${theme} theme`, exact: true }).click();
-      for (const [index, name] of ["Blue", "Purple", "Green", "Amber", "Red", "Teal"].entries()) {
+      for (const [index, name] of ["Blue", "Purple", "Green", "Amber", "Red"].entries()) {
          await page.getByRole("button", { name: `${name} accent`, exact: true }).click();
          await expect(page.getByRole("button", { name: `${name} accent`, exact: true })).toHaveAttribute("aria-pressed", "true");
          const contrast = await page.evaluate((index) => {
@@ -48,8 +48,8 @@ try {
             const result = {
                matches: rgb(accent).join() === rgb(clip).join(),
                rotation: Array.from(
-                  { length: 6 },
-                  (_, offset) => rgb(`var(--clip-sequence-${offset})`).join() === rgb(`var(--clip-${(index + offset) % 6})`).join()
+                  { length: 5 },
+                  (_, offset) => rgb(`var(--clip-sequence-${offset})`).join() === rgb(`var(--clip-${(index + offset) % 5})`).join()
                ).every(Boolean),
                button: ratio(accent, root.getPropertyValue("--accent-text")),
                text: ratio(accent, root.getPropertyValue("--surface")),

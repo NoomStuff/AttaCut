@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const clipColorCount = 5;
+
 export const clipSchema = z
    .object({
       id: z.string().min(1),
@@ -49,9 +51,28 @@ export interface MediaSource {
    url: string;
    chapters: { start: number; end: number; title: string }[];
 }
+export const audioSelectionPreferenceSchema = z.object({
+   mode: z.enum(["default", "all", "tracks"]).default("default"),
+   sourceTrackCount: z.number().int().nonnegative().default(0),
+   tracks: z
+      .array(
+         z.object({
+            position: z.number().int().nonnegative(),
+            title: z.string(),
+            language: z.string(),
+         })
+      )
+      .default([]),
+});
+export type AudioSelectionPreference = z.infer<typeof audioSelectionPreferenceSchema>;
 export const preferencesSchema = z.object({
    theme: z.enum(["dark", "system", "light"]).default("dark"),
-   accent: z.number().int().min(0).max(5).default(0),
+   accent: z
+      .number()
+      .int()
+      .min(0)
+      .max(clipColorCount - 1)
+      .default(0),
    outputDirectory: z.string().default(""),
    keptOnly: z.boolean().default(false),
    keepPlaying: z.boolean().default(false),
@@ -60,7 +81,8 @@ export const preferencesSchema = z.object({
    volume: z.number().min(0).max(1).default(0.7),
    shortcuts: z.record(z.string(), z.array(z.string())).default({}),
    exportMode: z.enum(["separate", "combined"]).default("separate"),
-   exportMuted: z.boolean().default(false),
+   playbackAudio: audioSelectionPreferenceSchema.default({ mode: "default", sourceTrackCount: 0, tracks: [] }),
+   exportAudio: audioSelectionPreferenceSchema.default({ mode: "default", sourceTrackCount: 0, tracks: [] }),
    frameFormat: z.enum(["png", "jpg"]).default("png"),
    frameQuality: z.number().min(1).max(100).default(95),
 });
@@ -102,7 +124,7 @@ export const planRequestSchema = z.object({
    directory: z.string().min(1),
    items: z.array(exportItemSchema).min(1).max(500),
    mode: z.enum(["separate", "combined"]).default("separate"),
-   muteAudio: z.boolean().default(false),
+   audioTracks: z.array(z.number().int().nonnegative()).max(100).nullable().default(null),
    name: z.string().max(240).default("combined"),
 });
 export type PlanRequest = z.input<typeof planRequestSchema>;
@@ -152,11 +174,6 @@ export interface ExportJob {
    items: JobItem[];
    running: boolean;
 }
-export interface PreviewProgress {
-   sourceId: string;
-   progress: number;
-   running: boolean;
-}
 /** Mono 16-bit PCM used for scrub bursts; null when the source is too large to keep. */
 export interface ScrubAudio {
    sampleRate: number;
@@ -167,10 +184,10 @@ export interface ScrubAudio {
 export function exportExtensionFor(
    source: Pick<MediaSource, "extension" | "exportExtension" | "duration">,
    clip: Pick<Clip, "start" | "end">,
-   options: { separate: boolean; muteAudio: boolean }
+   options: { separate: boolean; allAudio: boolean }
 ): string {
    const fullRange = clip.start === 0 && Math.abs(clip.end - source.duration) < 0.0001;
-   return !options.muteAudio && options.separate && fullRange ? source.extension : source.exportExtension;
+   return options.allAudio && options.separate && fullRange ? source.extension : source.exportExtension;
 }
 export interface DesktopApi {
    bootstrap(): Promise<Bootstrap>;
@@ -181,10 +198,10 @@ export interface DesktopApi {
    savePreferences(value: Preferences): Promise<void>;
    saveSession(value: SavedSession): Promise<void>;
    clearSession(): Promise<void>;
-   preparePreview(sourceId: string, audioIndex: number | null, transcode: boolean): Promise<string>;
+   preparePreview(sourceId: string, audioIndices: number[], transcode: boolean): Promise<string>;
    cancelPreview(): Promise<void>;
    keyframes(sourceId: string): Promise<number[]>;
-   scrubAudio(sourceId: string, streamIndex: number): Promise<ScrubAudio | null>;
+   scrubAudio(sourceId: string, streamIndices: number[]): Promise<ScrubAudio | null>;
    exportFrame(request: FrameRequest): Promise<string>;
    planExport(request: PlanRequest): Promise<ExportPlan>;
    startExport(planId: string, approval?: ExportApproval): Promise<ExportJob>;
@@ -196,6 +213,5 @@ export interface DesktopApi {
    openNotices(): Promise<void>;
    windowAction(action: "minimize" | "maximize" | "close"): void;
    onJob(listener: (job: ExportJob) => void): () => void;
-   onPreview(listener: (progress: PreviewProgress) => void): () => void;
    onCommand(listener: (command: string) => void): () => void;
 }

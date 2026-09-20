@@ -16,7 +16,7 @@ for (const muteAudio of [false, true]) {
       sourceId: source.id,
       directory,
       mode: "combined",
-      muteAudio,
+      audioTracks: muteAudio ? [] : null,
       name: `combined-${muteAudio}`,
       items: [
          { name: "later", clip: { id: "b", color: 1, start: 9.2, end: 14.7 } },
@@ -113,7 +113,7 @@ for (const muteAudio of [false, true]) {
 const whole = await service.plan(source, {
    sourceId: source.id,
    directory,
-   muteAudio: true,
+   audioTracks: [],
    items: [{ name: "whole-muted", clip: { id: "whole", color: 0, start: 0, end: source.duration } }],
 });
 service.start(whole.id);
@@ -155,6 +155,28 @@ for (const format of ["png", "jpg"] as const) {
    assert.ok(Number(/All:([\d.]+)/.exec(await readFile(join(directory, `quality-${format}.txt`), "utf8"))?.[1]) > 0.94);
 }
 console.log("PASS full-file mute, keyframes, PNG/JPEG frame export and collisions");
+const multiTrackSource = await probeSource(resolve("work/details/multiple-tracks.mkv"));
+const chosenAudio = multiTrackSource.streams.filter((stream) => stream.type === "audio")[1]!;
+const selectedPlan = await service.plan(multiTrackSource, {
+   sourceId: multiTrackSource.id,
+   directory,
+   mode: "combined",
+   audioTracks: [chosenAudio.index],
+   name: "selected-audio-track",
+   items: [
+      { name: "one", clip: { id: "one-audio", color: 0, start: 1.25, end: 3.75 } },
+      { name: "two", clip: { id: "two-audio", color: 1, start: 5.25, end: 8.75 } },
+   ],
+});
+service.start(selectedPlan.id);
+await service.waitForIdle();
+assert.equal(service.current!.items[0]!.status, "completed", service.current!.items[0]!.error ?? "");
+const selectedOutputAudio = (await probeSource(selectedPlan.items[0]!.outputPath)).streams.filter((stream) => stream.type === "audio");
+assert.equal(selectedOutputAudio.length, 1);
+assert.equal(selectedOutputAudio[0]!.title, chosenAudio.title);
+assert.equal(selectedOutputAudio[0]!.language, chosenAudio.language);
+assert.equal(selectedOutputAudio[0]!.codec, chosenAudio.codec);
+console.log("PASS selected audio track copied with metadata");
 for (const input of [
    "formats/vp9.webm",
    "formats/hevc-hdr10.mkv",

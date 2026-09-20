@@ -39,32 +39,10 @@ try {
             const player = document.querySelector("video");
             return player && (player.readyState >= 2 || player.error);
          });
-         let compatible = false;
-         if (
-            (await video.evaluate((element) => !!element.error || element.videoWidth === 0)) ||
-            (await page.getByRole("button", { name: "Prepare preview", exact: true }).isVisible())
-         ) {
-            compatible = true;
-            if (basename(path) === "transport.ts") await page.screenshot({ path: "work/screenshots/compatible-preview-needed.png" });
-            const originalUrl = await video.evaluate((element) => element.currentSrc);
-            await page.getByRole("button", { name: "Prepare preview", exact: true }).click();
-            await page.waitForFunction(
-               (previousUrl) => {
-                  const player = document.querySelector("video");
-                  return player && player.currentSrc !== previousUrl && player.readyState >= 2 && !player.error && player.videoWidth > 0;
-               },
-               originalUrl,
-               { timeout: 60000 }
-            );
-         }
-         await video.evaluate(async (element) => {
-            element.currentTime = 2.4;
-            await new Promise((resolve) => element.addEventListener("seeked", resolve, { once: true }));
-            element.muted = true;
-            await element.play();
-         });
-         await page.waitForFunction(() => document.querySelector("video").currentTime >= 2.7);
-         await video.evaluate((element) => element.pause());
+         await expect(page.getByText(/preparing a playable preview|compatible preview/i)).toHaveCount(0);
+         await page.getByRole("button", { name: "Play", exact: true }).click();
+         await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.2, undefined, { timeout: 60000 });
+         await page.getByRole("button", { name: "Pause", exact: true }).click();
          expect(await video.evaluate((element) => element.error)).toBeNull();
          expect(await video.evaluate((element) => element.videoWidth)).toBeGreaterThan(0);
          expect(await video.evaluate((element) => element.getVideoPlaybackQuality().totalVideoFrames)).toBeGreaterThan(0);
@@ -76,8 +54,8 @@ try {
             await page.screenshot({ path: "work/screenshots/format-export.png" });
             await page.keyboard.press("Escape");
          }
-         results.push({ name: basename(path), playback: compatible ? "compatible preview" : "native" });
-         console.log("PASS", basename(path), compatible ? "compatible preview" : "native");
+         results.push({ name: basename(path), playback: "ready" });
+         console.log("PASS", basename(path));
       }
    }
    expect(errors).toEqual([]);

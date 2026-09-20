@@ -60,10 +60,10 @@ try {
    await start.fill("0:00");
    await start.press("Tab");
    expect(await video.evaluate((video) => video.currentTime)).toBeCloseTo(4, 1);
-   await page.getByRole("button", { name: "Change preview audio track", exact: true }).click();
-   await expect(page.getByRole("menuitemradio", { name: "Game audio", exact: true })).toBeVisible();
+   await page.getByRole("button", { name: "Preview audio tracks", exact: true }).click();
+   await expect(page.getByRole("option", { name: "Game audio", exact: true })).toBeVisible();
    await page.screenshot({ path: "work/screenshots/v051-audio.png" });
-   await page.getByRole("menuitemradio", { name: "Microphone", exact: true }).click();
+   await page.getByRole("option", { name: "Microphone", exact: true }).click();
    await page.getByRole("button", { name: "Playback settings", exact: true }).click();
    await page.getByRole("switch", { name: "Keep playing while editing", exact: true }).check();
    await page.keyboard.press("Escape");
@@ -139,13 +139,14 @@ try {
          resolve(profile, audio ? "single.mp4" : "silent.mp4")
       );
       await expect(page.locator(".title-filename")).toHaveText(audio ? "single.mp4" : "silent.mp4");
-      const selector = page.getByRole("button", { name: "Change preview audio track", exact: true });
-      await expect(selector).toBeVisible();
-      if (audio) {
-         await selector.click();
-         await expect(page.getByRole("menuitemradio", { name: "Game audio", exact: true })).toBeVisible();
-         await page.keyboard.press("Escape");
-      } else await expect(selector).toBeDisabled();
+      const selector = page.getByRole("button", { name: "Preview audio tracks", exact: true });
+      await expect(selector).toHaveCount(0);
+      await page.getByRole("button", { name: "Export", exact: true }).click();
+      const exportAudio = page.getByRole("switch", { name: "Export audio", exact: true });
+      if (audio) await expect(exportAudio).toBeChecked();
+      else await expect(exportAudio).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Audio tracks to export", exact: true })).toHaveCount(0);
+      await page.keyboard.press("Escape");
    }
    expect(errors).toEqual([]);
    console.log(

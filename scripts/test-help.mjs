@@ -44,7 +44,7 @@ try {
 
    // The export panel shows the re-encode note and links into the cutting topic.
    await page.getByRole("button", { name: "Export", exact: true }).click();
-   const exportDialog = page.getByRole("dialog", { name: "Export clips" });
+   const exportDialog = page.getByRole("dialog", { name: "Export video" });
    await exportDialog.waitFor();
    await expect(exportDialog.getByText(/re-encod|losslessly/)).toBeVisible({ timeout: 20000 });
    await exportDialog.getByRole("button", { name: "Learn More" }).click();

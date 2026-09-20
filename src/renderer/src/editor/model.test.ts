@@ -129,6 +129,18 @@ describe("merge and playhead targeting", () => {
       const state = editorReducer({ ...emptyEditor, document: split }, { type: "commit", document: merged });
       expect(editorReducer(state, { type: "undo" }).document).toEqual(split);
    });
+   it("recolours a merged clip only when its new neighbour has the same base colour", () => {
+      const document = {
+         selectedId: "b",
+         clips: [
+            { id: "a", start: 0, end: 10, color: 0 },
+            { id: "b", start: 10, end: 20, color: 1 },
+            { id: "c", start: 20, end: 30, color: 5 },
+         ],
+      };
+      expect(mergeClips(document, 0).clips.map((clip) => clip.color)).toEqual([6, 5]);
+      expect(mergeClips({ ...document, clips: document.clips.map((clip, index) => (index === 2 ? { ...clip, color: 2 } : clip)) }, 0).clips[0]!.color).toBe(0);
+   });
    it("allows a one-frame gap but rejects a removed section", () => {
       const split = splitClip(source, 40);
       const near = trimClip(split, split.selectedId!, "start", 40 + 1 / 30, 120);

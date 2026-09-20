@@ -1,7 +1,7 @@
 import { createContext, useEffect, useRef } from "react";
 export const commandDefinitions = {
    open: { label: "Import video", bindings: ["Mod+O"], group: "File" },
-   export: { label: "Export clips", bindings: ["Mod+E"], group: "File" },
+   export: { label: "Export", bindings: ["Mod+E"], group: "File" },
    frame: { label: "Export current frame", bindings: ["Mod+Shift+E"], group: "File" },
    play: { label: "Play / pause", bindings: ["Space"], group: "Playback" },
    frameBack: { label: "Previous frame", bindings: [","], group: "Playback", repeat: true },

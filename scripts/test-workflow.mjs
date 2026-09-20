@@ -42,11 +42,12 @@ try {
    await page.getByRole("button", { name: "Next clip", exact: true }).click();
    await page.waitForFunction(() => document.querySelector("video").currentTime === 9);
    const originalUrl = await page.locator("video").getAttribute("src");
-   await page.getByRole("button", { name: "Change preview audio track", exact: true }).click();
+   await page.getByRole("button", { name: "Preview audio tracks", exact: true }).click();
    await page.screenshot({ path: "work/screenshots/audio-menu.png" });
-   await page.getByRole("menuitemradio").nth(1).click();
-   await expect(page.locator("video")).toHaveAttribute("src", originalUrl);
-   expect(await page.locator("video").evaluate((v) => Array.from(v.audioTracks).map((track) => track.enabled))).toEqual([false, true]);
+   await page.getByRole("option").nth(1).click();
+   await page.getByRole("option").nth(0).click();
+   await expect(page.getByText(/preparing a playable preview|compatible preview/i)).toHaveCount(0);
+   await expect(page.locator("video")).not.toHaveAttribute("src", originalUrl);
    await page.getByRole("button", { name: "Snap to keyframes", exact: true }).click();
    await expect(page.getByRole("button", { name: "Snap to keyframes", exact: true })).toHaveAttribute("aria-pressed", "true");
    expect(await page.locator(".keyframe-tick").count()).toBeGreaterThan(0);
@@ -72,12 +73,12 @@ try {
    await page.getByRole("button", { name: "Merged Video", exact: true }).click();
    await page.getByLabel("Save to", { exact: true }).fill(output);
    await page.getByRole("textbox", { name: "Combined filename", exact: true }).fill("joined");
-   await page.getByRole("switch", { name: "Mute audio", exact: true }).check();
+   await expect(page.getByRole("button", { name: "Audio tracks to export", exact: true })).toContainText("All audio tracks");
    await expect(page.getByRole("button", { name: "Export video", exact: true })).toBeEnabled();
    await expect(page.getByText("Cut details", { exact: true })).toHaveCount(0);
    await page.screenshot({ path: "work/screenshots/compact-export.png" });
    await page.getByRole("button", { name: "Export video", exact: true }).click();
-   await page.getByText("1 clip exported", { exact: true }).waitFor({ timeout: 60000 });
+   await page.getByText("Export complete", { exact: true }).waitFor({ timeout: 60000 });
    expect(await readdir(output)).toContain("joined.mp4");
    await page.getByRole("button", { name: "Dismiss export status", exact: true }).click();
    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(800, 560));
@@ -96,16 +97,11 @@ try {
          window.webContents.send("app:command", "open");
       });
       await page.waitForFunction(() => document.querySelector("video")?.audioTracks?.length === 5);
-      const sourceUrl = await page.locator("video").getAttribute("src");
       for (let index = 0; index < 5; index++) {
-         await page.getByRole("button", { name: "Change preview audio track", exact: true }).click();
+         await page.getByRole("button", { name: "Preview audio tracks", exact: true }).click();
          const started = Date.now();
-         await page.getByRole("menuitemradio").nth(index).click();
-         expect(await page.locator("video").evaluate((v) => Array.from(v.audioTracks).map((track) => track.enabled))).toEqual(
-            Array.from({ length: 5 }, (_, i) => i === index)
-         );
-         await expect(page.locator("video")).toHaveAttribute("src", sourceUrl);
-         console.log(`OBS track ${index + 1} selected in ${Date.now() - started}ms without a new preview`);
+         await page.getByRole("option").nth(index).click();
+         console.log(`OBS track ${index + 1} toggled in ${Date.now() - started}ms`);
       }
       await page.locator("video").evaluate(async (video) => {
          video.currentTime = 30;
@@ -118,7 +114,7 @@ try {
       await page.screenshot({ path: "work/screenshots/obs-editor.png" });
    }
    expect(errors).toEqual([]);
-   console.log("PASS compact UI, scrubbing, boundary navigation, instant audio switching, snapping, frame export, combined/muted export, and 800x560 layout");
+   console.log("PASS compact UI, scrubbing, boundary navigation, multi-track audio, snapping, frame export, merged export, and 800x560 layout");
 } finally {
    await app.close();
 }

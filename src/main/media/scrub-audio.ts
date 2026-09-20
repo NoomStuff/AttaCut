@@ -8,13 +8,13 @@ const maxSeconds = 2 * 60 * 60;
 
 export async function extractScrubPcm(
    source: ProbedSource,
-   streamIndex: number,
+   streamIndices: number[],
    signal?: AbortSignal
 ): Promise<{ sampleRate: number; pcm: ArrayBuffer } | null> {
    if (source.duration > maxSeconds) return null;
    const tracks = source.streams.filter((stream) => stream.type === "audio" && !stream.attachedPicture);
-   const track = tracks.findIndex((stream) => stream.index === streamIndex);
-   if (track < 0) return null;
+   const selected = streamIndices.map((index) => tracks.findIndex((stream) => stream.index === index));
+   if (!selected.length || selected.some((track) => track < 0)) return null;
    const limit = sampleRate * 2 * Math.ceil(source.duration) + 4096;
    return new Promise((resolve, reject) => {
       const child = spawn(
@@ -27,8 +27,9 @@ export async function extractScrubPcm(
             "-i",
             source.path,
             "-vn",
-            "-map",
-            `0:a:${track}`,
+            ...(selected.length === 1
+               ? ["-map", `0:a:${selected[0]}`]
+               : ["-filter_complex", `${selected.map((track) => `[0:a:${track}]`).join("")}amix=inputs=${selected.length}:duration=longest[a]`, "-map", "[a]"]),
             "-ac",
             "1",
             "-ar",

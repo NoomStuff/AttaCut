@@ -8,12 +8,13 @@ import type { RunOptions } from "./process.ts";
 export async function preparePreview(
    source: ProbedSource,
    folder: string,
-   _audioIndex: number | null,
+   audioIndices: number[],
    transcode: boolean,
    options: RunOptions
 ): Promise<{ id: string; path: string }> {
    await mkdir(folder, { recursive: true });
-   const id = `${source.id}-${transcode ? "proxy" : "remux"}`;
+   const audioKey = audioIndices.length ? audioIndices.join("-") : "silent";
+   const id = `${source.id}-${audioKey}-${transcode ? "proxy" : "remux"}`;
    const path = join(folder, `${id}.mp4`);
    if (existsSync(path)) return { id, path };
    const temporary = await mkdtemp(join(folder, "preparing-"));
@@ -47,11 +48,18 @@ export async function preparePreview(
             source.path,
             "-map",
             `0:${video.index}`,
-            "-map",
-            "0:a?",
+            ...(audioIndices.length === 0
+               ? ["-an"]
+               : audioIndices.length === 1
+                 ? ["-map", `0:${audioIndices[0]}`]
+                 : [
+                      "-filter_complex",
+                      `${audioIndices.map((index) => `[0:${index}]`).join("")}amix=inputs=${audioIndices.length}:duration=longest[a]`,
+                      "-map",
+                      "[a]",
+                   ]),
             ...(convertVideo ? encode : ["-c:v", "copy"]),
-            "-c:a",
-            "aac",
+            ...(audioIndices.length ? ["-c:a", "aac"] : []),
             "-movflags",
             "+faststart",
             "-progress",

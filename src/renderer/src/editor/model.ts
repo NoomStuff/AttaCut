@@ -1,7 +1,7 @@
 import type { Clip } from "../../../shared/types";
-import { undoLimit } from "../../../shared/types";
+import { clipColorCount, undoLimit } from "../../../shared/types";
 import { clamp } from "../../../shared/time";
-import { distinctClipColors } from "./colors";
+import { nextClipColor } from "./colors";
 
 export interface EditDocument {
    clips: Clip[];
@@ -23,7 +23,7 @@ export function editorReducer(state: EditorState, action: EditAction): EditorSta
    switch (action.type) {
       case "load":
          return {
-            document: { ...action.document, clips: distinctClipColors(action.document.clips) },
+            document: action.document,
             past: action.past ?? [],
             future: action.future ?? [],
          };
@@ -32,7 +32,7 @@ export function editorReducer(state: EditorState, action: EditAction): EditorSta
       case "commit": {
          if (JSON.stringify(state.document.clips) === JSON.stringify(action.document.clips)) return state;
          return {
-            document: { ...action.document, clips: distinctClipColors(action.document.clips) },
+            document: action.document,
             past: [...state.past, state.document].slice(-undoLimit),
             future: [],
          };
@@ -80,8 +80,9 @@ export function canSplit(document: EditDocument, time: number, step = timeEpsilo
 }
 export function splitClip(document: EditDocument, time: number, step = timeEpsilon): EditDocument {
    if (!canSplit(document, time, step)) return document;
+   const index = document.clips.findIndex((clip) => clip.id === document.selectedId);
    const nextId = crypto.randomUUID();
-   const color = Math.max(-1, ...document.clips.map((clip) => clip.color)) + 1;
+   const color = nextClipColor(document.clips, document.clips[index], document.clips[index + 1]);
    return {
       clips: document.clips.flatMap((clip) =>
          clip.id === document.selectedId
@@ -120,8 +121,16 @@ export function gapAt(document: EditDocument, time: number, duration: number): {
 export function addGap(document: EditDocument, time: number, duration: number): EditDocument {
    const gap = gapAt(document, time, duration);
    if (!gap) return document;
-   const clip: Clip = { ...gap, id: crypto.randomUUID(), color: Math.max(-1, ...document.clips.map((item) => item.color)) + 1 };
-   return { clips: [...document.clips, clip].sort((a, b) => a.start - b.start), selectedId: clip.id };
+   const index = document.clips.findIndex((clip) => clip.start >= gap.end);
+   const insertion = index < 0 ? document.clips.length : index;
+   const clip: Clip = {
+      ...gap,
+      id: crypto.randomUUID(),
+      color: nextClipColor(document.clips, document.clips[insertion - 1], document.clips[insertion]),
+   };
+   const clips = [...document.clips];
+   clips.splice(insertion, 0, clip);
+   return { clips, selectedId: clip.id };
 }
 
 /** Find the nearest join, allowing at most one source frame between clips. */
@@ -143,7 +152,14 @@ export function mergeClips(document: EditDocument, index: number): EditDocument 
    const left = document.clips[index];
    const right = document.clips[index + 1];
    if (index < 0 || !left || !right) return document;
-   return { clips: document.clips.flatMap((clip, i) => (i === index ? [{ ...left, end: right.end }] : i === index + 1 ? [] : [clip])), selectedId: left.id };
+   const previous = document.clips[index - 1];
+   const next = document.clips[index + 2];
+   const collision = [previous, next].some((clip) => clip && clip.color % clipColorCount === left.color % clipColorCount);
+   const color = collision ? nextClipColor(document.clips, previous, next) : left.color;
+   return {
+      clips: document.clips.flatMap((clip, i) => (i === index ? [{ ...left, end: right.end, color }] : i === index + 1 ? [] : [clip])),
+      selectedId: left.id,
+   };
 }
 export function clipAt(document: EditDocument, time: number) {
    return document.clips.find((clip) => time >= clip.start && time < clip.end) ?? document.clips.find((clip) => Math.abs(time - clip.end) <= timeEpsilon);

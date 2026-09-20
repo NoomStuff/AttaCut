@@ -13,7 +13,7 @@ interface StoredPlan {
    plan: ExportPlan;
    source: ProbedSource;
    analyses: Map<string, CutAnalysis[]>;
-   muteAudio: boolean;
+   audioTracks: number[];
    approval?: ExportApproval;
 }
 export class ExportService {
@@ -34,6 +34,10 @@ export class ExportService {
    }
    async plan(source: ProbedSource, request: PlanRequest): Promise<ExportPlan> {
       const settings = planRequestSchema.parse(request);
+      const sourceAudio = source.streams.filter((stream) => stream.type === "audio");
+      const audioTracks = settings.audioTracks ?? sourceAudio.map((stream) => stream.index);
+      if (new Set(audioTracks).size !== audioTracks.length || audioTracks.some((index) => !sourceAudio.some((stream) => stream.index === index)))
+         throw new Error("One or more selected audio tracks were not found.");
       const directoryPath = resolve(request.directory);
       const directory = await stat(directoryPath).catch((error: NodeJS.ErrnoException) => {
          if (error.code === "ENOENT") return null;
@@ -45,7 +49,10 @@ export class ExportService {
       const analyses = new Map<string, CutAnalysis[]>();
       const items = [];
       for (const item of [...request.items].sort((a, b) => a.clip.start - b.clip.start)) {
-         const extension = exportExtensionFor(source, item.clip, { separate: settings.mode === "separate", muteAudio: settings.muteAudio });
+         const extension = exportExtensionFor(source, item.clip, {
+            separate: settings.mode === "separate",
+            allAudio: audioTracks.length === sourceAudio.length,
+         });
          const stem = sanitizeName(item.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
          let name = `${stem}${extension}`;
          let suffix = 2;
@@ -97,7 +104,7 @@ export class ExportService {
          existingPaths,
       };
       if (this.plans.size >= 20) this.plans.delete(this.plans.keys().next().value!);
-      this.plans.set(plan.id, { plan, source, analyses, muteAudio: settings.muteAudio });
+      this.plans.set(plan.id, { plan, source, analyses, audioTracks });
       return plan;
    }
    start(planId: string, approval: ExportApproval = {}): ExportJob {
@@ -163,7 +170,7 @@ export class ExportService {
             const cuts = stored.analyses.get(item.id)!;
             const options = {
                signal,
-               muteAudio: stored.muteAudio,
+               audioTracks: stored.audioTracks,
                overwrite: !!stored.approval?.overwrite && stored.plan.existingPaths.includes(item.outputPath),
                onProgress: (value: number) => {
                   item.progress = value;

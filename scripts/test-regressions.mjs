@@ -117,7 +117,7 @@ try {
    // Scrub audio: the main process exposes mono PCM for the selected track.
    const scrub = await page.evaluate(async () => {
       const sourceId = decodeURIComponent(new URL(document.querySelector("video").currentSrc).pathname.replace(/^\//, ""));
-      const data = await window.desktop.scrubAudio(sourceId, 1); // fixture maps its first audio track at stream index 1
+      const data = await window.desktop.scrubAudio(sourceId, [1]); // fixture maps its first audio track at stream index 1
       return { sampleRate: data?.sampleRate, bytes: data?.pcm?.byteLength ?? 0 };
    });
    assert.equal(scrub.sampleRate, 22050, "scrub audio should decode at its extraction rate");

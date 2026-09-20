@@ -46,6 +46,13 @@
    display: block;
    margin-top: 16px;
 }
+.audio-export-field {
+   padding: 17px 0 18px;
+   border-bottom: 1px solid var(--line);
+}
+.audio-export-field .field-label {
+   margin-top: 0;
+}
 .folder-field {
    display: flex;
    gap: 8px;

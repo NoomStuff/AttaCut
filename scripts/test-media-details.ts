@@ -212,7 +212,13 @@ await rm(rotationOutput, { force: true });
 await exportCut(rotationSource, rotationCut, rotationOutput);
 assert.equal((await probeSource(rotationOutput)).streams[0]!.rotation, rotationSource.streams[0]!.rotation);
 const hdr = await probeSource(resolve("work/formats/hevc-hdr10.mkv"));
-const preview = await preparePreview(hdr, join(folder, "previews"), null, true, {});
+const preview = await preparePreview(
+   hdr,
+   join(folder, "previews"),
+   hdr.streams.filter((stream) => stream.type === "audio").map((stream) => stream.index),
+   true,
+   {}
+);
 const display = await probeSource(preview.path);
 assert.equal(display.streams[0]!.pixelFormat, "yuv420p");
 assert.equal(display.streams[0]!.colorTransfer, "bt709");

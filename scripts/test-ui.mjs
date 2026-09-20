@@ -59,7 +59,7 @@ try {
    await expect(exportButton).toBeEnabled({ timeout: 20000 });
    await page.screenshot({ path: "work/screenshots/export.png" });
    await exportButton.click();
-   await page.getByText("2 clips exported", { exact: true }).waitFor({ timeout: 30000 });
+   await page.getByText("2 of 2 exported", { exact: true }).waitFor({ timeout: 30000 });
    expect((await readdir(output)).filter((name) => name.endsWith(".mp4"))).toHaveLength(2);
    await page.getByRole("button", { name: "Dismiss export status" }).click();
    await page.getByRole("button", { name: "Playback settings" }).click();

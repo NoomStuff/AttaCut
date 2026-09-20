@@ -1,9 +1,10 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { MediaSource, ExportJob, SavedSession, Preferences } from "../../shared/types";
-import { defaultPreferences } from "../../shared/types";
+import { clipColorCount, defaultPreferences } from "../../shared/types";
 import { clamp } from "../../shared/time";
 import { adjacentBoundary, resolveBoundary } from "./editor/navigation";
 import { selectNativeAudio } from "./playback/audio";
+import { rememberAudioSelection, resolveAudioSelection } from "./playback/audioSelection";
 import { PlaybackSeeker } from "./playback/seeker";
 import { AudioScrubber } from "./playback/scrubber";
 import { nextKeptTime } from "./playback/ranges";
@@ -103,11 +104,10 @@ export default function App() {
    const [playing, setPlaying] = useState(false);
    const [muted, setMuted] = useState(false);
    const [url, setUrl] = useState("");
-   const [previewFailed, setPreviewFailed] = useState(false);
-   const [previewNeedsTranscode, setPreviewNeedsTranscode] = useState(false);
    const [preparing, setPreparing] = useState(false);
-   const [previewProgress, setPreviewProgress] = useState(0);
-   const [audioIndex, setAudioIndex] = useState<number | null>(null);
+   const [playWhenReady, setPlayWhenReady] = useState(false);
+   const [waitForPlay, setWaitForPlay] = useState(false);
+   const [audioIndices, setAudioIndices] = useState<number[]>([]);
    const [job, setJob] = useState<ExportJob | null>(null);
    const [fitToken, setFitToken] = useState(0);
    const [zoomRequest, setZoomRequest] = useState({ id: 0, direction: 0 });
@@ -146,10 +146,10 @@ export default function App() {
    // Load compact scrub audio for the selected track in the background; scrubbing simply stays
    // silent when a source is too large to keep in memory.
    useEffect(() => {
-      if (!source || !preferences.audioScrub || audioIndex === null) return;
+      if (!source || !preferences.audioScrub || audioIndices.length === 0) return;
       let cancelled = false;
       void window.desktop
-         .scrubAudio(source.id, audioIndex)
+         .scrubAudio(source.id, audioIndices)
          .then((data) => {
             if (!cancelled && data) scrubber.setPcm(data.pcm, data.sampleRate);
          })
@@ -160,10 +160,47 @@ export default function App() {
          cancelled = true;
          scrubber.stop();
       };
-   }, [source, audioIndex, preferences.audioScrub, scrubber]);
+   }, [source, audioIndices, preferences.audioScrub, scrubber]);
    const openSequence = useRef(0);
+   const previewSequence = useRef(0);
    const sourceRef = useRef(source);
    sourceRef.current = source;
+   const playWhenReadyRef = useRef(false);
+   const playIntentRef = useRef(false);
+   const previewNeedsTranscode = useRef(false);
+   const requestPlayback = (showWait: boolean) => {
+      playWhenReadyRef.current = true;
+      setPlayWhenReady(true);
+      if (showWait) setWaitForPlay(true);
+   };
+   const clearPlaybackRequest = () => {
+      playWhenReadyRef.current = false;
+      playIntentRef.current = false;
+      setPlayWhenReady(false);
+      setWaitForPlay(false);
+   };
+   const preparePreview = async (target: MediaSource, tracks: number[], transcode = false, resume = false) => {
+      const sequence = ++previewSequence.current;
+      const sourceSequence = openSequence.current;
+      const video = videoRef.current;
+      if (resume || (video && !video.paused)) requestPlayback(false);
+      video?.pause();
+      previewNeedsTranscode.current = transcode;
+      setPreparing(true);
+      setError(null);
+      try {
+         const nextUrl = await window.desktop.preparePreview(target.id, tracks, transcode);
+         if (sequence === previewSequence.current && sourceSequence === openSequence.current && sourceRef.current?.id === target.id) setUrl(nextUrl);
+      } catch (value) {
+         if (sequence === previewSequence.current && sourceSequence === openSequence.current && sourceRef.current?.id === target.id) {
+            clearPlaybackRequest();
+            const message = errorText(value);
+            if (!/cancel/i.test(message)) setError(message);
+         }
+      } finally {
+         if (sequence === previewSequence.current && sourceSequence === openSequence.current && sourceRef.current?.id === target.id) setPreparing(false);
+      }
+   };
    const mac = platform === "darwin";
    useClock(clock);
    const [priority] = useState(() => new ClipPriority());
@@ -214,8 +251,10 @@ export default function App() {
             future: editor.future,
          });
    };
-   const openPath = async (path: string, saved?: SavedSession) => {
+   const openPath = async (path: string, saved?: SavedSession, playbackAudio = preferences.playbackAudio) => {
       const sequence = ++openSequence.current;
+      previewSequence.current++;
+      clearPlaybackRequest();
       setLoading(true);
       setError(null);
       setMenu(null);
@@ -229,6 +268,7 @@ export default function App() {
          videoRef.current?.pause();
          previewEnd.current = null;
          setSource(media);
+         sourceRef.current = media;
          setPreferences((current) => ({ ...current, outputDirectory: media.directory }));
          setKeyframes([]);
          setReadingKeys(false);
@@ -236,12 +276,15 @@ export default function App() {
          remember(undefined);
          clock.set(0);
          setPlaying(false);
-         const firstAudio = media.streams.find((stream) => stream.type === "audio");
+         const sourceAudio = media.streams.filter((stream) => stream.type === "audio");
+         const selectedAudio = resolveAudioSelection(sourceAudio, playbackAudio);
+         const firstAudio = sourceAudio.find((stream) => selectedAudio.includes(stream.index));
          // Chromium may silently omit an unsupported audio track while playing video.
-         setPreviewFailed(!!firstAudio && !["aac", "mp3", "opus", "vorbis", "flac"].includes(firstAudio.codec));
-         setPreviewNeedsTranscode(false);
+         const needsAudioPreview = selectedAudio.length > 1 || (!!firstAudio && !["aac", "mp3", "opus", "vorbis", "flac"].includes(firstAudio.codec));
+         previewNeedsTranscode.current = false;
          setPreparing(false);
-         setAudioIndex(media.streams.find((stream) => stream.type === "audio")?.index ?? null);
+         setAudioIndices(selectedAudio);
+         if (needsAudioPreview) void preparePreview(media, selectedAudio);
          dispatch({
             type: "load",
             document: validSaved ? { clips: saved.clips, selectedId: saved.selectedId } : newDocument(media.duration),
@@ -297,21 +340,17 @@ export default function App() {
             setPlatform(data.platform);
             setVersion(data.version);
             setReady(true);
-            if (data.initialFile) void openPath(data.initialFile);
-            else if (data.session) void openPath(data.session.path, data.session);
+            if (data.initialFile) void openPath(data.initialFile, undefined, data.preferences.playbackAudio);
+            else if (data.session) void openPath(data.session.path, data.session, data.preferences.playbackAudio);
          })
          .catch((value: unknown) => {
             setReady(true);
             setError(errorText(value));
          });
       const unsubscribe = window.desktop.onJob(setJob);
-      const unsubscribePreview = window.desktop.onPreview((value) => {
-         if (value.sourceId === sourceRef.current?.id) setPreviewProgress(value.progress);
-      });
       return () => {
          cancelled = true;
          unsubscribe();
-         unsubscribePreview();
       };
       // Desktop initialization runs once. Later source changes use explicit open commands.
    }, []);
@@ -329,8 +368,8 @@ export default function App() {
    }, [preferences.theme]);
    useEffect(() => {
       document.documentElement.style.setProperty("--accent", `var(--clip-${preferences.accent})`);
-      for (let index = 0; index < 6; index++) {
-         document.documentElement.style.setProperty(`--clip-sequence-${index}`, `var(--clip-${(index + preferences.accent) % 6})`);
+      for (let index = 0; index < clipColorCount; index++) {
+         document.documentElement.style.setProperty(`--clip-sequence-${index}`, `var(--clip-${(index + preferences.accent) % clipColorCount})`);
       }
    }, [preferences.accent]);
    useEffect(() => {
@@ -366,7 +405,13 @@ export default function App() {
       const video = videoRef.current;
       if (!video) return;
       previewEnd.current = null;
+      if (playWhenReadyRef.current) {
+         video.pause();
+         clearPlaybackRequest();
+         return;
+      }
       if (!video.paused) {
+         playIntentRef.current = false;
          video.pause();
          return;
       }
@@ -374,7 +419,10 @@ export default function App() {
       if (preferences.keptOnly && editor.document.clips.length) {
          seeker.seek(nextKeptTime(editor.document.clips, time) ?? editor.document.clips[0]!.start, true);
       } else if (source && time >= source.duration - 0.02) seeker.seek(0, true);
-      void video.play().catch(() => setPreviewFailed(true));
+      playIntentRef.current = true;
+      requestPlayback(true);
+      if (preparing) return;
+      void video.play().catch(() => undefined);
    };
    const selectAdjacent = (direction: -1 | 1) => {
       const time = adjacentBoundary(editor.document.clips, clock.get(), direction);
@@ -480,7 +528,9 @@ export default function App() {
             if (!clip || !videoRef.current) return;
             seeker.seek(clip.start, true);
             previewEnd.current = clip.end;
-            void videoRef.current.play().catch(() => setPreviewFailed(true));
+            playIntentRef.current = true;
+            requestPlayback(true);
+            if (!preparing) void videoRef.current.play().catch(() => undefined);
          },
       },
       back: { enabled: available, run: () => seek(clock.get() - 1) },
@@ -568,26 +618,6 @@ export default function App() {
    // Panel dialogs guard themselves: the command handler checks the live dialog state, so the
    // panel's exit fade never blocks shortcuts. Only the menu needs the React-side flag.
    useCommands(commands, preferences.shortcuts, mac, !!menu);
-   const prepare = async (track: number | null = audioIndex, transcode = false) => {
-      if (!source) return;
-      videoRef.current?.pause();
-      setPreparing(true);
-      setPreviewProgress(0);
-      setPreviewFailed(true);
-      setError(null);
-      const id = source.id;
-      try {
-         const nextUrl = await window.desktop.preparePreview(id, track, transcode);
-         if (sourceRef.current?.id === id) {
-            setUrl(nextUrl);
-            setPreviewFailed(false);
-         }
-      } catch (value) {
-         if (sourceRef.current?.id === id) setError(errorText(value));
-      } finally {
-         if (sourceRef.current?.id === id) setPreparing(false);
-      }
-   };
    const menuItems: Record<string, CommandId[]> = {
       File: ["open", "frame", "export"],
       Edit: ["undo", "redo", "settings"],
@@ -598,9 +628,15 @@ export default function App() {
    const errorPresence = useExitValue(error, 190);
    const jobPresence = useExitValue(job, 160);
    const video = source?.streams.find((stream) => stream.type === "video");
-   const changeAudio = (index: number) => {
-      setAudioIndex(index);
-      if (source && videoRef.current && !selectNativeAudio(videoRef.current, source, index)) void prepare(index);
+   const changeAudio = (indices: number[]) => {
+      setAudioIndices(indices);
+      if (source) {
+         const tracks = source.streams.filter((stream) => stream.type === "audio");
+         setPreferences((current) => ({ ...current, playbackAudio: rememberAudioSelection(tracks, indices) }));
+         const video = videoRef.current;
+         if (video && (indices.length !== 1 || !selectNativeAudio(video, source, indices)))
+            void preparePreview(source, indices, previewNeedsTranscode.current, !video.paused);
+      }
    };
    return (
       <CommandContext.Provider value={{ commands, overrides: preferences.shortcuts, mac }}>
@@ -705,25 +741,31 @@ export default function App() {
                         previewEnd={previewEnd}
                         volume={preferences.volume}
                         muted={muted}
-                        audioIndex={audioIndex}
+                        audioIndices={audioIndices}
                         onPlaying={(value) => {
                            setPlaying(value);
                            // Real playback replaces any scrub burst still sounding.
-                           if (value) scrubber.stop();
+                           if (value) {
+                              clearPlaybackRequest();
+                              scrubber.stop();
+                           }
                         }}
                         onPreviewEnd={() => {
                            previewEnd.current = null;
                         }}
-                        failed={previewFailed}
                         onFailure={() => {
-                           setPreviewNeedsTranscode(true);
-                           setPreviewFailed(true);
+                           if (!source) return;
+                           const requested = playIntentRef.current || playWhenReadyRef.current;
+                           if (requested) requestPlayback(true);
+                           if (previewNeedsTranscode.current) {
+                              clearPlaybackRequest();
+                              setError("This video could not be played, but it can still be exported.");
+                              return;
+                           }
+                           void preparePreview(source, audioIndices, true, requested);
                         }}
-                        onPrepare={() => {
-                           void prepare(audioIndex, previewNeedsTranscode);
-                        }}
-                        preparing={preparing}
-                        progress={previewProgress}
+                        playWhenReady={playWhenReady}
+                        waitForPlay={waitForPlay}
                         trimming={trimming}
                      />
                      <div className={`editor-dock${trimAnimating ? " trim-animating" : ""}`}>
@@ -741,7 +783,7 @@ export default function App() {
                            }}
                            keyframes={keyframes}
                            snapping={snapping}
-                           playing={playing}
+                           playing={playing || playWhenReady}
                            onSelect={(id) => remember(editor.document.clips.find((item) => item.id === id))}
                            onCommit={commit}
                            onSeek={seek}
@@ -755,7 +797,7 @@ export default function App() {
                            commands={commands}
                            volume={preferences.volume}
                            muted={muted}
-                           audioIndex={audioIndex}
+                           audioIndices={audioIndices}
                            onAudio={changeAudio}
                            onVolume={(volume, restore) => {
                               setMuted(volume === 0);

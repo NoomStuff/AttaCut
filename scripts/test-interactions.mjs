@@ -22,7 +22,7 @@ try {
    await page.waitForFunction(() => !document.fullscreenElement);
    await page.getByRole("button", { name: "Export", exact: true }).click();
    await expect(page.getByRole("textbox", { name: "Combined filename", exact: true })).toHaveValue("fixture (Trim)");
-   await expect(page.getByRole("button", { name: "Separate clips", exact: true })).toBeEnabled();
+   await expect(page.getByRole("button", { name: "Separate clips", exact: true })).toHaveCount(0);
    await expect(page.getByRole("button", { name: "Export video", exact: true })).toBeEnabled();
    await expect(page.getByRole("textbox", { name: "Clip 1 filename", exact: true })).toHaveCount(0);
    await page.keyboard.press("Escape");
@@ -37,7 +37,7 @@ try {
    await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("125%");
    await page.keyboard.press("f");
    await page.getByRole("button", { name: "Export", exact: true }).click();
-   const modal = page.getByRole("dialog", { name: "Export clips", exact: true });
+   const modal = page.locator("dialog.export-modal");
    await modal.evaluate((dialog) => Promise.all(dialog.getAnimations().map((animation) => animation.finished)));
    const before = await modal.boundingBox();
    await page.getByRole("button", { name: "Merged Video", exact: true }).click();
@@ -48,7 +48,7 @@ try {
    await page.getByRole("textbox", { name: "Combined filename", exact: true }).fill("joined");
    await page.screenshot({ path: "work/screenshots/v04-export.png" });
    await page.getByRole("button", { name: "Export video", exact: true }).click();
-   await page.getByText("1 clip exported", { exact: true }).waitFor({ timeout: 60000 });
+   await page.getByText("Export complete", { exact: true }).waitFor({ timeout: 60000 });
    await page.getByRole("button", { name: "Dismiss export status", exact: true }).click();
    const media = process.env.ATTACUT_MEDIA_FILE ?? resolve("work/fixture.mp4");
    await app.evaluate(({ dialog, BrowserWindow }, path) => {

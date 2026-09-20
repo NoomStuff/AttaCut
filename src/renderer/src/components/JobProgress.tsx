@@ -27,7 +27,17 @@ export function JobProgress({
                <FontAwesomeIcon icon={job.running ? faArrowUpFromBracket : failures.length ? faCircleExclamation : faCheck} />
             </span>
             <div>
-               <strong>{job.running ? `Exporting ${complete + 1} of ${job.items.length}` : `${complete} ${complete === 1 ? "clip" : "clips"} exported`}</strong>
+               <strong>
+                  {job.items.length === 1
+                     ? job.running
+                        ? "Exporting video"
+                        : failures.length
+                          ? "Export unfinished"
+                          : "Export complete"
+                     : job.running
+                       ? `Exporting ${complete + 1} of ${job.items.length}`
+                       : `${complete} of ${job.items.length} exported`}
+               </strong>
                <small>
                   {job.running
                      ? job.items.find((item) => item.status === "running")?.name

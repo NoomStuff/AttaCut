@@ -1,12 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { Clip, MediaSource } from "../../../shared/types";
 import type { PlaybackClock } from "../playback/clock";
 import { useClock } from "../playback/clock";
 import { insideClip } from "../editor/model";
-import { Button } from "./Controls";
-import { faPlay, faCircleExclamation } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { selectNativeAudio } from "../playback/audio";
 import type { PlaybackSeeker } from "../playback/seeker";
 import { nextKeptTime } from "../playback/ranges";
@@ -23,12 +20,10 @@ export function Player({
    muted,
    onPlaying,
    onPreviewEnd,
-   failed,
    onFailure,
-   onPrepare,
-   preparing,
-   progress,
-   audioIndex,
+   playWhenReady,
+   waitForPlay,
+   audioIndices,
    seeker,
    onFullscreen,
    trimming,
@@ -44,18 +39,23 @@ export function Player({
    muted: boolean;
    onPlaying: (playing: boolean) => void;
    onPreviewEnd: () => void;
-   failed: boolean;
    onFailure: () => void;
-   onPrepare: () => void;
-   preparing: boolean;
-   progress: number;
-   audioIndex: number | null;
+   playWhenReady: boolean;
+   waitForPlay: boolean;
+   audioIndices: number[];
    seeker: PlaybackSeeker;
    onFullscreen: () => void;
    trimming: boolean;
 }) {
-   const latest = useRef({ clips, keptOnly, onPreviewEnd, failed });
-   latest.current = { clips, keptOnly, onPreviewEnd, failed };
+   const [showWait, setShowWait] = useState(false);
+   const latest = useRef({ clips, keptOnly, onPreviewEnd });
+   latest.current = { clips, keptOnly, onPreviewEnd };
+   useEffect(() => {
+      setShowWait(false);
+      if (!waitForPlay) return;
+      const timer = window.setTimeout(() => setShowWait(true), 500);
+      return () => window.clearTimeout(timer);
+   }, [waitForPlay]);
    useEffect(() => seeker.attach(videoRef.current!), [seeker, videoRef]);
    useEffect(() => {
       const video = videoRef.current!;
@@ -72,7 +72,7 @@ export function Player({
                else if (next !== video.currentTime) seeker.seek(next, true);
             }
          }
-         if (!video.paused && video.readyState > 0 && !latest.current.failed && !video.seeking && !seeker.pending) clock.set(video.currentTime);
+         if (!video.paused && video.readyState > 0 && !video.seeking && !seeker.pending) clock.set(video.currentTime);
          frame = requestAnimationFrame(update);
       };
       frame = requestAnimationFrame(update);
@@ -85,8 +85,8 @@ export function Player({
       }
    }, [volume, muted, videoRef]);
    useEffect(() => {
-      if (videoRef.current) selectNativeAudio(videoRef.current, source, audioIndex);
-   }, [source, audioIndex, videoRef]);
+      if (videoRef.current && audioIndices.length === 1) selectNativeAudio(videoRef.current, source, audioIndices);
+   }, [source, audioIndices, videoRef]);
    return (
       <div className="player-stage">
          <video
@@ -105,34 +105,17 @@ export function Player({
                   return;
                }
                if (videoRef.current) videoRef.current.currentTime = Math.min(clock.get(), source.duration);
-               if (videoRef.current) selectNativeAudio(videoRef.current, source, audioIndex);
+               if (videoRef.current && audioIndices.length === 1) selectNativeAudio(videoRef.current, source, audioIndices);
+               if (videoRef.current && playWhenReady) void videoRef.current.play().catch(onFailure);
             }}
             onDoubleClick={onFullscreen}
          />
-         {failed && (
-            <div className="player-fallback">
-               <FontAwesomeIcon icon={faCircleExclamation} />
-               <h3>{preparing ? "Preparing a playable preview" : "This video needs a compatible preview"}</h3>
-               <p>Your clips will still export from the original file.</p>
-               {preparing ? (
-                  <>
-                     <progress max={1} value={progress} />
-                     <Button
-                        onClick={() => {
-                           void window.desktop.cancelPreview();
-                        }}
-                     >
-                        Cancel
-                     </Button>
-                  </>
-               ) : (
-                  <Button icon={faPlay} onClick={onPrepare}>
-                     Prepare preview
-                  </Button>
-               )}
+         {showWait && (
+            <div className="player-play-wait" role="status" aria-label="Loading playback">
+               <span className="spinner" />
             </div>
          )}
-         {!failed && <ExcludedHint clock={clock} clips={clips} duration={source.duration} trimming={trimming} />}
+         <ExcludedHint clock={clock} clips={clips} duration={source.duration} trimming={trimming} />
       </div>
    );
 }

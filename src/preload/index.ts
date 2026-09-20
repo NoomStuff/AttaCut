@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { DesktopApi, ExportJob, PreviewProgress } from "../shared/types";
+import type { DesktopApi, ExportJob } from "../shared/types";
 function listen<T>(channel: string, callback: (value: T) => void): () => void {
    const handler = (_event: Electron.IpcRendererEvent, value: T) => callback(value);
    ipcRenderer.on(channel, handler);
@@ -16,10 +16,10 @@ const api: DesktopApi = {
    savePreferences: (value) => ipcRenderer.invoke("preferences:save", value),
    saveSession: (value) => ipcRenderer.invoke("session:save", value),
    clearSession: () => ipcRenderer.invoke("session:clear"),
-   preparePreview: (sourceId, audioIndex, transcode) => ipcRenderer.invoke("preview:prepare", { sourceId, audioIndex, transcode }),
+   preparePreview: (sourceId, audioIndices, transcode) => ipcRenderer.invoke("preview:prepare", { sourceId, audioIndices, transcode }),
    cancelPreview: () => ipcRenderer.invoke("preview:cancel"),
    keyframes: (sourceId) => ipcRenderer.invoke("source:keyframes", sourceId),
-   scrubAudio: (sourceId, streamIndex) => ipcRenderer.invoke("audio:scrub", { sourceId, streamIndex }),
+   scrubAudio: (sourceId, streamIndices) => ipcRenderer.invoke("audio:scrub", { sourceId, streamIndices }),
    exportFrame: (request) => ipcRenderer.invoke("frame:export", request),
    planExport: (request) => ipcRenderer.invoke("export:plan", request),
    startExport: (id, approval) => ipcRenderer.invoke("export:start", { id, approval }),
@@ -31,7 +31,6 @@ const api: DesktopApi = {
    openNotices: () => ipcRenderer.invoke("notices:open"),
    windowAction: (action) => ipcRenderer.send("window:action", action),
    onJob: (callback) => listen<ExportJob>("export:progress", callback),
-   onPreview: (callback) => listen<PreviewProgress>("preview:progress", callback),
    onCommand: (callback) => listen<string>("app:command", callback),
 };
 contextBridge.exposeInMainWorld("desktop", api);

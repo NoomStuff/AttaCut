@@ -28,7 +28,7 @@ async function fixture() {
    folders.push(directory);
    const path = join(directory, "source.mp4");
    await writeFile(path, "original");
-   const source = { id: "source", path, extension: ".mp4", exportExtension: ".mp4", duration: 10 } as ProbedSource;
+   const source = { id: "source", path, extension: ".mp4", exportExtension: ".mp4", duration: 10, streams: [] } as unknown as ProbedSource;
    const request = { sourceId: source.id, directory, items: [{ name: "clip", clip: { id: "a", color: 0, start: 0, end: 10 } }] };
    return { directory, source, request, service: new ExportService(() => {}) };
 }

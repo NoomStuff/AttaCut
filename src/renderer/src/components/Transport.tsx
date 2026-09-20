@@ -99,7 +99,7 @@ export function Transport({
    onVolume,
    onBoundary,
    onFullscreen,
-   audioIndex,
+   audioIndices,
    onAudio,
    snapping,
    readingKeys,
@@ -115,8 +115,8 @@ export function Transport({
    onVolume: (value: number, restore: number) => void;
    onBoundary: (side: "start" | "end", value: number) => number;
    onFullscreen: () => void;
-   audioIndex: number | null;
-   onAudio: (index: number) => void;
+   audioIndices: number[];
+   onAudio: (indices: number[]) => void;
    snapping: boolean;
    readingKeys: boolean;
    zoom: number;
@@ -131,8 +131,8 @@ export function Transport({
                <>
                   <span className="selected-clip-label">
                      <i style={{ background: clipColor(clip.color) }} />
-                     Clip {index + 1}
-                     <span className="muted">of {document.clips.length}</span>
+                     {document.clips.length === 1 ? "Clip" : `Clip ${index + 1}`}
+                     {document.clips.length > 1 && <span className="muted">of {document.clips.length}</span>}
                   </span>
                   <div className="clip-boundaries">
                      <TimeField label="Start" value={clip.start} onChange={(value) => onBoundary("start", value)} />
@@ -171,7 +171,7 @@ export function Transport({
             </div>
          </div>
          <div className="volume-controls">
-            <AudioPicker tracks={source.streams.filter((stream) => stream.type === "audio")} selected={audioIndex} onSelect={onAudio} />
+            <AudioPicker tracks={source.streams.filter((stream) => stream.type === "audio")} selected={audioIndices} onSelect={onAudio} />
             <IconButton
                command="mute"
                icon={muted || volume === 0 ? faVolumeXmark : faVolumeHigh}

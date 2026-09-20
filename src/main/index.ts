@@ -83,7 +83,7 @@ async function start(): Promise<void> {
             submenu: [
                item("Import video…", "open"),
                item("Export current frame…", "frame"),
-               item("Export clips…", "export"),
+               item("Export…", "export"),
                { type: "separator" },
                { role: "quit" },
             ],
@@ -179,7 +179,7 @@ async function start(): Promise<void> {
             .showMessageBox(window, {
                type: "question",
                message: "Cancel the unfinished export and close?",
-               detail: "Clips already exported will be kept.",
+               detail: "Finished files will be kept.",
                buttons: ["Keep exporting", "Cancel and close"],
                defaultId: 0,
                cancelId: 0,
@@ -248,12 +248,14 @@ async function start(): Promise<void> {
       return points;
    });
    handle("audio:scrub", async (value) => {
-      const { sourceId, streamIndex } = z.object({ sourceId: z.string(), streamIndex: z.number().int() }).parse(value);
+      const { sourceId, streamIndices } = z.object({ sourceId: z.string(), streamIndices: z.array(z.number().int()).min(1) }).parse(value);
       const source = getSource(sourceId);
-      const key = `${source.id}:${streamIndex}`;
+      if (streamIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
+         throw new Error("Audio track not found.");
+      const key = `${source.id}:${streamIndices.join("-")}`;
       const cached = scrubAudio.get(key);
       if (cached) return cached;
-      const extraction = extractScrubPcm(source, streamIndex).catch((error: unknown) => {
+      const extraction = extractScrubPcm(source, streamIndices).catch((error: unknown) => {
          scrubAudio.delete(key);
          throw error;
       });
@@ -279,21 +281,15 @@ async function start(): Promise<void> {
       await storage.save();
    });
    handle("preview:prepare", async (value) => {
-      const request = z.object({ sourceId: z.string(), audioIndex: z.number().int().nullable(), transcode: z.boolean() }).parse(value);
+      const request = z.object({ sourceId: z.string(), audioIndices: z.array(z.number().int()), transcode: z.boolean() }).parse(value);
       const source = getSource(request.sourceId);
-      if (request.audioIndex !== null && !source.streams.some((stream) => stream.type === "audio" && stream.index === request.audioIndex))
+      if (request.audioIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
          throw new Error("Audio track not found.");
       previewController?.abort();
       const controller = new AbortController();
       previewController = controller;
-      const { id, path } = await preparePreview(source, previewFolder, request.audioIndex, request.transcode, {
-         signal: controller.signal,
-         onProgress: (progress) => {
-            if (!window.isDestroyed()) window.webContents.send("preview:progress", { sourceId: source.id, progress, running: true });
-         },
-      });
+      const { id, path } = await preparePreview(source, previewFolder, request.audioIndices, request.transcode, { signal: controller.signal });
       mediaPaths.set(id, path);
-      window.webContents.send("preview:progress", { sourceId: source.id, progress: 1, running: false });
       return `media://source/${id}`;
    });
    handle("preview:cancel", () => {
