@@ -12,7 +12,9 @@ test("export workflow", async ({ launchApp, profile }) => {
    await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
    await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
    await page.waitForFunction(() => document.fullscreenElement?.tagName === "VIDEO");
-   await page.evaluate(() => document.exitFullscreen());
+   await page.evaluate(() => {
+      void document.exitFullscreen();
+   });
    await page.waitForFunction(() => !document.fullscreenElement);
    const scrub = await page.evaluate(async () => {
       const sourceId = decodeURIComponent(new globalThis.URL(document.querySelector("video").currentSrc).pathname.replace(/^\//, ""));
