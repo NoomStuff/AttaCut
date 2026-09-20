@@ -6,16 +6,16 @@ import { mkdir, readdir } from "node:fs/promises";
 test("export workflow", async ({ launchApp, profile }) => {
    const output = join(profile, "exports");
    await mkdir(output);
-   const app = await launchApp(profile, resolve("work/fixture.mp4"));
-   const page = await app.firstWindow();
+   let app = await launchApp(profile, resolve("work/fixture.mp4"));
+   let page = await app.firstWindow();
    const waitForTime = (time) => page.waitForFunction((target) => Math.abs(document.querySelector("video").currentTime - target) < 0.05, time);
    await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
    await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
    await page.waitForFunction(() => document.fullscreenElement?.tagName === "VIDEO");
-   await page.evaluate(() => {
-      void document.exitFullscreen();
-   });
-   await page.waitForFunction(() => !document.fullscreenElement);
+   await app.close();
+   app = await launchApp(profile, resolve("work/fixture.mp4"));
+   page = await app.firstWindow();
+   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
    const scrub = await page.evaluate(async () => {
       const sourceId = decodeURIComponent(new globalThis.URL(document.querySelector("video").currentSrc).pathname.replace(/^\//, ""));
       const data = await globalThis.desktop.scrubAudio(sourceId, [1]);
@@ -36,9 +36,7 @@ test("export workflow", async ({ launchApp, profile }) => {
    await start.press("Tab");
    await end.fill("00:16.00");
    await end.press("Tab");
-   await page.locator("video").evaluate((v) => {
-      v.currentTime = 12;
-   });
+   await page.mouse.click(bar.x + (bar.width * 12) / 18, bar.y + 36);
    await waitForTime(12);
    await page.getByRole("button", { name: "Previous clip", exact: true }).click();
    await waitForTime(9);
