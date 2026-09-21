@@ -16,6 +16,8 @@ function listen<T>(channel: string, callback: (value: T) => void): () => void {
 }
 const api: DesktopApi = {
    bootstrap: () => invoke("app:bootstrap"),
+   checkForUpdate: () => invoke("update:check"),
+   dismissUpdate: (version, ignore) => invoke("update:dismiss", { version, ignore }),
    chooseSource: () => invoke("source:choose"),
    openSource: (path) => invoke("source:open", path),
    filePath: (file) => webUtils.getPathForFile(file),

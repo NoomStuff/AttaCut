@@ -3,6 +3,8 @@ type Result<K extends keyof DesktopApi> = Awaited<ReturnType<DesktopApi[K]>>;
 type Call<Request, Response> = { request: Request; response: Response };
 export interface IpcCalls {
    "app:bootstrap": Call<void, Result<"bootstrap">>;
+   "update:check": Call<void, Result<"checkForUpdate">>;
+   "update:dismiss": Call<{ version: string; ignore: boolean }, void>;
    "source:choose": Call<void, string | null>;
    "source:open": Call<string, Result<"openSource">>;
    "source:keyframes": Call<string, number[]>;

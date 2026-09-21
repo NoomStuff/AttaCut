@@ -104,6 +104,19 @@ describe("Storage", () => {
          await rm(directory, { recursive: true, force: true });
       }
    });
+   it("keeps the update check time and ignored version across loads", async () => {
+      const directory = await folder();
+      try {
+         const storage = new Storage(directory);
+         storage.updates = { lastCheckedAt: 1234, ignoredVersion: "0.8.0" };
+         await storage.save();
+         const reloaded = new Storage(directory);
+         await reloaded.load();
+         expect(reloaded.updates).toEqual(storage.updates);
+      } finally {
+         await rm(directory, { recursive: true, force: true });
+      }
+   });
    it("resets to defaults when the file version is missing or newer", async () => {
       const directory = await folder();
       try {

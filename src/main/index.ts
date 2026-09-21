@@ -17,6 +17,7 @@ import { Storage } from "./storage.ts";
 import { serveMedia } from "./media/serve.ts";
 import { videoExtensions } from "./media/formats.ts";
 import type { IpcCalls } from "../shared/ipc.ts";
+import { fetchAvailableUpdate, updateInterval } from "./updates.ts";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 if (process.env["ATTACUT_USER_DATA"]) app.setPath("userData", process.env["ATTACUT_USER_DATA"]);
@@ -249,6 +250,22 @@ async function start(): Promise<void> {
          version: app.getVersion(),
          initialFile,
       };
+   });
+   handle("update:check", async () => {
+      if (!app.isPackaged || Date.now() - storage.updates.lastCheckedAt < updateInterval) return null;
+      storage.updates = { ...storage.updates, lastCheckedAt: Date.now() };
+      await storage.save();
+      try {
+         const update = await fetchAvailableUpdate(app.getVersion(), (url, init) => net.fetch(url, init));
+         return update?.version === storage.updates.ignoredVersion ? null : update;
+      } catch {
+         return null;
+      }
+   });
+   handle("update:dismiss", async (value) => {
+      const choice = z.object({ version: z.string().min(1), ignore: z.boolean() }).parse(value);
+      if (choice.ignore) storage.updates = { ...storage.updates, ignoredVersion: choice.version };
+      await storage.save();
    });
    handle("source:choose", async () => {
       const result = await dialog.showOpenDialog(window, {

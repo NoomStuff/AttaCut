@@ -168,6 +168,13 @@
    justify-content: space-between;
    padding: 24px 24px 18px;
 }
+.modal-header > div:not(.modal-header-icon) {
+   flex: 1;
+   min-width: 0;
+}
+.modal-header-icon {
+   flex: 0 0 auto;
+}
 .modal-header h2 {
    font-size: 21px;
    font-weight: 600;

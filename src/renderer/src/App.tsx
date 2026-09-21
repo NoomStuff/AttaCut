@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import type { MediaSource, ExportJob, SavedSession, Preferences } from "../../shared/types";
+import type { AvailableUpdate, MediaSource, ExportJob, SavedSession, Preferences } from "../../shared/types";
 import { clipColorCount, defaultPreferences } from "../../shared/types";
 import { clamp } from "../../shared/time";
 import { adjacentBoundary, resolveBoundary } from "./editor/navigation";
@@ -43,6 +43,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { HelpPanel } from "./components/HelpPanel";
 import type { HelpTab } from "./components/HelpPanel";
 import { AboutPanel } from "./components/AboutPanel";
+import { UpdatePanel } from "./components/UpdatePanel";
 import { errorText } from "./lib/errors";
 import { useExitValue, usePressFeedback } from "./lib/motion";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -98,6 +99,7 @@ export default function App() {
    const [ready, setReady] = useState(false);
    const [platform, setPlatform] = useState("win32");
    const [version, setVersion] = useState("");
+   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
    const [exportDraft, setExportDraft] = useState<ExportDraft | null>(null);
    const [panel, setPanel] = useState<Panel>(null);
    const [helpTab, setHelpTab] = useState<HelpTab>("intro");
@@ -318,6 +320,12 @@ export default function App() {
             setVersion(data.version);
             setRestore(data.session);
             setReady(true);
+            void window.desktop
+               .checkForUpdate()
+               .then((update) => {
+                  if (!cancelled) setAvailableUpdate(update);
+               })
+               .catch(() => {});
             if (data.initialFile) await openPath(data.initialFile, undefined, data.preferences.playbackAudio);
             else if (data.session) await openPath(data.session.path, data.session, data.preferences.playbackAudio);
             if (!cancelled && data.warning) setError((current) => current ?? data.warning);
@@ -886,6 +894,7 @@ export default function App() {
             )}
             {panel === "help" && <HelpPanel initialTab={helpTab} onClose={() => setPanel(null)} />}
             {panel === "about" && <AboutPanel version={version} onClose={() => setPanel(null)} />}
+            {availableUpdate && <UpdatePanel update={availableUpdate} onClose={() => setAvailableUpdate(null)} />}
             {draggingFile && (
                <div className="drop-overlay">
                   <FontAwesomeIcon icon={faFolderOpen} />

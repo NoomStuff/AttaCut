@@ -1,0 +1,115 @@
+.update-modal {
+   width: min(470px, calc(100vw - 40px));
+}
+
+.update-modal .modal-header {
+   align-items: center;
+   gap: 18px;
+   min-height: 106px;
+   padding: 22px 24px;
+}
+
+.update-modal .modal-header-icon {
+   width: 48px;
+   height: 48px;
+   display: grid;
+   place-items: center;
+   flex: 0 0 auto;
+   border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+   border-radius: 10px;
+   color: var(--accent);
+   background: color-mix(in srgb, var(--accent) 8%, var(--surface-raised));
+   font-size: 20px;
+}
+
+.update-modal .modal-header h2 {
+   margin-bottom: 6px;
+   font-size: 20px;
+}
+
+.update-modal .modal-header p {
+   line-height: 1.4;
+}
+
+.update-footer {
+   justify-content: space-between;
+   gap: 20px;
+   min-height: 72px;
+   padding: 16px 24px;
+}
+
+.update-actions {
+   display: flex;
+   gap: 9px;
+}
+
+.update-ignore {
+   position: relative;
+   display: flex;
+   align-items: center;
+   gap: 9px;
+   min-height: 36px;
+   color: var(--muted);
+   cursor: pointer;
+}
+
+.update-ignore input {
+   position: absolute;
+   opacity: 0;
+}
+
+.update-ignore > span {
+   width: 16px;
+   height: 16px;
+   display: grid;
+   place-items: center;
+   border: 1px solid var(--line-strong);
+   border-radius: 4px;
+   background: var(--surface-raised);
+   transition:
+      background-color 120ms ease-out,
+      border-color 120ms ease-out,
+      transform 90ms ease-out;
+}
+
+.update-ignore > span::after {
+   content: "";
+   width: 7px;
+   height: 4px;
+   border-left: 2px solid var(--accent-text);
+   border-bottom: 2px solid var(--accent-text);
+   transform: translateY(-1px) rotate(-45deg) scale(0.4);
+   opacity: 0;
+   transition:
+      transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      opacity 100ms ease-out;
+}
+
+.update-ignore input:checked + span {
+   border-color: var(--accent);
+   background: var(--accent);
+}
+
+.update-ignore input:checked + span::after {
+   transform: translateY(-1px) rotate(-45deg) scale(1);
+   opacity: 1;
+}
+
+.update-ignore input:focus-visible + span {
+   outline: 2px solid var(--accent);
+   outline-offset: 3px;
+}
+
+.update-ignore:active > span {
+   transform: scale(0.9);
+}
+
+@media (max-width: 560px) {
+   .update-footer {
+      align-items: stretch;
+      flex-direction: column;
+   }
+   .update-actions {
+      justify-content: flex-end;
+   }
+}

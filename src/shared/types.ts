@@ -120,6 +120,11 @@ export interface Bootstrap {
    version: string;
    initialFile: string | null;
 }
+export interface AvailableUpdate {
+   version: string;
+   name: string;
+   url: string;
+}
 export const exportItemSchema = z.object({ clip: clipSchema, name: z.string().min(1).max(240) });
 export const planRequestSchema = z.object({
    sourceId: z.string(),
@@ -195,6 +200,8 @@ export function exportExtensionFor(
 }
 export interface DesktopApi {
    bootstrap(): Promise<Bootstrap>;
+   checkForUpdate(): Promise<AvailableUpdate | null>;
+   dismissUpdate(version: string, ignore: boolean): Promise<void>;
    chooseSource(): Promise<string | null>;
    openSource(path: string): Promise<MediaSource>;
    filePath(file: File): string;
