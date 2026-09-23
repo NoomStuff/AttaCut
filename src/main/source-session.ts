@@ -30,7 +30,10 @@ export class SourceSession {
    private pcm: { key: string; value: Promise<ScrubAudio | null> } | null = null;
    private previewFiles: string[] = [];
    readonly mediaPaths = new Map<string, string>();
-   constructor(private previewFolder: string) {}
+   constructor(
+      private previewFolder: string,
+      private previewReady: Promise<void> = Promise.resolve()
+   ) {}
    get signal(): AbortSignal {
       return this.lifetime.signal;
    }
@@ -67,6 +70,8 @@ export class SourceSession {
       this.cancelPreview();
       const controller = new AbortController();
       this.preview = controller;
+      await this.previewReady;
+      controller.signal.throwIfAborted();
       const result = await preparePreview(source, this.previewFolder, tracks, transcode, { signal: controller.signal });
       controller.signal.throwIfAborted();
       this.mediaPaths.set(result.id, result.path);

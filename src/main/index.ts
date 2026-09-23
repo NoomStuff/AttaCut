@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
 import { join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -49,14 +49,15 @@ function windowIcon(): string | undefined {
    return existsSync(icon) ? icon : undefined;
 }
 app.setName("AttaCut");
-if (process.platform === "win32") {
+if (process.platform === "win32") app.setAppUserModelId("dev.attacut.app");
+function registerWindowsIdentity(): void {
+   if (process.platform !== "win32") return;
    // Taskbar and notification surfaces resolve a raw AUMID's label from this registry key;
    // without it they fall back to the executable description, which reads "Electron" for
    // dev runs and portable builds that install no Start Menu shortcut.
    const modelId = "dev.attacut.app";
-   app.setAppUserModelId(modelId);
    const reg = (path: string, value: string, data: string) =>
-      spawnSync("reg", ["add", path, "/v", value, "/t", "REG_SZ", "/d", data, "/f"], { windowsHide: true, stdio: "ignore" });
+      spawn("reg", ["add", path, "/v", value, "/t", "REG_SZ", "/d", data, "/f"], { windowsHide: true, stdio: "ignore" }).on("error", () => undefined);
    reg(`HKCU\\Software\\Classes\\AppUserModelId\\${modelId}`, "DisplayName", "AttaCut");
    const icon = windowIcon();
    if (icon) reg(`HKCU\\Software\\Classes\\AppUserModelId\\${modelId}`, "IconUri", icon);
@@ -136,8 +137,10 @@ async function start(): Promise<void> {
    await storage.load();
    const previewFolder = resolve(app.getPath("userData"), "previews");
    if (resolve(previewFolder, "..") !== resolve(app.getPath("userData"))) throw new Error("Invalid preview cache path.");
-   await rm(previewFolder, { recursive: true, force: true });
-   const sourceSession = new SourceSession(previewFolder);
+   // Cleanup can run alongside window loading. Preview writers wait for it below.
+   const previewCleanup = rm(previewFolder, { recursive: true, force: true });
+   void previewCleanup.catch(() => undefined);
+   const sourceSession = new SourceSession(previewFolder, previewCleanup);
    session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
       callback(contents === window.webContents && permission === "fullscreen")
    );
@@ -186,6 +189,7 @@ async function start(): Promise<void> {
    window.webContents.on("will-navigate", (event) => event.preventDefault());
    window.once("ready-to-show", () => {
       if (process.env["ATTACUT_HIDDEN"] !== "1") window.show();
+      registerWindowsIdentity();
    });
    let confirmedClose = false;
    let closing = false;

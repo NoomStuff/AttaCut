@@ -70,3 +70,13 @@ video:fullscreen {
       opacity: 1;
    }
 }
+
+.preview-loading {
+   position: absolute;
+   inset: 0;
+   display: grid;
+   place-items: center;
+   color: var(--muted);
+   font-size: 13px;
+   pointer-events: none;
+}

@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-export const clipColorCount = 5;
+import { clipColorCount } from "./defaults";
+export { clipColorCount, defaultPreferences, undoLimit } from "./defaults";
+import { undoLimit } from "./defaults";
 
 export const clipSchema = z
    .object({
@@ -88,9 +90,7 @@ export const preferencesSchema = z.object({
    frameQuality: z.number().min(1).max(100).default(95),
 });
 export type Preferences = z.infer<typeof preferencesSchema>;
-export const defaultPreferences: Preferences = preferencesSchema.parse({});
-/** Deepest undo stack, both in memory and on disk. */
-export const undoLimit = 200;
+
 const savedDocumentShape = {
    clips: z.array(clipSchema).max(500),
    selectedId: z.string().nullable(),
@@ -189,15 +189,7 @@ export interface ScrubAudio {
    pcm: ArrayBuffer;
 }
 
-/** A separate export spanning the whole source keeps the source container; everything else exports to the export container. */
-export function exportExtensionFor(
-   source: Pick<MediaSource, "extension" | "exportExtension" | "duration">,
-   clip: Pick<Clip, "start" | "end">,
-   options: { separate: boolean; allAudio: boolean }
-): string {
-   const fullRange = clip.start === 0 && Math.abs(clip.end - source.duration) < 0.0001;
-   return options.allAudio && options.separate && fullRange ? source.extension : source.exportExtension;
-}
+export { exportExtensionFor } from "./export-format";
 export interface DesktopApi {
    bootstrap(): Promise<Bootstrap>;
    checkForUpdate(): Promise<AvailableUpdate | null>;

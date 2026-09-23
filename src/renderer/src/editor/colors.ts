@@ -1,5 +1,5 @@
 import type { Clip } from "../../../shared/types";
-import { clipColorCount } from "../../../shared/types";
+import { clipColorCount } from "../../../shared/defaults";
 
 /** Continue the sequence, skipping base colours used by either new neighbour. */
 export function nextClipColor(clips: Clip[], left?: Clip, right?: Clip): number {

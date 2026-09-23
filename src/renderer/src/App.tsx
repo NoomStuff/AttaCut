@@ -1,6 +1,6 @@
-import { useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import type { AvailableUpdate, MediaSource, ExportJob, SavedSession, Preferences } from "../../shared/types";
-import { clipColorCount, defaultPreferences } from "../../shared/types";
+import { clipColorCount, defaultPreferences } from "../../shared/defaults";
 import { clamp } from "../../shared/time";
 import { adjacentBoundary, resolveBoundary } from "./editor/navigation";
 import { selectNativeAudio } from "./playback/audio";
@@ -9,7 +9,6 @@ import { PlaybackSeeker } from "./playback/seeker";
 import { AudioScrubber } from "./playback/scrubber";
 import { PlaybackController } from "./playback/controller";
 import { nextKeptTime } from "./playback/ranges";
-import { FramePanel } from "./components/FramePanel";
 import {
    ClipPriority,
    mergePair,
@@ -38,16 +37,25 @@ import { TopActions } from "./components/TopActions";
 import { JobProgress } from "./components/JobProgress";
 import { EmptyState } from "./components/EmptyState";
 import type { ExportDraft } from "./components/ExportPanel";
-import { ExportPanel } from "./components/ExportPanel";
-import { SettingsPanel } from "./components/SettingsPanel";
-import { HelpPanel } from "./components/HelpPanel";
 import type { HelpTab } from "./components/HelpPanel";
-import { AboutPanel } from "./components/AboutPanel";
-import { UpdatePanel } from "./components/UpdatePanel";
+import { afterIdle, prefetchModules } from "./lib/prefetch";
 import { errorText } from "./lib/errors";
 import { useExitValue, usePressFeedback } from "./lib/motion";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faScissors, faFolderOpen, faMinus, faSquare, faXmark, faCircleExclamation } from "@fortawesome/free-solid-svg-icons";
+
+const loadFramePanel = () => import("./components/FramePanel").then((module) => ({ default: module.FramePanel }));
+const FramePanel = lazy(loadFramePanel);
+const loadExportPanel = () => import("./components/ExportPanel").then((module) => ({ default: module.ExportPanel }));
+const ExportPanel = lazy(loadExportPanel);
+const loadSettingsPanel = () => import("./components/SettingsPanel").then((module) => ({ default: module.SettingsPanel }));
+const SettingsPanel = lazy(loadSettingsPanel);
+const loadHelpPanel = () => import("./components/HelpPanel").then((module) => ({ default: module.HelpPanel }));
+const HelpPanel = lazy(loadHelpPanel);
+const loadAboutPanel = () => import("./components/AboutPanel").then((module) => ({ default: module.AboutPanel }));
+const AboutPanel = lazy(loadAboutPanel);
+const loadUpdatePanel = () => import("./components/UpdatePanel").then((module) => ({ default: module.UpdatePanel }));
+const UpdatePanel = lazy(loadUpdatePanel);
 
 type Panel = "export" | "frame" | "settings" | "shortcuts" | "help" | "about" | null;
 
@@ -126,6 +134,7 @@ export default function App() {
    const [keyframes, setKeyframes] = useState<number[]>([]);
    const snapping = preferences.snapping;
    const [readingKeys, setReadingKeys] = useState(false);
+   const keyframesReady = useRef<string | null>(null);
    const [draggingFile, setDraggingFile] = useState(false);
    const [trimAnimating, setTrimAnimating] = useState(false);
    const trimTimer = useRef(0);
@@ -240,6 +249,7 @@ export default function App() {
       scrubber.stop();
       try {
          await saveCurrent();
+         if (sequence !== openSequence.current) return;
          const media = await window.desktop.openSource(path);
          if (sequence !== openSequence.current) return;
          const validSaved = saved && saved.size === media.size && saved.modified === media.modified && saved.clips.every((item) => item.end <= media.duration);
@@ -291,24 +301,49 @@ export default function App() {
       }
    };
    useEffect(() => {
-      if (!source) return;
+      if (!ready || loading || preparing) return;
+      return prefetchModules([loadExportPanel, loadSettingsPanel, loadFramePanel, loadHelpPanel, loadAboutPanel, loadUpdatePanel]);
+   }, [ready, loading, preparing]);
+   useEffect(() => {
+      setReadingKeys(false);
+      if (!source || loading || keyframesReady.current === source.id) return;
       let cancelled = false;
-      setReadingKeys(true);
-      void window.desktop
-         .keyframes(source.id)
-         .then((keys) => {
-            if (!cancelled) setKeyframes(keys);
-         })
-         .catch((value) => {
-            if (!cancelled) setError(errorText(value));
-         })
-         .finally(() => {
-            if (!cancelled) setReadingKeys(false);
-         });
+      let cancelIdle = () => {};
+      const read = () => {
+         setReadingKeys(snapping);
+         void window.desktop
+            .keyframes(source.id)
+            .then((keys) => {
+               if (!cancelled) {
+                  keyframesReady.current = source.id;
+                  setKeyframes(keys);
+               }
+            })
+            .catch((value) => {
+               // Optional prefetch failures are retried and reported when snapping is requested.
+               if (!cancelled && snapping) setError(errorText(value));
+            })
+            .finally(() => {
+               if (!cancelled) setReadingKeys(false);
+            });
+      };
+      const video = videoRef.current;
+      const schedule = () => {
+         cancelIdle();
+         cancelIdle = afterIdle(read);
+      };
+      // An explicit request bypasses prefetch scheduling. Otherwise let the preview decode first.
+      if (snapping) read();
+      else if (!preparing && video) {
+         if (video.readyState >= 2) schedule();
+         else video.addEventListener("loadeddata", schedule, { once: true });
+      }
       return () => {
          cancelled = true;
+         cancelIdle();
+         video?.removeEventListener("loadeddata", schedule);
       };
-   }, [source]);
+   }, [source, snapping, loading, preparing]);
    useEffect(() => {
       let cancelled = false;
       void window.desktop
@@ -799,6 +834,8 @@ export default function App() {
                         }}
                         playWhenReady={playWhenReady}
                         waitForPlay={waitForPlay}
+                        preparing={preparing}
+                        failed={playbackState.phase === "failed"}
                         trimming={trimming}
                      />
                      <div className={`editor-dock${trimAnimating ? " trim-animating" : ""}`}>
@@ -847,11 +884,16 @@ export default function App() {
                ) : (
                   <EmptyState onImport={() => void choose()} loading={loading} mac={mac} />
                )}
-               {loading && (
-                  <div className="loading-overlay">
-                     <span className="spinner" />
-                     <strong>Opening video…</strong>
-                     <span>Reading media information</span>
+               {(loading || !ready) && (
+                  <div className="loading-overlay" role="status" aria-label={loading ? "Opening video" : "Loading editor"}>
+                     <div className="loading-preview skeleton">
+                        <span>{loading ? "Opening video..." : "Loading editor..."}</span>
+                     </div>
+                     <div className="loading-dock" aria-hidden="true">
+                        <div className="loading-ruler skeleton" />
+                        <div className="loading-track skeleton" />
+                        <div className="loading-controls skeleton" />
+                     </div>
                   </div>
                )}
             </main>
@@ -864,37 +906,52 @@ export default function App() {
                   onRetry={setJob}
                />
             )}
-            {panel === "export" && source && (
-               <ExportPanel
-                  draft={exportDraft}
-                  onDraft={setExportDraft}
-                  source={source}
-                  clips={editor.document.clips}
-                  preferences={preferences}
-                  onPreferences={setPreferences}
-                  onClose={() => setPanel(null)}
-                  onStarted={setJob}
-                  onHelp={(topic) => {
-                     setHelpTab(topic);
-                     setPanel("help");
-                  }}
-               />
-            )}
-            {panel === "frame" && source && (
-               <FramePanel source={source} time={clock.get()} preferences={preferences} onPreferences={setPreferences} onClose={() => setPanel(null)} />
-            )}
-            {(panel === "settings" || panel === "shortcuts") && (
-               <SettingsPanel
-                  preferences={preferences}
-                  onChange={setPreferences}
-                  onClose={() => setPanel(null)}
-                  mac={mac}
-                  initialTab={panel === "shortcuts" ? "shortcuts" : "general"}
-               />
-            )}
-            {panel === "help" && <HelpPanel initialTab={helpTab} onClose={() => setPanel(null)} />}
-            {panel === "about" && <AboutPanel version={version} onClose={() => setPanel(null)} />}
-            {availableUpdate && <UpdatePanel update={availableUpdate} onClose={() => setAvailableUpdate(null)} />}
+            <Suspense
+               key={panel}
+               fallback={
+                  <div className="panel-loading" role="status">
+                     Opening panel...
+                  </div>
+               }
+            >
+               {panel === "export" && source && (
+                  <ExportPanel
+                     draft={exportDraft}
+                     onDraft={setExportDraft}
+                     source={source}
+                     clips={editor.document.clips}
+                     preferences={preferences}
+                     onPreferences={setPreferences}
+                     onClose={() => setPanel((current) => (current === panel ? null : current))}
+                     onStarted={setJob}
+                     onHelp={(topic) => {
+                        setHelpTab(topic);
+                        setPanel("help");
+                     }}
+                  />
+               )}
+               {panel === "frame" && source && (
+                  <FramePanel
+                     source={source}
+                     time={clock.get()}
+                     preferences={preferences}
+                     onPreferences={setPreferences}
+                     onClose={() => setPanel((current) => (current === panel ? null : current))}
+                  />
+               )}
+               {(panel === "settings" || panel === "shortcuts") && (
+                  <SettingsPanel
+                     preferences={preferences}
+                     onChange={setPreferences}
+                     onClose={() => setPanel((current) => (current === panel ? null : current))}
+                     mac={mac}
+                     initialTab={panel === "shortcuts" ? "shortcuts" : "general"}
+                  />
+               )}
+               {panel === "help" && <HelpPanel initialTab={helpTab} onClose={() => setPanel((current) => (current === panel ? null : current))} />}
+               {panel === "about" && <AboutPanel version={version} onClose={() => setPanel((current) => (current === panel ? null : current))} />}
+            </Suspense>
+            <Suspense fallback={null}>{availableUpdate && <UpdatePanel update={availableUpdate} onClose={() => setAvailableUpdate(null)} />}</Suspense>
             {draggingFile && (
                <div className="drop-overlay">
                   <FontAwesomeIcon icon={faFolderOpen} />

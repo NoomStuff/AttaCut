@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SourceSession } from "./source-session";
 import { probeSource } from "./media/probe";
+import { preparePreview } from "./media/preview";
 import { extractScrubPcm } from "./media/scrub-audio";
 import type { ProbedSource } from "./media/probe";
 vi.mock("./media/probe.ts", () => ({
@@ -12,6 +13,7 @@ vi.mock("./media/scrub-audio.ts", () => ({
    scrubChunkSeconds: 30,
    extractScrubPcm: vi.fn(async () => ({ start: 0, sampleRate: 22050, pcm: new ArrayBuffer(2) })),
 }));
+vi.mock("./media/preview.ts", () => ({ preparePreview: vi.fn() }));
 afterEach(() => vi.clearAllMocks());
 describe("source lifetime", () => {
    it("releases old sources and aborts their work while preserving a failed-open source", async () => {
@@ -40,4 +42,21 @@ describe("source lifetime", () => {
       expect(vi.mocked(extractScrubPcm).mock.calls[1]![3]).toBe(60);
       session.dispose();
    });
+});
+
+it("does not write a preview cancelled while startup cache cleanup is pending", async () => {
+   let finishCleanup!: () => void;
+   const cleanup = new Promise<void>((resolve) => {
+      finishCleanup = resolve;
+   });
+   const session = new SourceSession("unused-preview-directory", cleanup);
+   await session.open("a");
+   const pending = session.prepare("a", [], false);
+   const rejected = expect(pending).rejects.toThrow();
+   expect(preparePreview).not.toHaveBeenCalled();
+   session.cancelPreview();
+   finishCleanup();
+   await rejected;
+   expect(preparePreview).not.toHaveBeenCalled();
+   session.dispose();
 });

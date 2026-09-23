@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Clip, ExportJob, ExportPlan, CutReport, MediaSource, Preferences } from "../../../shared/types";
-import { exportExtensionFor } from "../../../shared/types";
+import { exportExtensionFor } from "../../../shared/export-format";
 import { formatTime } from "../../../shared/time";
 import { faArrowUpFromBracket, faCircleExclamation, faCircleInfo, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";

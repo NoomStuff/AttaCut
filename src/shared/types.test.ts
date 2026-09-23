@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { savedSessionSchema } from "./types";
+import { defaultPreferences, preferencesSchema, savedSessionSchema } from "./types";
 
 const clip = (id: string, start: number, end: number) => ({ id, start, end, color: 0 });
 const session = {
@@ -22,4 +22,8 @@ describe("saved sessions", () => {
       expect(savedSessionSchema.parse({ ...session, past: undefined }).past).toEqual([]);
       expect(() => savedSessionSchema.parse({ ...session, past: [{ clips: [clip("b", 10, 20), clip("a", 0, 10)], selectedId: null }] })).toThrow();
    });
+});
+
+it("renderer defaults match persisted preference defaults", () => {
+   expect(defaultPreferences).toEqual(preferencesSchema.parse({}));
 });

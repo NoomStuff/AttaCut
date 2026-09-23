@@ -1,5 +1,5 @@
 import type { Clip } from "../../../shared/types";
-import { clipColorCount, undoLimit } from "../../../shared/types";
+import { clipColorCount, undoLimit } from "../../../shared/defaults";
 import { clamp } from "../../../shared/time";
 import { nextClipColor } from "./colors";
 

@@ -23,6 +23,8 @@ export function Player({
    onFailure,
    playWhenReady,
    waitForPlay,
+   preparing,
+   failed,
    audioIndices,
    seeker,
    onFullscreen,
@@ -42,11 +44,15 @@ export function Player({
    onFailure: () => void;
    playWhenReady: boolean;
    waitForPlay: boolean;
+   preparing: boolean;
+   failed: boolean;
    audioIndices: number[];
    seeker: PlaybackSeeker;
    onFullscreen: () => void;
    trimming: boolean;
 }) {
+   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+   const previewLoading = !failed && (preparing || loadedUrl !== url);
    const [showWait, setShowWait] = useState(false);
    const latest = useRef({ clips, keptOnly, onPreviewEnd });
    latest.current = { clips, keptOnly, onPreviewEnd };
@@ -73,10 +79,23 @@ export function Player({
             }
          }
          if (!video.paused && video.readyState > 0 && !video.seeking && !seeker.pending) clock.set(video.currentTime);
+         if (!video.paused) frame = requestAnimationFrame(update);
+      };
+      const start = () => {
+         cancelAnimationFrame(frame);
          frame = requestAnimationFrame(update);
       };
-      frame = requestAnimationFrame(update);
-      return () => cancelAnimationFrame(frame);
+      const stop = () => cancelAnimationFrame(frame);
+      video.addEventListener("play", start);
+      video.addEventListener("pause", stop);
+      video.addEventListener("ended", stop);
+      if (!video.paused) start();
+      return () => {
+         stop();
+         video.removeEventListener("play", start);
+         video.removeEventListener("pause", stop);
+         video.removeEventListener("ended", stop);
+      };
    }, [clock, previewEnd, videoRef, seeker]);
    useEffect(() => {
       if (videoRef.current) {
@@ -98,6 +117,7 @@ export function Player({
             onPlay={() => onPlaying(true)}
             onPause={() => onPlaying(false)}
             onEnded={() => onPlaying(false)}
+            onLoadedData={() => setLoadedUrl(url)}
             onError={onFailure}
             onLoadedMetadata={() => {
                if (videoRef.current && videoRef.current.videoWidth === 0) {
@@ -110,7 +130,12 @@ export function Player({
             }}
             onDoubleClick={onFullscreen}
          />
-         {showWait && (
+         {previewLoading && (
+            <div className="preview-loading skeleton" role="status">
+               <span>{preparing ? "Preparing preview..." : "Loading preview..."}</span>
+            </div>
+         )}
+         {showWait && !previewLoading && (
             <div className="player-play-wait" role="status" aria-label="Loading playback">
                <span className="spinner" />
             </div>
