@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { test } from "./app.mjs";
+import { test, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -8,7 +8,9 @@ import { promisify } from "node:util";
 test("a second process preserves active cache files and forwards file opens", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   // Instance forwarding needs an open source, not a decoded video frame.
+   await expect(page.locator(".title-filename")).toContainText("fixture.mp4");
+   await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(1);
    const previewFolder = resolve(profile, "previews");
    await mkdir(previewFolder, { recursive: true });
    const marker = resolve(previewFolder, "active-preview-marker");
@@ -28,7 +30,7 @@ test("a second process preserves active cache files and forwards file opens", as
 test("playback leaves the root idle and close flushes the final edit", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    let page = await app.firstWindow();
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   await waitForVideo(page);
    await page.addInitScript(() => {
       let lastHooks;
       globalThis.rootRenders = 0;
@@ -60,7 +62,7 @@ test("playback leaves the root idle and close flushes the final edit", async ({ 
       await globalThis.desktop.saveSession({ ...session, clips, selectedId: clips[0].id, past: [], future: [] });
    });
    await page.reload();
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   await waitForVideo(page);
    await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(500);
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await page.waitForFunction(() => document.querySelector("video").currentTime > 0.3);

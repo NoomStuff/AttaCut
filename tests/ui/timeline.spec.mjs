@@ -1,6 +1,6 @@
 /* global window, KeyboardEvent */
 import { expect } from "@playwright/test";
-import { test } from "./app.mjs";
+import { test, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -28,7 +28,7 @@ test("timeline", async ({ launchApp, profile }) => {
    }
    const app = await launchApp(profile, resolve("work/named-audio.mp4"));
    const page = await app.firstWindow();
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   await waitForVideo(page);
    const video = page.locator("video");
    const bar = await page.locator(".timeline-viewport").boundingBox();
    const seek = async (time) => {

@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { test } from "./app.mjs";
+import { test, waitForVideo } from "./app.mjs";
 import { resolve, join } from "node:path";
 import { mkdir, readdir } from "node:fs/promises";
 
@@ -9,13 +9,13 @@ test("export workflow", async ({ launchApp, profile }) => {
    let app = await launchApp(profile, resolve("work/fixture.mp4"));
    let page = await app.firstWindow();
    const waitForTime = (time) => page.waitForFunction((target) => Math.abs(document.querySelector("video").currentTime - target) < 0.05, time);
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   await waitForVideo(page);
    await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
    await page.waitForFunction(() => document.fullscreenElement?.tagName === "VIDEO");
    await app.close();
    app = await launchApp(profile, resolve("work/fixture.mp4"));
    page = await app.firstWindow();
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   await waitForVideo(page);
    const scrub = await page.evaluate(async () => {
       const sourceId = decodeURIComponent(new globalThis.URL(document.querySelector("video").currentSrc).pathname.replace(/^\//, ""));
       const data = await globalThis.desktop.scrubAudio(sourceId, [1]);

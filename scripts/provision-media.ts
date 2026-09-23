@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile, appendFile, readdir, chmod } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, appendFile, readdir, chmod } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { mediaArchives } from "./media-lock.ts";
 
@@ -9,12 +9,32 @@ if (!archives) throw new Error("No pinned media build for this platform.");
 await mkdir("work", { recursive: true });
 const folder = await mkdtemp(resolve("work/media-toolchain-"));
 for (const archive of archives) {
-   const response = await fetch(archive.url);
-   if (!response.ok) throw new Error(`Media download failed: ${response.status} ${archive.url}`);
-   const data = Buffer.from(await response.arrayBuffer());
-   if (createHash("sha256").update(data).digest("hex") !== archive.sha256) throw new Error(`Media checksum mismatch: ${archive.url}`);
    const path = join(folder, basename(new URL(archive.url).pathname));
-   await writeFile(path, data);
+   // curl retries transient HTTP/connection failures and truncates partial downloads.
+   execFileSync(
+      process.platform === "win32" ? "curl.exe" : "curl",
+      [
+         "--fail",
+         "--location",
+         "--show-error",
+         "--silent",
+         "--retry",
+         "4",
+         "--retry-connrefused",
+         "--retry-max-time",
+         "600",
+         "--connect-timeout",
+         "30",
+         "--max-time",
+         "180",
+         "--output",
+         path,
+         archive.url,
+      ],
+      { stdio: "inherit", timeout: 800000 }
+   );
+   const data = await readFile(path);
+   if (createHash("sha256").update(data).digest("hex") !== archive.sha256) throw new Error(`Media checksum mismatch: ${archive.url}`);
    execFileSync("tar", ["-xf", path, "-C", folder], { stdio: "inherit" });
 }
 const files = await readdir(folder, { recursive: true });

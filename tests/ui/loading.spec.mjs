@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { test } from "./app.mjs";
+import { test, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 
 test("opening shows a skeleton, then permits editing while preview loads", async ({ launchApp, profile }) => {
@@ -78,7 +78,7 @@ test("idle time warms dialogs and keyframes before they are requested", async ({
       });
    });
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   await waitForVideo(page);
    const snap = page.getByRole("button", { name: "Snap to keyframes", exact: true });
    await expect(snap).toHaveAttribute("aria-pressed", "false");
    await expect.poll(() => app.evaluate(() => globalThis.keysReady)).toBe(true);

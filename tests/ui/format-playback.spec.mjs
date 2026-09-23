@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { test } from "./app.mjs";
+import { test, waitForVideo } from "./app.mjs";
 import { resolve, basename } from "node:path";
 import { readFile, writeFile, readdir } from "node:fs/promises";
 
@@ -9,7 +9,7 @@ test("format playback", async ({ launchApp, profile }) => {
    const application = await launchApp(profile, resolve("work/formats/h264.mp4"));
    const results = [];
    const page = await application.firstWindow();
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   await waitForVideo(page);
    for (const format of formats) {
       // Test exports too: these exercise the exact codec joins users will open later.
       const paths = files

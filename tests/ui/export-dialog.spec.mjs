@@ -1,11 +1,11 @@
 import { expect } from "@playwright/test";
-import { test } from "./app.mjs";
+import { test, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 
 test("export dialog", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   await waitForVideo(page);
    const bar = await page.locator(".timeline-viewport").boundingBox();
    await page.mouse.click(bar.x + bar.width / 3, bar.y + 36);
    await page.keyboard.press("s");

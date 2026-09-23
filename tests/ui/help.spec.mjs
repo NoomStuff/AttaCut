@@ -1,12 +1,12 @@
 import { expect } from "@playwright/test";
-import { test } from "./app.mjs";
+import { test, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 
 test("help", async ({ launchApp, profile }) => {
    const application = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await application.firstWindow();
    await page.getByRole("slider", { name: "Clip 1 start", exact: true }).waitFor();
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   await waitForVideo(page);
 
    // Help opens with F1 and switches tabs.
    await page.keyboard.press("F1");

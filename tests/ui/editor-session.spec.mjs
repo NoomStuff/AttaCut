@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { test } from "./app.mjs";
+import { test, waitForVideo } from "./app.mjs";
 import { resolve, join } from "node:path";
 import { mkdir, readdir } from "node:fs/promises";
 
@@ -9,7 +9,7 @@ test("editor session", async ({ launchApp, profile }) => {
    const application = await launchApp(profile, resolve("work/fixture.mp4"));
    let page = await application.firstWindow();
    await page.getByRole("slider", { name: "Clip 1 start", exact: true }).waitFor();
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   await waitForVideo(page);
    const start = page.getByRole("textbox", { name: "Clip start", exact: true });
    const end = page.getByRole("textbox", { name: "Clip end", exact: true });
    await start.fill("00:01.30");

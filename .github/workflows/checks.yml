@@ -19,3 +19,15 @@ jobs:
          - run: bun run verify
          - run: bun run test:media
          - run: bun x --no-install playwright test
+         - name: Upload failure diagnostics
+           if: failure()
+           uses: actions/upload-artifact@v7
+           with:
+              name: diagnostics-checks
+              path: test-results/
+              if-no-files-found: ignore
+              retention-days: 14
+   packages:
+      if: github.event_name == 'pull_request'
+      needs: verify
+      uses: ./.github/workflows/package.yml

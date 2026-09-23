@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { expect } from "@playwright/test";
-import { test } from "./app.mjs";
+import { test, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 
 test("clip selection", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
-   await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2);
+   await waitForVideo(page);
    const seek = async (time) => {
       const bar = await page.locator(".timeline-viewport").boundingBox();
       await page.mouse.click(bar.x + (bar.width * time) / 18, bar.y + 36);
