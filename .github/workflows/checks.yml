@@ -19,6 +19,15 @@ jobs:
          - run: bun run verify
          - run: bun run test:media
          - run: bun x --no-install playwright test
+         - name: Upload browser retry traces
+           if: always()
+           uses: actions/upload-artifact@v7
+           with:
+              name: traces-checks
+              path: test-results/**/trace.zip
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true
          - name: Upload failure diagnostics
            if: failure()
            uses: actions/upload-artifact@v7
@@ -27,6 +36,7 @@ jobs:
               path: test-results/
               if-no-files-found: ignore
               retention-days: 14
+              overwrite: true
    packages:
       if: github.event_name == 'pull_request'
       needs: verify

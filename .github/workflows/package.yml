@@ -47,8 +47,30 @@ jobs:
               ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
               ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
 
+         # Keep the exact candidate binary if a later verification step flakes.
+         # The release job still requires every verification job to succeed.
+         - name: Upload artifacts
+           uses: actions/upload-artifact@v7
+           with:
+              name: dist-${{ matrix.target }}
+              path: |
+                 release/AttaCut-*
+                 !release/*.blockmap
+              if-no-files-found: error
+              overwrite: true
+
          - name: Verify packaged media and editor workflows
            run: bun run verify:package
+
+         - name: Upload browser retry traces
+           if: always()
+           uses: actions/upload-artifact@v7
+           with:
+              name: traces-${{ matrix.target }}
+              path: test-results/**/trace.zip
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true
 
          - name: Upload failure diagnostics
            if: failure()
@@ -61,12 +83,4 @@ jobs:
                  release/builder-effective-config.yaml
               if-no-files-found: ignore
               retention-days: 14
-
-         - name: Upload artifacts
-           uses: actions/upload-artifact@v7
-           with:
-              name: dist-${{ matrix.target }}
-              path: |
-                 release/AttaCut-*
-                 !release/*.blockmap
-              if-no-files-found: error
+              overwrite: true
