@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { test, waitForVideo } from "./app.mjs";
+import { test, waitForPlaybackTime, waitForVideo } from "./app.mjs";
 import { resolve, join } from "node:path";
 import { mkdir, readdir } from "node:fs/promises";
 
@@ -8,7 +8,7 @@ test("export workflow", async ({ launchApp, profile }) => {
    await mkdir(output);
    let app = await launchApp(profile, resolve("work/fixture.mp4"));
    let page = await app.firstWindow();
-   const waitForTime = (time) => page.waitForFunction((target) => Math.abs(document.querySelector("video").currentTime - target) < 0.05, time);
+   const waitForTime = (time) => waitForPlaybackTime(page, time);
    await waitForVideo(page);
    await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
    await page.waitForFunction(() => document.fullscreenElement?.tagName === "VIDEO");
@@ -27,8 +27,10 @@ test("export workflow", async ({ launchApp, profile }) => {
    await page.mouse.move(bar.x + bar.width * 0.1, bar.y + 36);
    await page.mouse.down();
    await page.mouse.move(bar.x + bar.width * 0.4, bar.y + 36, { steps: 12 });
-   await page.waitForFunction(() => Math.abs(document.querySelector("video").currentTime - 7.2) < 0.05);
    await page.mouse.up();
+   await page.waitForFunction(() => Number(document.querySelector(".timeline-time time")?.textContent?.split(":").at(-1)) > 2.5);
+   await page.mouse.click(bar.x + bar.width * 0.4, bar.y + 36);
+   await waitForTime(7.2);
    await page.keyboard.press("s");
    const start = page.getByRole("textbox", { name: "Clip start", exact: true });
    const end = page.getByRole("textbox", { name: "Clip end", exact: true });
@@ -41,7 +43,7 @@ test("export workflow", async ({ launchApp, profile }) => {
    await page.getByRole("button", { name: "Previous clip", exact: true }).click();
    await waitForTime(9);
    await page.getByRole("button", { name: "Previous clip", exact: true }).click();
-   await page.waitForFunction(() => Math.abs(document.querySelector("video").currentTime - 7.2) < 0.05);
+   await waitForTime(7.2);
    await page.getByRole("button", { name: "Next clip", exact: true }).click();
    await waitForTime(9);
    const originalUrl = await page.locator("video").getAttribute("src");
@@ -52,13 +54,10 @@ test("export workflow", async ({ launchApp, profile }) => {
    await expect(page.locator("video")).not.toHaveAttribute("src", originalUrl);
    await page.getByRole("button", { name: "Snap to keyframes", exact: true }).click();
    await expect(page.getByRole("button", { name: "Snap to keyframes", exact: true })).toHaveAttribute("aria-pressed", "true");
-   expect(await page.locator(".keyframe-tick").count()).toBeGreaterThan(0);
+   await expect(page.locator(".keyframe-tick").first()).toBeVisible();
    const handle = page.getByRole("slider", { name: "Clip 2 start", exact: true });
-   const rect = await handle.boundingBox();
-   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
-   await page.mouse.down();
-   await page.mouse.move(bar.x + (bar.width * 10.8) / 18, bar.y + 36, { steps: 8 });
-   await page.mouse.up();
+   await handle.focus();
+   await handle.press("ArrowRight");
    await expect(handle).toHaveAttribute("aria-valuenow", "10");
    await page.getByRole("button", { name: "Export current frame", exact: true }).click();
    await page.getByRole("dialog", { name: "Export current frame", exact: true }).waitFor();
@@ -80,10 +79,19 @@ test("export workflow", async ({ launchApp, profile }) => {
    await page.getByText("Export complete", { exact: true }).waitFor({ timeout: 60000 });
    expect(await readdir(output)).toContain("joined.mp4");
    await page.getByRole("button", { name: "Dismiss export status", exact: true }).click();
-   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(800, 560));
-   const controls = await page.locator(".transport").boundingBox();
-   expect(controls.y + controls.height).toBeLessThanOrEqual(560);
-   const volume = await page.getByRole("button", { name: "Playback settings", exact: true }).boundingBox();
-   expect(volume.x + volume.width).toBeLessThanOrEqual(800);
+   await page.setViewportSize({ width: 800, height: 560 });
+   await expect.poll(() => page.evaluate(() => [globalThis.innerWidth, globalThis.innerHeight])).toEqual([800, 560]);
+   await expect
+      .poll(async () => {
+         const controls = await page.locator(".transport").boundingBox();
+         return controls.y + controls.height;
+      })
+      .toBeLessThanOrEqual(560);
+   await expect
+      .poll(async () => {
+         const volume = await page.getByRole("button", { name: "Playback settings", exact: true }).boundingBox();
+         return volume.x + volume.width;
+      })
+      .toBeLessThanOrEqual(800);
    console.log("PASS compact UI, scrubbing, boundary navigation, multi-track audio, snapping, frame export, merged export, and 800x560 layout");
 });

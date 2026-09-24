@@ -1,6 +1,6 @@
 /* global window, KeyboardEvent */
 import { expect } from "@playwright/test";
-import { test, waitForVideo } from "./app.mjs";
+import { test, waitForPlaybackTime, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -37,13 +37,7 @@ test("timeline", async ({ launchApp, profile }) => {
       } else {
          await page.mouse.click(bar.x + (bar.width * time) / 18, bar.y + 36);
       }
-      // A pending frame seek can leave video.currentTime at the previous target.
-      // The clock must also move before the new seek is complete in the UI.
-      await page.waitForFunction((time) => {
-         const current = document.querySelector("video").currentTime;
-         const displayed = Number(document.querySelector(".timeline-time time").textContent.split(":").at(-1));
-         return Math.abs(current - time) < 0.05 && Math.abs(displayed - time) < 0.05;
-      }, time);
+      await waitForPlaybackTime(page, time);
    };
    await seek(4);
    const start = page.getByRole("textbox", { name: "Clip start", exact: true });
@@ -84,7 +78,9 @@ test("timeline", async ({ launchApp, profile }) => {
       await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText(`${percent}%`);
    }
    await page.getByRole("button", { name: "Fit timeline", exact: true }).click();
+   await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("100%");
    await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+   await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("125%");
    const cursor = await video.evaluate((video) => video.currentTime);
    const range = page.locator(".clip-range").first();
    const before = await range.getAttribute("style");
@@ -122,7 +118,7 @@ test("timeline", async ({ launchApp, profile }) => {
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await seek(8);
    await expect(video).toHaveJSProperty("paused", true);
-   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(800, 560));
+   await page.setViewportSize({ width: 800, height: 560 });
    const full = await page.getByRole("button", { name: "Fullscreen video", exact: true }).boundingBox();
    expect(full.x + full.width).toBeLessThanOrEqual(800);
    for (const audio of [true, false]) {

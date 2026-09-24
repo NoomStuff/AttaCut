@@ -47,6 +47,7 @@ interface TimelineProps {
 }
 interface Drag {
    pointerId: number;
+   lastClientX: number;
    original: EditDocument;
    id: string;
    side: "start" | "end";
@@ -204,7 +205,7 @@ export function Timeline({
       event.stopPropagation();
       event.preventDefault();
       if (globalThis.document.activeElement instanceof HTMLElement) globalThis.document.activeElement.blur();
-      drag.current = { pointerId: event.pointerId, original: document, id, side, target: event.currentTarget };
+      drag.current = { pointerId: event.pointerId, lastClientX: event.clientX, original: document, id, side, target: event.currentTarget };
       event.currentTarget.setPointerCapture(event.pointerId);
       // Report before seeking: the drag pins the playhead onto the boundary being edited.
       onTrimming(true);
@@ -215,6 +216,7 @@ export function Timeline({
    const applyDrag = (clientX: number) => {
       const current = drag.current;
       if (!current) return;
+      current.lastClientX = clientX;
       const time = resolveBoundary(current.original, current.id, current.side, pointAt(clientX), {
          duration,
          viewLength: drawn.length,
@@ -244,6 +246,8 @@ export function Timeline({
    const endDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
       if (drag.current?.pointerId !== event.pointerId) return;
       const current = drag.current;
+      // Apply the release point if decoding skipped the final move event.
+      if (event.clientX !== current.lastClientX) applyDrag(event.clientX);
       const next = draftRef.current;
       drag.current = null;
       draftRef.current = null;
@@ -317,6 +321,9 @@ export function Timeline({
                onSeek(pointAt(event.clientX));
             }}
             onPointerUp={(event) => {
+               // Pointer moves can be coalesced while decoding. Honor the release
+               // position even when the final move was not delivered.
+               if (scrubbing.current === event.pointerId) onSeek(pointAt(event.clientX));
                setPanActive(false);
                panning.current = null;
                scrubbing.current = null;

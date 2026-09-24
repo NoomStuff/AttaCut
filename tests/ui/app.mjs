@@ -24,6 +24,16 @@ export async function waitForVideo(page) {
    }
 }
 
+// A pending frame seek can leave video.currentTime at the previous target.
+// Navigation commands read the app clock, so wait for both to reach the target.
+export function waitForPlaybackTime(page, time) {
+   return page.waitForFunction((target) => {
+      const current = document.querySelector("video")?.currentTime;
+      const displayed = Number(document.querySelector(".timeline-time time")?.textContent?.split(":").at(-1));
+      return Math.abs(current - target) < 0.05 && Math.abs(displayed - target) < 0.05;
+   }, time);
+}
+
 export const test = base.extend({
    // eslint-disable-next-line no-empty-pattern
    profile: async ({}, use, testInfo) => {
