@@ -37,6 +37,7 @@ test("kept playback", async ({ launchApp, profile }) => {
    await page.getByRole("button", { name: "Playback settings", exact: true }).click();
    await page.getByRole("switch", { name: "Play kept clips only", exact: true }).check();
    await page.keyboard.press("Escape");
+   await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
 
    // Paused inspection of gaps stays put. Play moves to the next kept range.
    await clickTime(4);
@@ -58,6 +59,7 @@ test("kept playback", async ({ launchApp, profile }) => {
    await page.getByRole("button", { name: "Playback settings", exact: true }).click();
    await page.getByRole("switch", { name: "Keep playing while editing", exact: true }).check();
    await page.keyboard.press("Escape");
+   await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
    await clickTime(1.2);
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await clickTime(4);

@@ -33,10 +33,7 @@ test("timeline", async ({ launchApp, profile }) => {
    const bar = await page.locator(".timeline-viewport").boundingBox();
    const seek = async (time) => {
       if (time === 18) {
-         await page.mouse.move(bar.x + bar.width - 30, bar.y + 36);
-         await page.mouse.down();
-         await page.mouse.move(bar.x + bar.width + 5, bar.y + 36, { steps: 3 });
-         await page.mouse.up();
+         await page.mouse.click(bar.x + bar.width - 2, bar.y + 36);
       } else {
          await page.mouse.click(bar.x + (bar.width * time) / 18, bar.y + 36);
       }
@@ -107,11 +104,13 @@ test("timeline", async ({ launchApp, profile }) => {
    await expect(page.locator(".player-excluded")).toHaveClass(/hidden/);
    await end.fill("00:17.00");
    await end.press("Tab");
+   await expect(end).toHaveValue("00:17.00");
    await seek(18);
    await expect(page.locator(".player-excluded")).not.toHaveClass(/hidden/);
    await page.getByRole("button", { name: "Playback settings", exact: true }).click();
    await page.getByRole("switch", { name: "Keep playing while editing", exact: true }).uncheck();
    await page.keyboard.press("Escape");
+   await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
    await seek(4);
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await seek(8);

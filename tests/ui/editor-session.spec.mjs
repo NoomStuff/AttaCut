@@ -48,7 +48,7 @@ test("editor session", async ({ launchApp, profile }) => {
    const exportButton = page.getByRole("button", { name: "Export 2 clips", exact: true });
    await expect(exportButton).toBeEnabled({ timeout: 20000 });
    await exportButton.click();
-   await page.getByText("2 of 2 exported", { exact: true }).waitFor({ timeout: 30000 });
+   await page.getByText("Export complete", { exact: true }).waitFor({ timeout: 30000 });
    expect((await readdir(output)).filter((name) => name.endsWith(".mp4"))).toHaveLength(2);
    await page.getByRole("button", { name: "Dismiss export status" }).click();
    await page.getByRole("button", { name: "Playback settings" }).click();

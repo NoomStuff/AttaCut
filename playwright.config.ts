@@ -7,6 +7,7 @@ export default defineConfig({
    timeout: 120_000,
    expect: { timeout: 15_000 },
    reporter: "list",
+   use: { trace: "retain-on-failure" },
    projects: [
       { name: "ui", testIgnore: "**/format-playback.spec.mjs" },
       { name: "playback", testMatch: "**/format-playback.spec.mjs", timeout: 300_000 },

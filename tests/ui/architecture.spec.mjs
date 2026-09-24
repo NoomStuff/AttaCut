@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { test, waitForVideo } from "./app.mjs";
+import { appEnv, test, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -18,7 +18,7 @@ test("a second process preserves active cache files and forwards file opens", as
    const executable = await app.evaluate(({ app }) => app.getPath("exe"));
    const args = process.env.ATTACUT_EXECUTABLE ? [] : ["."];
    if (process.env.CI && process.platform === "linux") args.push("--no-sandbox");
-   const options = { env: { ...process.env, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: "" }, timeout: 20000, windowsHide: true };
+   const options = { env: { ...appEnv, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: "" }, timeout: 20000, windowsHide: true };
    await promisify(execFile)(executable, args, options);
    expect(await readFile(marker, "utf8")).toBe("owned by the first process");
    await expect(page.locator(".title-filename")).toContainText("fixture.mp4");

@@ -1,6 +1,6 @@
 ## Running locally
 
-You need [Bun](https://bun.sh/) and FFmpeg with ffprobe on your PATH.
+You need [Bun](https://bun.sh/) at the version in `.bun-version` and FFmpeg with ffprobe on your PATH.
 
 1. Clone the repository and install its dependencies:
 
@@ -49,14 +49,15 @@ macOS distribution signing and notarization use electron-builder's certificate a
 
 ## Commands
 
-| Command           | Description                                 |
-| ----------------- | ------------------------------------------- |
-| `bun run dev`     | Start the app in dev mode                   |
-| `bun run test`    | Run the unit tests                          |
-| `bun run package` | Build and bundle the unpacked app           |
-| `bun run dist`    | Build an installer for the current OS       |
-| `bun run format`  | Format the code                             |
-| `bun run verify`  | Run formatting, lint, unit tests, and build |
+| Command                  | Description                                                                                                |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `bun run dev`            | Start the app in dev mode                                                                                  |
+| `bun run test`           | Run the unit tests                                                                                         |
+| `bun run package`        | Build and bundle the unpacked app                                                                          |
+| `bun run dist`           | Build an installer for the current OS                                                                      |
+| `bun run format`         | Format the code                                                                                            |
+| `bun run verify`         | Run formatting, lint, unit tests, and build                                                                |
+| `bun run verify:release` | Run the same checks, media tests, UI tests, packaging, and packaged app tests used by Actions on this host |
 
 ## Tests
 
@@ -67,6 +68,8 @@ macOS distribution signing and notarization use electron-builder's certificate a
 - `bun run test:all` runs all of the above without repeating the media suite or build.
 
 Integration tests live in `tests/media` and `tests/ui`. They need FFmpeg and ffprobe on PATH, or `FFMPEG_PATH` and `FFPROBE_PATH`. UI tests also need a desktop session. They run one at a time because Electron windows share keyboard focus.
+
+Before a release, run `bun run verify:release`. It installs from the frozen lockfile, downloads the pinned FFmpeg build, and tests the unpacked app after building the installer. The command takes several minutes. A passing `bun run build` only checks compilation. Run the release check on each OS and CPU architecture you plan to ship, since one host cannot execute another host's Electron package.
 
 ---
 

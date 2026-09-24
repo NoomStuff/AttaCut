@@ -6,9 +6,6 @@ on:
 permissions:
    contents: read
 
-env:
-   BUN_VERSION: "1.4.2"
-
 jobs:
    build:
       name: Build ${{ matrix.target }}
@@ -16,18 +13,18 @@ jobs:
          fail-fast: false
          matrix:
             include:
-               - { os: windows-2025, platform: win32, target: win-x64 }
-               - { os: macos-15-intel, platform: darwin, target: mac-x64 }
-               - { os: macos-15, platform: darwin, target: mac-arm64 }
-               - { os: ubuntu-24.04, platform: linux, target: linux-x64 }
-               - { os: ubuntu-24.04-arm, platform: linux, target: linux-arm64 }
+               - { os: windows-2025, target: win-x64 }
+               - { os: macos-15-intel, target: mac-x64 }
+               - { os: macos-15, target: mac-arm64 }
+               - { os: ubuntu-24.04, target: linux-x64 }
+               - { os: ubuntu-24.04-arm, target: linux-arm64 }
       runs-on: ${{ matrix.os }}
       timeout-minutes: 45
       steps:
          - uses: actions/checkout@v7
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version: ${{ env.BUN_VERSION }}
+              bun-version-file: .bun-version
          - uses: actions/cache@v6
            with:
               path: |
@@ -44,14 +41,14 @@ jobs:
            run: bun scripts/provision-media.ts
 
          - name: Package
-           run: bun scripts/package-app.ts dist ${{ matrix.platform }}
+           run: bun run dist
            env:
               CSC_IDENTITY_AUTO_DISCOVERY: false
               ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
               ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
 
          - name: Verify packaged media and editor workflows
-           run: bun scripts/verify-package.ts
+           run: bun run verify:package
 
          - name: Upload failure diagnostics
            if: failure()

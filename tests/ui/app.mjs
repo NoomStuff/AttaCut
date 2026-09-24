@@ -1,6 +1,10 @@
 import { _electron as electron, expect, test as base } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
+// Some shells run Electron as their Node runtime; the app itself must launch normally.
+export const appEnv = { ...process.env };
+delete appEnv.ELECTRON_RUN_AS_NODE;
+
 export async function waitForVideo(page) {
    try {
       // Cold CI runners may need to initialize software decoding and prepare audio.
@@ -37,7 +41,7 @@ export const test = base.extend({
          const app = await electron.launch({
             args: [...(process.env.ATTACUT_EXECUTABLE ? [] : ["."]), ...(process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : [])],
             ...(process.env.ATTACUT_EXECUTABLE ? { executablePath: process.env.ATTACUT_EXECUTABLE } : {}),
-            env: { ...process.env, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: file },
+            env: { ...appEnv, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: file },
          });
          apps.add(app);
          app.process().stdout?.on("data", (data) => logs.push(String(data)));
@@ -47,8 +51,8 @@ export const test = base.extend({
          page.setDefaultTimeout(15000);
          page.on("pageerror", (error) => errors.push(error.message));
          page.on("console", (message) => logs.push(`[renderer ${message.type()}] ${message.text()}\n`));
-         // Chromium needs a shown window to produce screenshots and video frames.
-         await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
+         // Keyboard shortcuts need the same active window that a user would have.
+         await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show());
          return app;
       });
       if (testInfo.status !== testInfo.expectedStatus || errors.length) {
