@@ -37,7 +37,13 @@ test("timeline", async ({ launchApp, profile }) => {
       } else {
          await page.mouse.click(bar.x + (bar.width * time) / 18, bar.y + 36);
       }
-      await page.waitForFunction((time) => Math.abs(document.querySelector("video").currentTime - time) < 0.05, time);
+      // A pending frame seek can leave video.currentTime at the previous target.
+      // The clock must also move before the new seek is complete in the UI.
+      await page.waitForFunction((time) => {
+         const current = document.querySelector("video").currentTime;
+         const displayed = Number(document.querySelector(".timeline-time time").textContent.split(":").at(-1));
+         return Math.abs(current - time) < 0.05 && Math.abs(displayed - time) < 0.05;
+      }, time);
    };
    await seek(4);
    const start = page.getByRole("textbox", { name: "Clip start", exact: true });
@@ -105,7 +111,8 @@ test("timeline", async ({ launchApp, profile }) => {
    await end.fill("00:17.00");
    await end.press("Tab");
    await expect(end).toHaveValue("00:17.00");
-   await seek(18);
+   await expect(page.getByRole("slider", { name: "Clip 2 end", exact: true })).toHaveAttribute("aria-valuenow", "17");
+   await seek(17.5);
    await expect(page.locator(".player-excluded")).not.toHaveClass(/hidden/);
    await page.getByRole("button", { name: "Playback settings", exact: true }).click();
    await page.getByRole("switch", { name: "Keep playing while editing", exact: true }).uncheck();
