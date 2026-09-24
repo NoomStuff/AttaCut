@@ -1,0 +1,49 @@
+.loading-editor-dock {
+   width: 100%;
+}
+.loading-editor-timeline {
+   height: 68px;
+   padding: 10px 8px 0;
+}
+.loading-editor-ruler {
+   display: flex;
+   justify-content: space-between;
+   color: var(--faint);
+   font-size: 9px;
+   font-variant-numeric: tabular-nums;
+}
+.loading-editor-track {
+   height: 27px;
+   margin-top: 9px;
+   border-radius: 4px;
+}
+.loading-editor-transport .selected-clip-label i {
+   background: var(--clip-sequence-0, var(--clip-0));
+}
+.loading-editor-transport .time-field em {
+   display: inline-block;
+   width: 68px;
+   height: 13px;
+   border-radius: 3px;
+}
+.loading-editor-volume-slider {
+   width: 70px;
+   height: 3px;
+   margin: 0 7px;
+   border-radius: 3px;
+   background: var(--line);
+}
+.loading-editor-dock button:disabled {
+   opacity: 0.55;
+}
+@media (max-width: 1050px) {
+   .loading-editor-volume-slider {
+      width: 45px;
+   }
+}
+@media (max-width: 850px) {
+   .loading-editor-volume-slider {
+      width: 36px;
+      margin: 0 4px;
+   }
+}

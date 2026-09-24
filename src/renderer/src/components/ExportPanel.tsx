@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Clip, ExportJob, ExportPlan, CutReport, MediaSource, Preferences } from "../../../shared/types";
+import type { Clip, ExportDestinations, ExportJob, ExportPlan, CutReport, MediaSource, Preferences } from "../../../shared/types";
 import { exportExtensionFor } from "../../../shared/export-format";
 import { formatTime } from "../../../shared/time";
 import { faArrowUpFromBracket, faCircleExclamation, faCircleInfo, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
@@ -29,6 +29,8 @@ export function ExportPanel({
    onPreferences,
    onClose,
    onStarted,
+   onBeforeSourceReplace,
+   onSourceReplaceStartFailed,
    onHelp,
 }: {
    source: MediaSource;
@@ -39,12 +41,14 @@ export function ExportPanel({
    onPreferences: (value: Preferences) => void;
    onClose: () => void;
    onStarted: (job: ExportJob) => void;
+   onBeforeSourceReplace: () => Promise<void>;
+   onSourceReplaceStartFailed: () => void;
    onHelp?: (topic: HelpTab) => void;
 }) {
    const saved = draft?.sourceId === source.id ? draft : null;
    const sourceAudio = source.streams.filter((stream) => stream.type === "audio");
    const [directory, setDirectory] = useState(saved?.directory ?? (preferences.outputDirectory || source.directory));
-   const [mode, setMode] = useState<Preferences["exportMode"]>(saved?.mode ?? (clips.length === 1 ? "combined" : preferences.exportMode));
+   const [mode, setMode] = useState<Preferences["exportMode"]>(clips.length === 1 ? "combined" : (saved?.mode ?? preferences.exportMode));
    const [audioTracks, setAudioTracks] = useState(saved?.audioTracks ?? resolveAudioSelection(sourceAudio, preferences.exportAudio, true));
    const [name, setName] = useState(saved?.name ?? `${source.name.slice(0, -source.extension.length)} (Trim)`);
    const [rows, setRows] = useState(() =>
@@ -59,14 +63,12 @@ export function ExportPanel({
    }, [source.id, directory, mode, audioTracks, name, rows, onDraft]);
    useEffect(() => {
       const exportAudio = rememberAudioSelection(sourceAudio, audioTracks);
-      if (
-         preferences.outputDirectory !== directory ||
-         preferences.exportMode !== mode ||
-         JSON.stringify(preferences.exportAudio) !== JSON.stringify(exportAudio)
-      )
-         onPreferences({ ...preferences, outputDirectory: directory, exportMode: mode, exportAudio });
+      if (preferences.exportMode !== mode || JSON.stringify(preferences.exportAudio) !== JSON.stringify(exportAudio))
+         onPreferences({ ...preferences, exportMode: mode, exportAudio });
    }, [directory, mode, audioTracks, preferences, onPreferences]);
    const [confirmation, setConfirmation] = useState<ExportPlan | null>(null);
+   const [replaceSourceChecked, setReplaceSourceChecked] = useState(false);
+   const [conflicts, setConflicts] = useState<Map<string, string | null>>(() => new Map());
    const request = {
       sourceId: source.id,
       directory,
@@ -97,28 +99,72 @@ export function ExportPanel({
       };
    }, [source.id, mode, audioTracks]);
    const valid = request.items.length > 0 && !!directory.trim() && (mode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim()));
+   const sortedItems = [...request.items].sort((a, b) => a.clip.start - b.clip.start);
+   const combinedKey = JSON.stringify([source.id, directory, "combined", name]);
+   // Earlier names can add a numeric suffix to this clip's output filename.
+   const separateKey = (index: number) =>
+      JSON.stringify([
+         source.id,
+         directory,
+         "separate",
+         exportExtensionFor(source, sortedItems[index]!.clip, { separate: true, allAudio: audioTracks.length === sourceAudio.length }),
+         sortedItems.slice(0, index + 1).map((item) => [item.clip.id, item.name, item.clip.start, item.clip.end]),
+      ]);
+   const destinationKey =
+      mode === "combined" ? combinedKey : JSON.stringify([source.id, directory, "separate", sortedItems.map((_, index) => separateKey(index))]);
+   useEffect(() => {
+      let cancelled = false;
+      if (!valid) return;
+      const timer = window.setTimeout(() => {
+         void window.desktop
+            .checkExportDestinations(request)
+            .then((result) => {
+               if (cancelled) return;
+               setConflicts((previous) => {
+                  const next = new Map(previous);
+                  if (mode === "combined") next.set(combinedKey, conflictText(result.paths[0], result));
+                  else sortedItems.forEach((_, index) => next.set(separateKey(index), conflictText(result.paths[index], result)));
+                  return next;
+               });
+            })
+            .catch(() => {
+               // Final planning shows destination errors when Export is pressed.
+            });
+      }, 250);
+      return () => {
+         cancelled = true;
+         window.clearTimeout(timer);
+      };
+   }, [destinationKey, valid]);
    const start = async (approved?: ExportPlan) => {
       if (!valid || starting) return;
       setStarting(true);
       setError(null);
+      let sourceReleased = false;
       try {
          const plan = approved ?? (await window.desktop.planExport(request));
          const unsupported = plan.items.find((item) => item.method === "unsupported");
          if (unsupported) throw new Error(unsupported.message);
          if (!approved && (plan.directoryMissing || plan.existingPaths.length)) {
             setConfirmation(plan);
+            setReplaceSourceChecked(false);
             setStarting(false);
             return;
          }
+         if (plan.sourcePath) {
+            sourceReleased = true;
+            await onBeforeSourceReplace();
+         }
          const job = await window.desktop.startExport(
             plan.id,
-            approved ? { createDirectory: plan.directoryMissing, overwrite: plan.existingPaths.length > 0 } : undefined
+            approved ? { createDirectory: plan.directoryMissing, overwrite: plan.existingPaths.length > 0, replaceSource: !!plan.sourcePath } : undefined
          );
          setConfirmation(null);
-         onPreferences({ ...preferences, outputDirectory: directory, exportMode: mode, exportAudio: rememberAudioSelection(sourceAudio, audioTracks) });
+         onPreferences({ ...preferences, exportMode: mode, exportAudio: rememberAudioSelection(sourceAudio, audioTracks) });
          onStarted(job);
          onClose();
       } catch (value) {
+         if (sourceReleased) onSourceReplaceStartFailed();
          setConfirmation(null);
          setError(errorText(value));
          setStarting(false);
@@ -131,9 +177,11 @@ export function ExportPanel({
          title={
             confirmation.directoryMissing
                ? "Create output folder?"
-               : confirmation.existingPaths.length === 1
-                 ? "Replace existing file?"
-                 : "Replace existing files?"
+               : confirmation.sourcePath
+                 ? "Replace source video?"
+                 : confirmation.existingPaths.length === 1
+                   ? "Replace existing file?"
+                   : "Replace existing files?"
          }
          onClose={() => setConfirmation(null)}
          className="export-confirmation"
@@ -142,13 +190,26 @@ export function ExportPanel({
             <p>
                {confirmation.directoryMissing
                   ? `This folder does not exist. Create it and export ${mode === "combined" ? "the video" : selectedCount === 1 ? "the clip" : "the clips"}?`
-                  : confirmation.existingPaths.length === 1
-                    ? "This file already exists. Exporting will replace it. This cannot be undone."
-                    : "These files already exist. Exporting will replace them. This cannot be undone."}
+                  : confirmation.sourcePath
+                    ? `This will replace the video you opened. The original cannot be recovered. The exported video will open when it is ready.${confirmation.existingPaths.length > 1 ? " Other listed files will also be replaced." : ""}`
+                    : confirmation.existingPaths.length === 1
+                      ? "This file already exists. Exporting will replace it. This cannot be undone."
+                      : "These files already exist. Exporting will replace them. This cannot be undone."}
             </p>
             <div className="export-conflicts">
                {confirmation.directoryMissing ? confirmation.directory : confirmation.existingPaths.map((path) => <div key={path}>{path}</div>)}
             </div>
+            {confirmation.sourcePath && (
+               <label className="export-source-confirm">
+                  <input
+                     type="checkbox"
+                     checked={replaceSourceChecked}
+                     disabled={starting}
+                     onChange={(event) => setReplaceSourceChecked(event.target.checked)}
+                  />
+                  I understand this replaces the original video
+               </label>
+            )}
          </div>
          <div className="modal-footer">
             <Button disabled={starting} onClick={() => setConfirmation(null)}>
@@ -156,12 +217,18 @@ export function ExportPanel({
             </Button>
             <Button
                variant="danger"
-               disabled={starting}
+               disabled={starting || (!!confirmation.sourcePath && !replaceSourceChecked)}
                onClick={() => {
                   void start(confirmation);
                }}
             >
-               {starting ? "Exporting…" : confirmation.directoryMissing ? "Create folder and export" : "Replace and export"}
+               {starting
+                  ? "Exporting…"
+                  : confirmation.directoryMissing
+                    ? "Create folder and export"
+                    : confirmation.sourcePath
+                      ? "Replace source and export"
+                      : "Replace and export"}
             </Button>
          </div>
       </Modal>
@@ -184,16 +251,14 @@ export function ExportPanel({
             className="export-modal"
          >
             <div className="modal-body">
-               {clips.length > 1 && (
-                  <div className="export-mode" data-mode={mode} role="group" aria-label="Export mode">
-                     <button disabled={starting} aria-pressed={mode === "combined"} onClick={() => setMode("combined")}>
-                        Merged Video
-                     </button>
-                     <button disabled={starting} aria-pressed={mode === "separate"} onClick={() => setMode("separate")}>
-                        Separate clips
-                     </button>
-                  </div>
-               )}
+               <div className="export-mode" data-mode={mode} role="group" aria-label="Export mode" aria-disabled={clips.length === 1}>
+                  <button disabled={starting || clips.length === 1} aria-pressed={mode === "combined"} onClick={() => setMode("combined")}>
+                     Merged Video
+                  </button>
+                  <button disabled={starting || clips.length === 1} aria-pressed={mode === "separate"} onClick={() => setMode("separate")}>
+                     Separate clips
+                  </button>
+               </div>
                <label className="field-label" htmlFor="destination">
                   Save to
                </label>
@@ -220,8 +285,11 @@ export function ExportPanel({
                      <label className="field-label combined-name">
                         Filename
                         <div className="filename-field">
-                           <input aria-label="Combined filename" value={name} disabled={starting} onChange={(event) => setName(event.target.value)} />
-                           <span>{source.exportExtension}</span>
+                           <span className="export-name-input">
+                              <input aria-label="Combined filename" value={name} disabled={starting} onChange={(event) => setName(event.target.value)} />
+                              <ConflictIndicator message={conflicts.get(combinedKey) ?? null} />
+                           </span>
+                           <span className="filename-extension">{source.exportExtension}</span>
                         </div>
                      </label>
                   )}
@@ -269,6 +337,8 @@ export function ExportPanel({
                            separate: mode === "separate",
                            allAudio: audioTracks.length === sourceAudio.length,
                         });
+                        const sortedIndex = sortedItems.findIndex((item) => item.clip.id === row.clip.id);
+                        const conflict = mode === "separate" && row.included && sortedIndex >= 0 ? (conflicts.get(separateKey(sortedIndex)) ?? null) : null;
                         return (
                            <div key={row.clip.id} className="export-clip-entry">
                               <div className="export-row">
@@ -283,12 +353,15 @@ export function ExportPanel({
                                  {mode === "combined" ? (
                                     <span className="export-clip-name">Clip {index + 1}</span>
                                  ) : (
-                                    <input
-                                       aria-label={`Clip ${index + 1} filename`}
-                                       value={row.name}
-                                       disabled={starting}
-                                       onChange={(event) => setRows(rows.map((value, i) => (i === index ? { ...value, name: event.target.value } : value)))}
-                                    />
+                                    <span className="export-row-name-input">
+                                       <input
+                                          aria-label={`Clip ${index + 1} filename`}
+                                          value={row.name}
+                                          disabled={starting}
+                                          onChange={(event) => setRows(rows.map((value, i) => (i === index ? { ...value, name: event.target.value } : value)))}
+                                       />
+                                       <ConflictIndicator message={conflict} />
+                                    </span>
                                  )}
                                  <span className="extension">{mode === "separate" ? extension : ""}</span>
                                  <time>{formatTime(row.clip.end - row.clip.start)}</time>
@@ -335,5 +408,34 @@ export function ExportPanel({
          </Modal>
          {confirmationModal}
       </>
+   );
+}
+
+function conflictText(path: string | undefined, destinations: ExportDestinations): string | null {
+   if (!path || !destinations.existingPaths.includes(path)) return null;
+   return path === destinations.sourcePath ? "Will replace the source video" : "Will replace an existing file";
+}
+
+function ConflictIndicator({ message }: { message: string | null }) {
+   const [hasAppeared, setHasAppeared] = useState(!!message);
+   useEffect(() => {
+      if (message) setHasAppeared(true);
+   }, [message]);
+   return (
+      <span
+         className="export-conflict-indicator"
+         data-state={message ? "visible" : hasAppeared ? "leaving" : "hidden"}
+         role="img"
+         aria-label={message ?? undefined}
+         aria-hidden={!message}
+         tabIndex={message ? 0 : -1}
+      >
+         <FontAwesomeIcon icon={faCircleExclamation} />
+         {message && (
+            <span className="export-conflict-tooltip" role="tooltip">
+               {message}
+            </span>
+         )}
+      </span>
    );
 }

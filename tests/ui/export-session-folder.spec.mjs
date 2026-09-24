@@ -1,0 +1,31 @@
+import { expect } from "@playwright/test";
+import { test, waitForVideo } from "./app.mjs";
+import { copyFile, mkdir } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+
+test("Save to follows the last export only during the current app session", async ({ launchApp, profile }) => {
+   const sourceA = join(profile, "source-a.mp4");
+   const sourceB = join(profile, "another", "source-b.mp4");
+   const output = join(profile, "exports");
+   await mkdir(dirname(sourceB));
+   await mkdir(output);
+   await copyFile(resolve("work/fixture.mp4"), sourceA);
+   await copyFile(resolve("work/fixture.mp4"), sourceB);
+   let app = await launchApp(profile, sourceA);
+   let page = await app.firstWindow();
+   await waitForVideo(page);
+   await page.getByRole("button", { name: "Export", exact: true }).click();
+   await page.getByRole("textbox", { name: "Save to", exact: true }).fill(output);
+   await page.getByRole("button", { name: "Export video", exact: true }).click();
+   await expect(page.getByText("Export complete", { exact: true })).toBeVisible({ timeout: 60000 });
+   await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), sourceB);
+   await expect(page.locator("video")).toHaveAttribute("aria-label", "source-b.mp4");
+   await page.getByRole("button", { name: "Export", exact: true }).click();
+   await expect(page.getByRole("textbox", { name: "Save to", exact: true })).toHaveValue(output);
+   await app.close();
+   app = await launchApp(profile, sourceB);
+   page = await app.firstWindow();
+   await waitForVideo(page);
+   await page.getByRole("button", { name: "Export", exact: true }).click();
+   await expect(page.getByRole("textbox", { name: "Save to", exact: true })).toHaveValue(dirname(sourceB));
+});

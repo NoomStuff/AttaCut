@@ -226,6 +226,16 @@
    padding: 7px 11px;
    font-size: 12px;
 }
+.shortcut-search:focus-visible {
+   outline: none;
+}
+:root[data-keyboard] .shortcut-search:focus-visible {
+   border-color: var(--accent);
+   box-shadow: inset 0 0 0 1px var(--accent);
+}
+.settings-reset-confirm {
+   width: min(460px, calc(100vw - 60px));
+}
 
 .shortcut-toolbar .button {
    flex-shrink: 0;

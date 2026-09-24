@@ -2,6 +2,7 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { publishOutput } from "./publish.ts";
 import { dirname, extname, join } from "node:path";
 import type { ProbedSource } from "./probe.ts";
+import { assertSourceUnchanged } from "./probe.ts";
 import { exportCut } from "./cut.ts";
 import type { CutAnalysis, CutOptions } from "./cut.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
@@ -146,7 +147,8 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
          options.signal,
          cuts[0]!.clip.start
       );
-      await publishOutput(output, destination, options.overwrite, source.path);
+      await assertSourceUnchanged(source);
+      await publishOutput(output, destination, options.overwrite, source.path, options.replaceSource);
    } finally {
       await rm(temporary, { recursive: true, force: true });
    }

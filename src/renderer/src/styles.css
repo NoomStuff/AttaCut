@@ -5,6 +5,7 @@
 @import "./App.css";
 @import "./components/Player.css";
 @import "./components/Transport.css";
+@import "./components/LoadingEditor.css";
 @import "./components/EmptyState.css";
 @import "./components/TopActions.css";
 @import "./components/JobProgress.css";
@@ -41,7 +42,8 @@
    --accent-hover: color-mix(in srgb, var(--accent) 85%, white);
    --backdrop: #06090b94;
    --modal-shadow: 0 24px 80px #0006;
-   --danger: #f19a96;
+   --warning: #e6ca4e;
+   --danger: #ff6370;
    --success: #99cda9;
    --clip-0: #91c3eb;
    --clip-1: #cf9ed9;
@@ -63,7 +65,8 @@
    --accent-hover: color-mix(in srgb, var(--accent) 88%, black);
    --backdrop: color-mix(in srgb, var(--text) 27%, transparent);
    --modal-shadow: 0 16px 48px #25334826, 0 2px 8px #25334814;
-   --danger: #ad2929;
+   --warning: #7d6600;
+   --danger: #b5142d;
    --success: #27663c;
    --clip-0: #0969cf;
    --clip-1: #a02bb5;

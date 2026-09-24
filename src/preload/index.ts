@@ -37,6 +37,7 @@ const api: DesktopApi = {
    onOpenFile: (callback) => listen<string>("app:open-file", callback),
    exportFrame: (request) => invoke("frame:export", request),
    planExport: (request) => invoke("export:plan", request),
+   checkExportDestinations: (request) => invoke("export:check-destinations", request),
    analyzeExport: (request) => invoke("export:analyze", request),
    startExport: (id, approval) => invoke("export:start", { id, approval }),
    cancelExport: () => invoke("export:cancel"),

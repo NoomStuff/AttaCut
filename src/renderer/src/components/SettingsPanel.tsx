@@ -29,6 +29,7 @@ export function SettingsPanel({
    const [recording, setRecording] = useState<{ id: CommandId; index: number | null } | null>(null);
    const [conflict, setConflict] = useState("");
    const [captured, setCaptured] = useState("");
+   const [confirmReset, setConfirmReset] = useState(false);
    // Runs after the modal's dialog.focus(), so the search wins when the shortcuts tab opens.
    useEffect(() => {
       if (tab === "shortcuts") searchRef.current?.focus();
@@ -75,200 +76,215 @@ export function SettingsPanel({
       setConflict(duplicate ? `Already used by ${commandDefinitions[duplicate].label.toLowerCase()}.` : "");
    };
    return (
-      <Modal title="Settings" onClose={onClose} className="panel-modal settings-modal">
-         <div className="modal-tabs" role="tablist">
-            <button
-               role="tab"
-               aria-selected={tab === "general"}
-               onClick={() => {
-                  setTab("general");
-                  setRecording(null);
-               }}
-            >
-               General
-            </button>
-            <button role="tab" aria-selected={tab === "shortcuts"} onClick={() => setTab("shortcuts")}>
-               Keyboard shortcuts
-            </button>
-         </div>
-         <div className="modal-body">
-            {tab === "general" ? (
-               <>
-                  <div className="setting-row">
-                     <div>
-                        Theme<small>System follows your device's appearance.</small>
+      <>
+         <Modal title="Settings" onClose={onClose} className="panel-modal settings-modal">
+            <div className="modal-tabs" role="tablist">
+               <button
+                  role="tab"
+                  aria-selected={tab === "general"}
+                  onClick={() => {
+                     setTab("general");
+                     setRecording(null);
+                  }}
+               >
+                  General
+               </button>
+               <button role="tab" aria-selected={tab === "shortcuts"} onClick={() => setTab("shortcuts")}>
+                  Keyboard shortcuts
+               </button>
+            </div>
+            <div className="modal-body">
+               {tab === "general" ? (
+                  <>
+                     <div className="setting-row">
+                        <div>
+                           Theme<small>System follows your device's appearance.</small>
+                        </div>
+                        <div className="theme-picker" role="group" aria-label="Appearance">
+                           {(["dark", "system", "light"] as const).map((theme) => (
+                              <button
+                                 key={theme}
+                                 aria-label={`${theme[0]!.toUpperCase()}${theme.slice(1)} theme`}
+                                 aria-pressed={preferences.theme === theme}
+                                 onClick={() => onChange({ ...preferences, theme })}
+                              >
+                                 <FontAwesomeIcon icon={theme === "dark" ? faMoon : theme === "system" ? faDesktop : faSun} />
+                                 <span>
+                                    {theme[0]!.toUpperCase()}
+                                    {theme.slice(1)}
+                                 </span>
+                              </button>
+                           ))}
+                        </div>
                      </div>
-                     <div className="theme-picker" role="group" aria-label="Appearance">
-                        {(["dark", "system", "light"] as const).map((theme) => (
-                           <button
-                              key={theme}
-                              aria-label={`${theme[0]!.toUpperCase()}${theme.slice(1)} theme`}
-                              aria-pressed={preferences.theme === theme}
-                              onClick={() => onChange({ ...preferences, theme })}
-                           >
-                              <FontAwesomeIcon icon={theme === "dark" ? faMoon : theme === "system" ? faDesktop : faSun} />
-                              <span>
-                                 {theme[0]!.toUpperCase()}
-                                 {theme.slice(1)}
-                              </span>
-                           </button>
-                        ))}
+                     <div className="setting-row">
+                        <div>
+                           Accent colour<small>Used for buttons, active controls, and focus.</small>
+                        </div>
+                        <div className="accent-picker" role="group" aria-label="Accent colour">
+                           {["Blue", "Purple", "Green", "Amber", "Red"].map((name, accent) => (
+                              <button
+                                 key={name}
+                                 aria-label={`${name} accent`}
+                                 title={name}
+                                 aria-pressed={preferences.accent === accent}
+                                 style={{ background: `var(--clip-${accent})` }}
+                                 onClick={() => onChange({ ...preferences, accent })}
+                              >
+                                 {preferences.accent === accent && <FontAwesomeIcon icon={faCheck} />}
+                              </button>
+                           ))}
+                        </div>
                      </div>
-                  </div>
-                  <div className="setting-row">
-                     <div>
-                        Accent colour<small>Used for buttons, active controls, and focus.</small>
-                     </div>
-                     <div className="accent-picker" role="group" aria-label="Accent colour">
-                        {["Blue", "Purple", "Green", "Amber", "Red"].map((name, accent) => (
-                           <button
-                              key={name}
-                              aria-label={`${name} accent`}
-                              title={name}
-                              aria-pressed={preferences.accent === accent}
-                              style={{ background: `var(--clip-${accent})` }}
-                              onClick={() => onChange({ ...preferences, accent })}
-                           >
-                              {preferences.accent === accent && <FontAwesomeIcon icon={faCheck} />}
-                           </button>
-                        ))}
-                     </div>
-                  </div>
-                  <Toggle
-                     label="Play kept clips only"
-                     description="Skip deleted ranges when playing them in the editor."
-                     checked={preferences.keptOnly}
-                     onChange={(keptOnly) => onChange({ ...preferences, keptOnly })}
-                  />
-                  <Toggle
-                     label="Keep playing while editing"
-                     description="Keep playback running when seeking, trimming, or splitting."
-                     checked={preferences.keepPlaying}
-                     onChange={(keepPlaying) => onChange({ ...preferences, keepPlaying })}
-                  />
-                  <Toggle
-                     label="Audio scrubbing"
-                     description="Play a short audio burst at the playhead while scrubbing and stepping with playback paused. Unavailable for sources over two hours."
-                     checked={preferences.audioScrub}
-                     onChange={(audioScrub) => onChange({ ...preferences, audioScrub })}
-                  />
-               </>
-            ) : (
-               <>
-                  <div className="shortcut-toolbar">
-                     <input
-                        ref={searchRef}
-                        className="shortcut-search"
-                        type="search"
-                        placeholder="Search actions or keys"
-                        aria-label="Search shortcuts"
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
+                     <Toggle
+                        label="Play kept clips only"
+                        description="Skip deleted ranges when playing them in the editor."
+                        checked={preferences.keptOnly}
+                        onChange={(keptOnly) => onChange({ ...preferences, keptOnly })}
                      />
-                     <Button
-                        variant="danger"
-                        onClick={() => {
-                           onChange({ ...preferences, shortcuts: {} });
-                           setRecording(null);
-                           setConflict("");
-                        }}
-                     >
-                        Reset bindings
-                     </Button>
-                  </div>
-                  <div className="shortcut-list">
-                     {shortcutGroups.map((group) => {
-                        const commands = group.commands.filter(matches);
-                        if (!commands.length) return null;
-                        return (
-                           <section className="shortcut-group" key={group.name} aria-labelledby={`shortcuts-${group.name}`}>
-                              <h3 id={`shortcuts-${group.name}`}>{group.name}</h3>
-                              {commands.map((id) => (
-                                 <div className="shortcut-row" key={id}>
-                                    <div className="shortcut-line">
-                                       <span className="shortcut-action">{commandDefinitions[id].label}</span>
-                                       <div className="shortcut-bindings">
-                                          {bindingsFor(id, preferences.shortcuts).map((binding, index) => (
-                                             <span className="shortcut-chip" key={binding}>
-                                                <button
-                                                   className="shortcut-binding"
-                                                   data-press-ignore
-                                                   aria-label={`Change ${displayBinding(binding, mac)} for ${commandDefinitions[id].label}`}
-                                                   onClick={() => editBinding(id, index)}
-                                                >
-                                                   <kbd>{displayBinding(binding, mac)}</kbd>
-                                                </button>
-                                                <button
-                                                   className="shortcut-remove"
-                                                   aria-label={`Remove ${displayBinding(binding, mac)} from ${commandDefinitions[id].label}`}
-                                                   onClick={() =>
-                                                      updateBindings(
-                                                         id,
-                                                         bindingsFor(id, preferences.shortcuts).filter((_, i) => i !== index)
-                                                      )
-                                                   }
-                                                >
-                                                   <FontAwesomeIcon icon={faXmark} />
-                                                </button>
-                                             </span>
-                                          ))}
-                                          <button
-                                             className="shortcut-add"
-                                             aria-label={`Add binding for ${commandDefinitions[id].label}`}
-                                             onClick={() => editBinding(id, null)}
-                                          >
-                                             <FontAwesomeIcon icon={faPlus} />
-                                          </button>
-                                       </div>
-                                    </div>
-                                    {recording?.id === id && (
-                                       <div className="shortcut-editor" key={`${id}-${recording.index}`}>
-                                          <button
-                                             className="shortcut-capture"
-                                             data-press-ignore
-                                             ref={(element) => {
-                                                element?.focus();
-                                             }}
-                                             aria-label={`Record binding for ${commandDefinitions[id].label}`}
-                                             aria-describedby={`binding-help-${id}`}
-                                             onKeyDown={captureBinding}
-                                          >
-                                             <kbd>{captured ? displayBinding(captured, mac) : "Press keys…"}</kbd>
-                                          </button>
-                                          <div className="shortcut-editor-actions">
-                                             <p
-                                                id={`binding-help-${id}`}
-                                                className={conflict ? "inline-error" : "shortcut-hint"}
-                                                role={conflict ? "alert" : undefined}
+                     <Toggle
+                        label="Keep playing while editing"
+                        description="Keep playback running when seeking, trimming, or splitting."
+                        checked={preferences.keepPlaying}
+                        onChange={(keepPlaying) => onChange({ ...preferences, keepPlaying })}
+                     />
+                     <Toggle
+                        label="Audio scrubbing"
+                        description="Play a short audio burst at the playhead while scrubbing and stepping with playback paused. Unavailable for sources over two hours."
+                        checked={preferences.audioScrub}
+                        onChange={(audioScrub) => onChange({ ...preferences, audioScrub })}
+                     />
+                  </>
+               ) : (
+                  <>
+                     <div className="shortcut-toolbar">
+                        <input
+                           ref={searchRef}
+                           className="shortcut-search"
+                           type="search"
+                           placeholder="Search actions or keys"
+                           aria-label="Search shortcuts"
+                           value={query}
+                           onChange={(event) => setQuery(event.target.value)}
+                        />
+                        <Button variant="danger" onClick={() => setConfirmReset(true)}>
+                           Reset bindings
+                        </Button>
+                     </div>
+                     <div className="shortcut-list">
+                        {shortcutGroups.map((group) => {
+                           const commands = group.commands.filter(matches);
+                           if (!commands.length) return null;
+                           return (
+                              <section className="shortcut-group" key={group.name} aria-labelledby={`shortcuts-${group.name}`}>
+                                 <h3 id={`shortcuts-${group.name}`}>{group.name}</h3>
+                                 {commands.map((id) => (
+                                    <div className="shortcut-row" key={id}>
+                                       <div className="shortcut-line">
+                                          <span className="shortcut-action">{commandDefinitions[id].label}</span>
+                                          <div className="shortcut-bindings">
+                                             {bindingsFor(id, preferences.shortcuts).map((binding, index) => (
+                                                <span className="shortcut-chip" key={binding}>
+                                                   <button
+                                                      className="shortcut-binding"
+                                                      data-press-ignore
+                                                      aria-label={`Change ${displayBinding(binding, mac)} for ${commandDefinitions[id].label}`}
+                                                      onClick={() => editBinding(id, index)}
+                                                   >
+                                                      <kbd>{displayBinding(binding, mac)}</kbd>
+                                                   </button>
+                                                   <button
+                                                      className="shortcut-remove"
+                                                      aria-label={`Remove ${displayBinding(binding, mac)} from ${commandDefinitions[id].label}`}
+                                                      onClick={() =>
+                                                         updateBindings(
+                                                            id,
+                                                            bindingsFor(id, preferences.shortcuts).filter((_, i) => i !== index)
+                                                         )
+                                                      }
+                                                   >
+                                                      <FontAwesomeIcon icon={faXmark} />
+                                                   </button>
+                                                </span>
+                                             ))}
+                                             <button
+                                                className="shortcut-add"
+                                                aria-label={`Add binding for ${commandDefinitions[id].label}`}
+                                                onClick={() => editBinding(id, null)}
                                              >
-                                                {conflict || "Press a key combination, then save. Escape cancels."}
-                                             </p>
-                                             <Button onClick={() => setRecording(null)}>Cancel</Button>
-                                             <Button
-                                                variant="primary"
-                                                disabled={!captured || !!conflict}
-                                                onClick={() => {
-                                                   const bindings = [...bindingsFor(id, preferences.shortcuts)];
-                                                   if (recording.index === null) bindings.push(captured);
-                                                   else bindings[recording.index] = captured;
-                                                   updateBindings(id, bindings);
-                                                }}
-                                             >
-                                                Save binding
-                                             </Button>
+                                                <FontAwesomeIcon icon={faPlus} />
+                                             </button>
                                           </div>
                                        </div>
-                                    )}
-                                 </div>
-                              ))}
-                           </section>
-                        );
-                     })}
-                     {!shortcutGroups.some((group) => group.commands.some(matches)) && <p className="shortcut-empty">No actions match that search.</p>}
-                  </div>
-               </>
-            )}
-         </div>
-      </Modal>
+                                       {recording?.id === id && (
+                                          <div className="shortcut-editor" key={`${id}-${recording.index}`}>
+                                             <button
+                                                className="shortcut-capture"
+                                                data-press-ignore
+                                                ref={(element) => {
+                                                   element?.focus();
+                                                }}
+                                                aria-label={`Record binding for ${commandDefinitions[id].label}`}
+                                                aria-describedby={`binding-help-${id}`}
+                                                onKeyDown={captureBinding}
+                                             >
+                                                <kbd>{captured ? displayBinding(captured, mac) : "Press keys…"}</kbd>
+                                             </button>
+                                             <div className="shortcut-editor-actions">
+                                                <p
+                                                   id={`binding-help-${id}`}
+                                                   className={conflict ? "inline-error" : "shortcut-hint"}
+                                                   role={conflict ? "alert" : undefined}
+                                                >
+                                                   {conflict || "Press a key combination, then save. Escape cancels."}
+                                                </p>
+                                                <Button onClick={() => setRecording(null)}>Cancel</Button>
+                                                <Button
+                                                   variant="primary"
+                                                   disabled={!captured || !!conflict}
+                                                   onClick={() => {
+                                                      const bindings = [...bindingsFor(id, preferences.shortcuts)];
+                                                      if (recording.index === null) bindings.push(captured);
+                                                      else bindings[recording.index] = captured;
+                                                      updateBindings(id, bindings);
+                                                   }}
+                                                >
+                                                   Save binding
+                                                </Button>
+                                             </div>
+                                          </div>
+                                       )}
+                                    </div>
+                                 ))}
+                              </section>
+                           );
+                        })}
+                        {!shortcutGroups.some((group) => group.commands.some(matches)) && <p className="shortcut-empty">No actions match that search.</p>}
+                     </div>
+                  </>
+               )}
+            </div>
+         </Modal>
+         {confirmReset && (
+            <Modal title="Reset keyboard shortcuts?" onClose={() => setConfirmReset(false)} className="settings-reset-confirm">
+               <div className="modal-body">This removes your custom bindings and restores the default shortcuts.</div>
+               <div className="modal-footer">
+                  <Button onClick={() => setConfirmReset(false)}>Cancel</Button>
+                  <Button
+                     variant="danger"
+                     onClick={() => {
+                        onChange({ ...preferences, shortcuts: {} });
+                        setRecording(null);
+                        setConflict("");
+                        setQuery("");
+                        setConfirmReset(false);
+                     }}
+                  >
+                     Reset bindings
+                  </Button>
+               </div>
+            </Modal>
+         )}
+      </>
    );
 }

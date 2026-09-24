@@ -37,8 +37,8 @@ export class Storage {
       const backup = this.primaryValid ? null : await read("settings.backup.json");
       const recoveredPreferences = preferencesSchema.safeParse(backup?.preferences);
       const recoveredSession = savedSessionSchema.nullable().safeParse(backup?.session);
-      if (preferences.success) this.preferences = preferences.data;
-      else if (recoveredPreferences.success) this.preferences = recoveredPreferences.data;
+      if (preferences.success) this.preferences = { ...preferences.data, outputDirectory: "" };
+      else if (recoveredPreferences.success) this.preferences = { ...recoveredPreferences.data, outputDirectory: "" };
       if (session.success) this.session = session.data;
       else if (recoveredSession.success) this.session = recoveredSession.data;
       const recoveredUpdates = updateStateSchema.safeParse(backup?.updates);
@@ -47,7 +47,7 @@ export class Storage {
       if (primary && !this.primaryValid) this.warning = "Some saved settings were invalid. Recoverable preferences and edits were kept.";
    }
    save(): Promise<void> {
-      this.pending = { version: storageVersion, preferences: this.preferences, session: this.session, updates: this.updates };
+      this.pending = { version: storageVersion, preferences: { ...this.preferences, outputDirectory: "" }, session: this.session, updates: this.updates };
       if (!this.writes) {
          this.writes = Promise.resolve()
             .then(async () => {

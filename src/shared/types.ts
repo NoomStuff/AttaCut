@@ -161,11 +161,18 @@ export interface ExportPlan {
    mode: "separate" | "combined";
    directoryMissing: boolean;
    existingPaths: string[];
+   sourcePath: string | null;
+}
+export interface ExportDestinations {
+   paths: string[];
+   existingPaths: string[];
+   sourcePath: string | null;
 }
 export type CutReport = Pick<ExportPlanItem, "clip" | "method" | "encodedSeconds" | "message">;
 export interface ExportApproval {
    createDirectory?: boolean | undefined;
    overwrite?: boolean | undefined;
+   replaceSource?: boolean | undefined;
 }
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export interface JobItem {
@@ -178,6 +185,8 @@ export interface JobItem {
 }
 export interface ExportJob {
    id: string;
+   sourceId: string;
+   replacesSource: boolean;
    directory: string;
    items: JobItem[];
    running: boolean;
@@ -213,6 +222,7 @@ export interface DesktopApi {
    onOpenFile(listener: (path: string) => void): () => void;
    exportFrame(request: FrameRequest): Promise<string>;
    planExport(request: PlanRequest): Promise<ExportPlan>;
+   checkExportDestinations(request: PlanRequest): Promise<ExportDestinations>;
    analyzeExport(request: PlanRequest): Promise<CutReport[]>;
    startExport(planId: string, approval?: ExportApproval): Promise<ExportJob>;
    cancelExport(): Promise<void>;

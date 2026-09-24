@@ -20,6 +20,7 @@ export interface IpcCalls {
    "audio:cancel": Call<void, void>;
    "frame:export": Call<FrameRequest, string>;
    "export:plan": Call<PlanRequest, Result<"planExport">>;
+   "export:check-destinations": Call<PlanRequest, Result<"checkExportDestinations">>;
    "export:analyze": Call<PlanRequest, Result<"analyzeExport">>;
    "export:cancel-planning": Call<void, void>;
    "export:start": Call<{ id: string; approval: ExportApproval | undefined }, Result<"startExport">>;

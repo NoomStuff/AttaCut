@@ -1,0 +1,71 @@
+import { expect } from "@playwright/test";
+import { test, waitForVideo } from "./app.mjs";
+import { copyFile, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
+
+test("source replacement is explicit and reopens the exported video", async ({ launchApp, profile }) => {
+   const source = join(profile, "source.mp4");
+   await copyFile(resolve("work/fixture.mp4"), source);
+   const originalSize = (await stat(source)).size;
+   const app = await launchApp(profile, source);
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   await page.getByRole("textbox", { name: "Clip end", exact: true }).fill("00:05.00");
+   await page.getByRole("textbox", { name: "Clip end", exact: true }).press("Tab");
+   await page.getByRole("button", { name: "Export", exact: true }).click();
+   await expect(page.getByRole("button", { name: "Merged Video", exact: true })).toBeVisible();
+   await expect(page.getByRole("button", { name: "Merged Video", exact: true })).toBeDisabled();
+   await expect(page.getByRole("button", { name: "Separate clips", exact: true })).toBeDisabled();
+   await page.waitForTimeout(200);
+   const filename = page.getByRole("textbox", { name: "Combined filename", exact: true });
+   await filename.focus();
+   const extensionBefore = await page.locator(".filename-extension").boundingBox();
+   await filename.fill("source");
+   const sourceConflict = page.getByRole("img", { name: "Will replace the source video" });
+   await expect(sourceConflict).toBeVisible();
+   const [nameBox, iconBox, extensionAfter] = await Promise.all([
+      filename.boundingBox(),
+      sourceConflict.boundingBox(),
+      page.locator(".filename-extension").boundingBox(),
+   ]);
+   expect(iconBox.x).toBeGreaterThan(nameBox.x);
+   expect(iconBox.x + iconBox.width).toBeLessThanOrEqual(nameBox.x + nameBox.width);
+   expect(Math.abs(extensionAfter.x - extensionBefore.x)).toBeLessThan(1);
+   await expect(sourceConflict.locator(".export-conflict-tooltip")).toBeHidden();
+   await sourceConflict.hover();
+   await expect(sourceConflict.locator(".export-conflict-tooltip")).toBeVisible();
+   const icon = page.locator(".export-name-input .export-conflict-indicator");
+   await filename.fill("unused-export-name");
+   await expect(icon).toHaveAttribute("data-state", "leaving");
+   await filename.fill("source");
+   await expect(icon).toHaveAttribute("data-state", "visible");
+   await expect(sourceConflict).toHaveAttribute("data-state", "visible");
+   await page.getByRole("button", { name: "Export video", exact: true }).click();
+   await expect(page.getByRole("dialog", { name: "Replace source video?", exact: true })).toBeVisible();
+   await expect(page.getByRole("button", { name: "Replace source and export", exact: true })).toBeDisabled();
+   expect((await stat(source)).size).toBe(originalSize);
+   await page.getByRole("checkbox", { name: "I understand this replaces the original video" }).check();
+   await page.getByRole("button", { name: "Replace source and export", exact: true }).click();
+   await expect(page.getByText("Export complete", { exact: true })).toBeVisible({ timeout: 60000 });
+   await waitForVideo(page);
+   await expect.poll(() => page.locator("video").evaluate((video) => video.duration)).toBeLessThan(6);
+   expect((await stat(source)).size).toBeLessThan(originalSize);
+   await expect(page.getByRole("button", { name: "Show in folder", exact: true })).toBeVisible();
+   const timeline = await page.locator(".timeline-viewport").boundingBox();
+   await page.mouse.click(timeline.x + timeline.width / 2, timeline.y + 36);
+   await page.keyboard.press("s");
+   await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toBeVisible();
+   await page.getByRole("button", { name: "Export", exact: true }).click();
+   await page.getByRole("button", { name: "Separate clips", exact: true }).click();
+   await page.getByRole("textbox", { name: "Clip 1 filename", exact: true }).fill("source");
+   const rowConflict = page.getByRole("img", { name: "Will replace the source video" });
+   await expect(rowConflict).toBeVisible();
+   await rowConflict.focus();
+   await expect(rowConflict.locator(".export-conflict-tooltip")).toBeVisible();
+   const rowIcon = page.locator(".export-row-name-input .export-conflict-indicator").first();
+   const rowIconHandle = await rowIcon.elementHandle();
+   await page.getByRole("textbox", { name: "Clip 2 filename", exact: true }).fill("different-name");
+   await page.waitForTimeout(350);
+   expect(await rowIconHandle.evaluate((element) => element === document.querySelector(".export-row-name-input .export-conflict-indicator"))).toBe(true);
+   await expect(rowIcon).toHaveAttribute("data-state", "visible");
+});

@@ -49,6 +49,11 @@ test("export dialog", async ({ launchApp, profile }) => {
    await page.getByRole("button", { name: "Create folder and export", exact: true }).click();
    await expect(page.getByRole("button", { name: "Open file", exact: true })).toBeVisible({ timeout: 60000 });
    await page.getByRole("button", { name: "Export", exact: true }).click();
+   const conflict = page.getByRole("img", { name: "Will replace an existing file" });
+   await expect(conflict).toBeVisible();
+   await expect(conflict.locator(".export-conflict-tooltip")).toBeHidden();
+   await conflict.hover();
+   await expect(conflict.locator(".export-conflict-tooltip")).toBeVisible();
    await page.getByRole("button", { name: "Export video", exact: true }).click();
    await expect(page.getByRole("dialog", { name: "Replace existing file?", exact: true })).toBeVisible();
    await page.waitForTimeout(200);

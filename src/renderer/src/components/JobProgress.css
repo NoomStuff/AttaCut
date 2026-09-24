@@ -1,8 +1,15 @@
-.job-progress {
+.job-notifications {
    position: absolute;
    bottom: 42px;
    right: 36px;
    z-index: 50;
+   display: flex;
+   flex-direction: column;
+   gap: 10px;
+   max-height: calc(100vh - 110px);
+   overflow-y: auto;
+}
+.job-progress {
    width: 355px;
    border: 1px solid var(--line);
    padding: 17px;
@@ -38,16 +45,45 @@
 .job-progress progress {
    margin-top: 17px;
 }
-.job-progress details {
-   font-size: 11px;
-   margin-top: 14px;
-   color: var(--muted);
-   max-height: 150px;
-   overflow: auto;
+.job-progress.failure {
+   border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+.job-progress.failure .job-summary-icon,
+.job-progress.failure .job-summary strong {
+   color: var(--danger);
+}
+.job-failures {
+   max-height: 190px;
+   overflow-y: auto;
+   margin-top: 12px;
    user-select: text;
 }
-.job-progress details p {
+.job-failure-item + .job-failure-item {
+   border-top: 1px solid var(--line);
+   margin-top: 10px;
+   padding-top: 10px;
+}
+.job-failure-item b {
+   display: block;
+   font-size: 11px;
    overflow-wrap: anywhere;
+}
+.job-failure-item p {
+   margin: 5px 0 0;
+   color: var(--text);
+   font-size: 11px;
+   line-height: 1.45;
+}
+.job-failure-item details {
+   margin-top: 7px;
+   color: var(--muted);
+   font-size: 11px;
+}
+.job-failure-item pre {
+   white-space: pre-wrap;
+   overflow-wrap: anywhere;
+   font: inherit;
+   line-height: 1.4;
 }
 .job-summary {
    display: flex;
@@ -110,5 +146,6 @@
 .job-actions {
    display: flex;
    justify-content: flex-end;
+   gap: 6px;
    margin-top: 10px;
 }

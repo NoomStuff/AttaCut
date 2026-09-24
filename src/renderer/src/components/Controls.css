@@ -236,7 +236,8 @@
    height: min(620px, calc(100vh - 70px));
    overflow: hidden;
 }
-.panel-modal[open] {
+.panel-modal[open],
+.panel-modal.closing {
    display: flex;
    flex-direction: column;
 }

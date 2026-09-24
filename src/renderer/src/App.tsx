@@ -33,6 +33,7 @@ import { Button } from "./components/Controls";
 import { Player } from "./components/Player";
 import { Timeline } from "./components/Timeline";
 import { Transport } from "./components/Transport";
+import { LoadingEditor } from "./components/LoadingEditor";
 import { TopActions } from "./components/TopActions";
 import { JobProgress } from "./components/JobProgress";
 import { EmptyState } from "./components/EmptyState";
@@ -151,6 +152,7 @@ export default function App() {
       trimTimer.current = window.setTimeout(() => setTrimAnimating(false), 180);
    };
    const videoRef = useRef<HTMLVideoElement>(null);
+   const holdPreviewFrame = useRef<(() => void) | null>(null);
    const previewEnd = useRef<number | null>(null);
    const trimmingRef = useRef(false);
    const setTrimming = (active: boolean) => {
@@ -172,6 +174,7 @@ export default function App() {
    }, [source, audioIndices, preferences.audioScrub, scrubber]);
    useEffect(() => () => scrubber.dispose(), [scrubber]);
    const openSequence = useRef(0);
+   const replacingSourceId = useRef<string | null>(null);
    const sourceRef = useRef(source);
    sourceRef.current = source;
    const requestPlayback = (showWait: boolean) => playback.request(showWait);
@@ -182,7 +185,12 @@ export default function App() {
       video?.pause();
       setError(null);
       try {
-         await playback.prepare(target.id, transcode, () => window.desktop.preparePreview(target.id, tracks, transcode));
+         await playback.prepare(
+            target.id,
+            transcode,
+            () => window.desktop.preparePreview(target.id, tracks, transcode),
+            () => holdPreviewFrame.current?.()
+         );
       } catch (value) {
          const message = errorText(value);
          if (!/cancel/i.test(message)) setError(message);
@@ -253,14 +261,13 @@ export default function App() {
          const media = await window.desktop.openSource(path);
          if (sequence !== openSequence.current) return;
          const validSaved = saved && saved.size === media.size && saved.modified === media.modified && saved.clips.every((item) => item.end <= media.duration);
-         if (saved && !validSaved) setError("The source file changed. Opened it with a fresh selection.");
+         if (saved && !validSaved) setError("The original file was changed. Your timeline was reset.");
          videoRef.current?.pause();
          scrubber.reset();
          previewEnd.current = null;
          setSource(media);
          sourceRef.current = media;
          seeker.configure((time) => window.desktop.frameTime(media.id, time, 0));
-         setPreferences((current) => ({ ...current, outputDirectory: media.directory }));
          setKeyframes([]);
          setReadingKeys(false);
          playback.source(media);
@@ -369,7 +376,17 @@ export default function App() {
             setReady(true);
             setError(errorText(value));
          });
-      const unsubscribe = window.desktop.onJob(setJob);
+      const unsubscribe = window.desktop.onJob((updated) => {
+         setJob(updated);
+         if (!updated.running && updated.items.some((item) => item.status === "completed"))
+            setPreferences((current) => ({ ...current, outputDirectory: updated.directory }));
+         if (updated.running || !updated.replacesSource || updated.sourceId !== replacingSourceId.current) return;
+         replacingSourceId.current = null;
+         const current = sourceRef.current;
+         if (!current || current.id !== updated.sourceId) return;
+         if (updated.items.some((item) => item.status === "completed" && item.outputPath === current.path)) void openLatest.current(current.path);
+         else playback.source(current);
+      });
       return () => {
          cancelled = true;
          unsubscribe();
@@ -802,6 +819,7 @@ export default function App() {
                         onFullscreen={fullscreen}
                         url={url}
                         videoRef={videoRef}
+                        holdPreviewFrame={holdPreviewFrame}
                         clock={clock}
                         clips={editor.document.clips}
                         keptOnly={preferences.keptOnly}
@@ -886,19 +904,13 @@ export default function App() {
                )}
                {(loading || !ready) && (
                   <div className="loading-overlay" role="status" aria-label={loading ? "Opening video" : "Loading editor"}>
-                     <div className="loading-preview skeleton">
-                        <span>{loading ? "Opening video..." : "Loading editor..."}</span>
-                     </div>
-                     <div className="loading-dock" aria-hidden="true">
-                        <div className="loading-ruler skeleton" />
-                        <div className="loading-track skeleton" />
-                        <div className="loading-controls skeleton" />
-                     </div>
+                     <LoadingEditor />
                   </div>
                )}
             </main>
             {jobPresence.mounted && jobPresence.value && (
                <JobProgress
+                  key={jobPresence.value.id}
                   job={jobPresence.value}
                   closing={jobPresence.closing}
                   onDismiss={() => setJob(null)}
@@ -923,7 +935,22 @@ export default function App() {
                      preferences={preferences}
                      onPreferences={setPreferences}
                      onClose={() => setPanel((current) => (current === panel ? null : current))}
-                     onStarted={setJob}
+                     onStarted={(started) => setJob((current) => (current?.id === started.id && !current.running ? current : started))}
+                     onBeforeSourceReplace={async () => {
+                        replacingSourceId.current = source.id;
+                        playback.suspend();
+                        scrubber.stop();
+                        await Promise.all([window.desktop.cancelPreview(), window.desktop.cancelScrub()]);
+                        const video = videoRef.current;
+                        video?.pause();
+                        video?.removeAttribute("src");
+                        video?.load();
+                        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+                     }}
+                     onSourceReplaceStartFailed={() => {
+                        replacingSourceId.current = null;
+                        playback.source(source);
+                     }}
                      onHelp={(topic) => {
                         setHelpTab(topic);
                         setPanel("help");

@@ -25,6 +25,10 @@ export class PlaybackController {
       this.sequence++;
       this.pause();
    }
+   suspend(): void {
+      this.sequence++;
+      if (this.state.sourceId) this.set({ ...this.state, phase: "source", url: "", intent: "paused", showWait: false });
+   }
    source(source: MediaSource): void {
       this.sequence++;
       this.set({ phase: "source", sourceId: source.id, url: source.url, transcode: false, intent: "paused", showWait: false });
@@ -41,13 +45,16 @@ export class PlaybackController {
    fail(): void {
       if (this.state.phase !== "empty") this.set({ ...this.state, phase: "failed", intent: "paused", showWait: false });
    }
-   async prepare(sourceId: string, transcode: boolean, load: () => Promise<string>): Promise<void> {
+   async prepare(sourceId: string, transcode: boolean, load: () => Promise<string>, beforeSwap?: (url: string) => void): Promise<void> {
       if (this.state.sourceId !== sourceId) return;
       const sequence = ++this.sequence;
       this.set({ ...this.state, phase: "preparing", sourceId, transcode });
       try {
          const url = await load();
-         if (sequence === this.sequence && this.state.sourceId === sourceId) this.set({ ...this.state, phase: "preview", sourceId, url, transcode });
+         if (sequence === this.sequence && this.state.sourceId === sourceId) {
+            if (url !== this.state.url) beforeSwap?.(url);
+            this.set({ ...this.state, phase: "preview", sourceId, url, transcode });
+         }
       } catch (error) {
          if (sequence !== this.sequence || this.state.sourceId !== sourceId) return;
          this.fail();

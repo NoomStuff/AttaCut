@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { access, constants, mkdir, stat } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
-import type { Clip, ExportApproval, ExportJob, ExportPlan, PlanRequest, CutReport } from "../shared/types.ts";
+import type { Clip, ExportApproval, ExportDestinations, ExportJob, ExportPlan, PlanRequest, CutReport } from "../shared/types.ts";
 import { exportExtensionFor, planRequestSchema } from "../shared/types.ts";
 import { analyzeCut, exportCut } from "./media/cut.ts";
 import type { CutAnalysis } from "./media/cut.ts";
@@ -92,6 +92,18 @@ export class ExportService {
    async inspect(source: ProbedSource, request: PlanRequest): Promise<CutReport[]> {
       return (await this.analyze(source, request)).map(({ clip, method, encodedSeconds, message }) => ({ clip, method, encodedSeconds, message }));
    }
+   async checkDestinations(source: ProbedSource, request: PlanRequest): Promise<ExportDestinations> {
+      const settings = planRequestSchema.parse(request);
+      const paths = outputNames(source, settings).map((name) => join(resolve(settings.directory), name));
+      const existingPaths: string[] = [];
+      let sourcePath: string | null = null;
+      for (const path of paths) {
+         const isSource = await protectSource(source.path, path, true);
+         if (isSource) sourcePath = path;
+         if (await exists(path)) existingPaths.push(path);
+      }
+      return { paths, existingPaths, sourcePath };
+   }
    async plan(source: ProbedSource, request: PlanRequest): Promise<ExportPlan> {
       const settings = planRequestSchema.parse(request);
       const signal = this.analysisController.signal;
@@ -106,21 +118,14 @@ export class ExportService {
       });
       if (directory && !directory.isDirectory()) throw new Error("Choose an output folder, not a file.");
       if (directory) await access(directoryPath, constants.W_OK);
-      const used = new Set<string>();
+      const names = outputNames(source, settings);
+      const itemNames = settings.mode === "combined" ? outputNames(source, { ...settings, mode: "separate" }) : names;
       const cuts = await this.analyze(source, request);
       let cutIndex = 0;
       const analyses = new Map<string, CutAnalysis[]>();
       const items = [];
-      for (const item of [...request.items].sort((a, b) => a.clip.start - b.clip.start)) {
-         const extension = exportExtensionFor(source, item.clip, {
-            separate: settings.mode === "separate",
-            allAudio: audioTracks.length === sourceAudio.length,
-         });
-         const stem = sanitizeName(item.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
-         let name = `${stem}${extension}`;
-         let suffix = 2;
-         while (used.has(name.toLowerCase())) name = `${stem} (${suffix++})${extension}`;
-         used.add(name.toLowerCase());
+      for (const [index] of [...settings.items].sort((a, b) => a.clip.start - b.clip.start).entries()) {
+         const name = itemNames[index]!;
          const analysis = cuts[cutIndex++]!;
          const id = randomUUID();
          analyses.set(id, [analysis]);
@@ -136,9 +141,7 @@ export class ExportService {
       }
       if (settings.mode === "combined") {
          const cuts = items.flatMap((item) => analyses.get(item.id)!);
-         const extension = source.exportExtension;
-         const stem = sanitizeName(settings.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
-         const name = `${stem}${extension}`;
+         const name = names[0]!;
          const first = items[0]!;
          const unsupported = cuts.filter((cut) => cut.method === "unsupported");
          const combined = {
@@ -153,8 +156,9 @@ export class ExportService {
          items.splice(0, items.length, combined);
       }
       const existingPaths: string[] = [];
+      let sourcePath: string | null = null;
       for (const item of items) {
-         await protectSource(source.path, item.outputPath);
+         if (await protectSource(source.path, item.outputPath, true)) sourcePath = item.outputPath;
          if (await exists(item.outputPath)) existingPaths.push(item.outputPath);
       }
       const plan: ExportPlan = {
@@ -165,6 +169,7 @@ export class ExportService {
          mode: settings.mode,
          directoryMissing: !directory,
          existingPaths,
+         sourcePath,
       };
       signal.throwIfAborted();
       if (this.plans.size >= 20) this.plans.delete(this.plans.keys().next().value!);
@@ -177,11 +182,14 @@ export class ExportService {
       if (!stored) throw new Error("The export plan expired. Review the clips again.");
       if (stored.plan.directoryMissing && !approval.createDirectory) throw new Error("Confirm creating the output folder before exporting.");
       if (stored.plan.existingPaths.length && !approval.overwrite) throw new Error("Confirm replacing the existing files before exporting.");
+      if (stored.plan.sourcePath && !approval.replaceSource) throw new Error("Confirm replacing the source video before exporting.");
       if (stored.plan.items.some((item) => item.method === "unsupported")) throw new Error("Some clips cannot be exported with these boundaries.");
       this.runningPlan = stored;
       stored.approval = approval;
       this.job = {
          id: randomUUID(),
+         sourceId: stored.source.id,
+         replacesSource: !!stored.plan.sourcePath,
          directory: stored.plan.directory,
          running: true,
          items: stored.plan.items.map((item) => ({
@@ -230,12 +238,13 @@ export class ExportService {
          this.emit(structuredClone(job));
          try {
             if (stored.approval?.createDirectory) await mkdir(stored.plan.directory, { recursive: true });
-            await protectSource(stored.source.path, item.outputPath);
+            await protectSource(stored.source.path, item.outputPath, !!stored.approval?.replaceSource && item.outputPath === stored.plan.sourcePath);
             const cuts = stored.analyses.get(item.id)!;
             const options = {
                signal,
                audioTracks: stored.audioTracks,
                overwrite: !!stored.approval?.overwrite && stored.plan.existingPaths.includes(item.outputPath),
+               replaceSource: !!stored.approval?.replaceSource && item.outputPath === stored.plan.sourcePath,
                onProgress: (value: number) => {
                   item.progress = value;
                   this.emit(structuredClone(job));
@@ -254,6 +263,26 @@ export class ExportService {
       job.running = false;
       this.emit(structuredClone(job));
    }
+}
+function outputNames(source: ProbedSource, request: ReturnType<typeof planRequestSchema.parse>): string[] {
+   if (request.mode === "combined") {
+      const extension = source.exportExtension;
+      return [`${sanitizeName(request.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""))}${extension}`];
+   }
+   const audio = source.streams.filter((stream) => stream.type === "audio");
+   const allAudio = (request.audioTracks ?? audio.map((stream) => stream.index)).length === audio.length;
+   const used = new Set<string>();
+   return [...request.items]
+      .sort((a, b) => a.clip.start - b.clip.start)
+      .map((item) => {
+         const extension = exportExtensionFor(source, item.clip, { separate: true, allAudio });
+         const stem = sanitizeName(item.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
+         let name = `${stem}${extension}`;
+         let suffix = 2;
+         while (used.has(name.toLowerCase())) name = `${stem} (${suffix++})${extension}`;
+         used.add(name.toLowerCase());
+         return name;
+      });
 }
 async function exists(path: string): Promise<boolean> {
    try {

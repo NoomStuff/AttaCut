@@ -19,6 +19,26 @@ interface Fixture {
 }
 const fixtures: Fixture[] = [
    { name: "h264", extension: ".mp4", video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0", "-crf", "18"] },
+   {
+      name: "h264-smpte170m",
+      extension: ".mp4",
+      video: [
+         "-c:v",
+         "libx264",
+         "-g",
+         "48",
+         "-sc_threshold",
+         "0",
+         "-crf",
+         "18",
+         "-color_primaries",
+         "smpte170m",
+         "-color_trc",
+         "smpte170m",
+         "-colorspace",
+         "smpte170m",
+      ],
+   },
    { name: "h264-5994", extension: ".mp4", rate: "60000/1001", video: ["-c:v", "libx264", "-g", "120", "-sc_threshold", "0", "-crf", "18"] },
    {
       name: "h264-fragmented",

@@ -364,13 +364,22 @@ async function start(): Promise<void> {
       const request = planRequestSchema.parse(value);
       return exportsService.plan(getSource(request.sourceId), request);
    });
+   handle("export:check-destinations", (value) => {
+      const request = planRequestSchema.parse(value);
+      return exportsService.checkDestinations(getSource(request.sourceId), request);
+   });
    handle("export:analyze", (value) => {
       const request = planRequestSchema.parse(value);
       return exportsService.inspect(getSource(request.sourceId), request);
    });
    handle("export:start", (value) => {
       const request = z
-         .object({ id: z.string(), approval: z.object({ createDirectory: z.boolean().optional(), overwrite: z.boolean().optional() }).optional() })
+         .object({
+            id: z.string(),
+            approval: z
+               .object({ createDirectory: z.boolean().optional(), overwrite: z.boolean().optional(), replaceSource: z.boolean().optional() })
+               .optional(),
+         })
          .parse(value);
       return exportsService.start(request.id, request.approval);
    });
@@ -389,12 +398,7 @@ async function start(): Promise<void> {
          return;
       }
       const job = exportsService.current;
-      if (!job || !(path === job.directory || job.items.some((item) => item.outputPath === path))) throw new Error("Output not found.");
-      if (path === job.directory) {
-         const failure = await shell.openPath(path);
-         if (failure) throw new Error(failure);
-         return;
-      }
+      if (!job || !job.items.some((item) => item.outputPath === path && item.status === "completed")) throw new Error("Output not found.");
       shell.showItemInFolder(path);
    });
    // The renderer only ever opens links to project-owned sites; the allowlist keeps a

@@ -29,7 +29,7 @@ export function colorArguments(video: MediaStream): string[] {
 export function encoderArguments(video: MediaStream): string[] | null {
    const common = [
       "-pix_fmt",
-      `+${video.pixelFormat}`,
+      video.pixelFormat,
       "-fps_mode",
       "passthrough",
       ...(["h264", "hevc", "av1", "vp9", "vp8"].includes(video.codec) ? ["-enc_time_base", "1:90000"] : []),

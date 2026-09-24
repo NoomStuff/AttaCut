@@ -16,6 +16,20 @@ const session = savedSessionSchema.parse({
 });
 
 describe("Storage", () => {
+   it("keeps the export folder only in memory for this run", async () => {
+      const directory = await folder();
+      try {
+         const storage = new Storage(directory);
+         storage.preferences = { ...defaultPreferences, outputDirectory: "C:\\exports" };
+         await storage.save();
+         expect(storage.preferences.outputDirectory).toBe("C:\\exports");
+         const restored = new Storage(directory);
+         await restored.load();
+         expect(restored.preferences.outputDirectory).toBe("");
+      } finally {
+         await rm(directory, { recursive: true, force: true });
+      }
+   });
    it("keeps the previous file after a failed write and allows retry", async () => {
       const directory = await folder();
       try {

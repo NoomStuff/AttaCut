@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faArrowUpFromBracket, faCircleExclamation, faCheck, faXmark, faFolderOpen, faPlay } from "@fortawesome/free-solid-svg-icons";
-import type { ExportJob } from "../../../shared/types";
+import type { ExportJob, JobItem } from "../../../shared/types";
 import { Button, IconButton } from "./Controls";
 import { errorText } from "../lib/errors";
+import { explainExportError } from "../lib/exportErrors";
 
 export function JobProgress({
    job,
@@ -17,93 +19,121 @@ export function JobProgress({
    onError: (value: string) => void;
    onRetry: (value: ExportJob) => void;
 }) {
-   const complete = job.items.filter((item) => item.status === "completed").length;
+   const [hideSuccess, setHideSuccess] = useState(false);
+   const [hideFailures, setHideFailures] = useState(false);
+   const completed = job.items.filter((item) => item.status === "completed");
    const failures = job.items.filter((item) => item.status === "failed" || item.status === "cancelled");
    const progress = job.items.reduce((sum, item) => sum + item.progress, 0) / job.items.length;
+   const dismissSuccess = () => {
+      if (!failures.length || hideFailures) onDismiss();
+      else setHideSuccess(true);
+   };
+   const dismissFailures = () => {
+      if (!completed.length || hideSuccess) onDismiss();
+      else setHideFailures(true);
+   };
+   const openFirst = (action: "openOutput" | "revealOutput") => {
+      const item = completed[0]!;
+      void window.desktop[action](item.outputPath).catch((value: unknown) => onError(errorText(value)));
+   };
    return (
-      <aside className={`job-progress${job.running ? "" : " done"}${closing ? " closing" : ""}`} aria-live="polite">
-         <div className="job-summary">
-            <span className={`job-summary-icon${job.running ? "" : " done"}`}>
-               <FontAwesomeIcon icon={job.running ? faArrowUpFromBracket : failures.length ? faCircleExclamation : faCheck} />
-            </span>
-            <div>
-               <strong>
-                  {job.items.length === 1
-                     ? job.running
-                        ? "Exporting video"
-                        : failures.length
-                          ? "Export unfinished"
-                          : "Export complete"
-                     : job.running
-                       ? `Exporting ${complete + 1} of ${job.items.length}`
-                       : `${complete} of ${job.items.length} exported`}
-               </strong>
-               <small>
-                  {job.running
-                     ? job.items.find((item) => item.status === "running")?.name
-                     : failures.length
-                       ? `${failures.length} unfinished`
-                       : "Saved and ready to use"}
-               </small>
-            </div>
-            {!job.running && <IconButton icon={faXmark} label="Dismiss export status" onClick={onDismiss} />}
-         </div>
-         {job.running && <progress max={1} value={progress} />}
-         {failures.length > 0 && (
-            <details>
-               <summary>Export details</summary>
-               {failures.map((item) => (
-                  <p key={item.id}>
-                     {item.name}: {item.error ?? item.status}
-                  </p>
-               ))}
-            </details>
+      <div className="job-notifications" aria-live="polite">
+         {job.running && (
+            <aside className={`job-progress${closing ? " closing" : ""}`}>
+               <div className="job-summary">
+                  <span className="job-summary-icon">
+                     <FontAwesomeIcon icon={faArrowUpFromBracket} />
+                  </span>
+                  <div>
+                     <strong>{job.items.length === 1 ? "Exporting video" : `Exporting ${completed.length + 1} of ${job.items.length}`}</strong>
+                     <small>{job.items.find((item) => item.status === "running")?.name}</small>
+                  </div>
+               </div>
+               <progress max={1} value={progress} />
+               <div className="job-actions">
+                  <Button onClick={() => void window.desktop.cancelExport()}>Cancel</Button>
+               </div>
+            </aside>
          )}
-         <div className="job-actions">
-            {job.running ? (
-               <Button
-                  onClick={() => {
-                     void window.desktop.cancelExport();
-                  }}
-               >
-                  Cancel
-               </Button>
-            ) : (
-               <>
-                  {failures.length > 0 && (
-                     <Button
-                        onClick={() => {
-                           void window.desktop
-                              .retryExport(job.id)
-                              .then(onRetry)
-                              .catch((value: unknown) => onError(errorText(value)));
-                        }}
-                     >
-                        Retry unfinished
-                     </Button>
-                  )}
-                  {complete > 0 && (
-                     <Button
-                        icon={faPlay}
-                        onClick={() => {
-                           const item = job.items.find((item) => item.status === "completed")!;
-                           void window.desktop.openOutput(item.outputPath).catch((value: unknown) => onError(errorText(value)));
-                        }}
-                     >
-                        {complete === 1 ? "Open file" : "Open first file"}
-                     </Button>
-                  )}
+         {!job.running && completed.length > 0 && !hideSuccess && (
+            <aside className={`job-progress done success${closing ? " closing" : ""}`}>
+               <div className="job-summary">
+                  <span className="job-summary-icon done">
+                     <FontAwesomeIcon icon={faCheck} />
+                  </span>
+                  <div>
+                     <strong>
+                        {completed.length === job.items.length
+                           ? "Export complete"
+                           : completed.length === 1
+                             ? "1 file exported"
+                             : `${completed.length} files exported`}
+                     </strong>
+                     <small>{completed.length === 1 ? completed[0]!.name : "Saved and ready to use"}</small>
+                  </div>
+                  <IconButton icon={faXmark} label="Dismiss export status" onClick={dismissSuccess} />
+               </div>
+               <div className="job-actions">
+                  <Button icon={faPlay} onClick={() => openFirst("openOutput")}>
+                     {completed.length === 1 ? "Open file" : "Open first file"}
+                  </Button>
+                  <Button icon={faFolderOpen} onClick={() => openFirst("revealOutput")}>
+                     Show in folder
+                  </Button>
+               </div>
+            </aside>
+         )}
+         {!job.running && failures.length > 0 && !hideFailures && (
+            <aside className={`job-progress failure${closing ? " closing" : ""}`} role="alert">
+               <div className="job-summary">
+                  <span className="job-summary-icon">
+                     <FontAwesomeIcon icon={faCircleExclamation} />
+                  </span>
+                  <div>
+                     <strong>{failures.some((item) => item.status === "failed") ? "Export failed" : "Export cancelled"}</strong>
+                     <small>{failures.length === 1 ? "1 file was not exported" : `${failures.length} files were not exported`}</small>
+                  </div>
+                  <IconButton icon={faXmark} label="Dismiss export errors" onClick={dismissFailures} />
+               </div>
+               <div className="job-failures">
+                  {failures.map((item) => (
+                     <Failure key={item.id} item={item} />
+                  ))}
+               </div>
+               <div className="job-actions">
                   <Button
-                     icon={faFolderOpen}
                      onClick={() => {
-                        void window.desktop.revealOutput(job.directory).catch((value: unknown) => onError(errorText(value)));
+                        void window.desktop
+                           .retryExport(job.id)
+                           .then((value) => {
+                              setHideSuccess(false);
+                              setHideFailures(false);
+                              onRetry(value);
+                           })
+                           .catch((value: unknown) => onError(errorText(value)));
                      }}
                   >
-                     Open folder
+                     Retry files
                   </Button>
-               </>
-            )}
-         </div>
-      </aside>
+               </div>
+            </aside>
+         )}
+      </div>
+   );
+}
+
+function Failure({ item }: { item: JobItem }) {
+   const explanation = item.status === "cancelled" ? "Stopped before this file finished." : explainExportError(item.error);
+   return (
+      <div className="job-failure-item">
+         <b>{item.name}</b>
+         <p>{explanation}</p>
+         {item.error && item.error !== explanation && item.status !== "cancelled" && (
+            <details>
+               <summary>Technical details</summary>
+               <pre>{item.error}</pre>
+            </details>
+         )}
+      </div>
    );
 }

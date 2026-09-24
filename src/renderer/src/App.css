@@ -11,7 +11,7 @@
    align-items: center;
    gap: 10px;
    padding-left: 14px;
-   line-height: 1;
+   line-height: 1.4;
    -webkit-app-region: drag;
    color: var(--muted);
    font-size: 12px;
@@ -221,11 +221,11 @@
 }
 .skeleton {
    background: var(--surface-hover);
-   animation: skeleton-pulse 1.6s ease-in-out infinite alternate;
+   animation: skeleton-pulse 2s ease-in-out infinite alternate;
 }
 @keyframes skeleton-pulse {
    to {
-      opacity: 0.55;
+      opacity: 0.85;
    }
 }
 .loading-preview {
@@ -236,27 +236,6 @@
    place-items: center;
    color: var(--muted);
    font-size: 13px;
-}
-.loading-dock {
-   padding: 20px 16px;
-   border: 1px solid var(--line);
-   border-radius: 10px;
-   background: var(--surface);
-}
-.loading-ruler {
-   height: 10px;
-   width: 100%;
-}
-.loading-track {
-   height: 44px;
-   margin-top: 16px;
-   border-radius: 5px;
-}
-.loading-controls {
-   height: 26px;
-   width: 42%;
-   margin: 20px auto 0;
-   border-radius: 5px;
 }
 .panel-loading {
    position: fixed;
@@ -269,7 +248,8 @@
    z-index: 100;
 }
 @media (prefers-reduced-motion: reduce) {
-   .skeleton {
+   .skeleton,
+   .spinner {
       animation: none;
    }
 }

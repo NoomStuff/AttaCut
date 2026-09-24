@@ -9,10 +9,10 @@ import type { Clip } from "../shared/types";
 
 vi.mock("./media/cut.ts", () => ({
    analyzeCut: async (_source: unknown, clip: Clip) => ({ clip, method: "copy", encodedSeconds: 0, message: "", spans: [] }),
-   exportCut: async (source: ProbedSource, _analysis: unknown, destination: string, options: { overwrite: boolean }) => {
+   exportCut: async (source: ProbedSource, _analysis: unknown, destination: string, options: { overwrite: boolean; replaceSource: boolean }) => {
       const temporary = `${destination}.tmp`;
       await writeFile(temporary, "new export");
-      await publishOutput(temporary, destination, options.overwrite, source.path);
+      await publishOutput(temporary, destination, options.overwrite, source.path, options.replaceSource);
    },
 }));
 
@@ -69,11 +69,22 @@ describe("export destination confirmation", () => {
       expect(service.current?.items[0]?.status).toBe("failed");
       expect(await readFile(output, "utf8")).toBe("arrived later");
    });
-   it("rejects source filenames and hard links to the source", async () => {
+   it("requires separate approval before replacing the source video", async () => {
+      const { source, request, service } = await fixture();
+      const plan = await service.plan(source, { ...request, mode: "combined", name: "source" });
+      expect(plan.sourcePath).toBe(source.path);
+      expect(plan.existingPaths).toEqual([source.path]);
+      expect(() => service.start(plan.id, { overwrite: true })).toThrow("Confirm replacing the source");
+      expect(await readFile(source.path, "utf8")).toBe("original");
+      service.start(plan.id, { overwrite: true, replaceSource: true });
+      await service.waitForIdle();
+      expect(service.current?.items[0]?.status).toBe("completed");
+      expect(await readFile(source.path, "utf8")).toBe("new export");
+   });
+   it("rejects a hard link alias to the source", async () => {
       const { directory, source, request, service } = await fixture();
-      await expect(service.plan(source, { ...request, mode: "combined", name: "source" })).rejects.toThrow("original video cannot be replaced");
       await link(source.path, join(directory, "clip.mp4"));
-      await expect(service.plan(source, request)).rejects.toThrow("original video cannot be replaced");
+      await expect(service.plan(source, request)).rejects.toThrow("linked to the source video");
    });
    it("preserves an existing file when publishing fails", async () => {
       const { directory, source } = await fixture();
@@ -81,6 +92,11 @@ describe("export destination confirmation", () => {
       await writeFile(output, "old export");
       await expect(publishOutput(join(directory, "missing.tmp"), output, true, source.path)).rejects.toThrow();
       expect(await readFile(output, "utf8")).toBe("old export");
+   });
+   it("preserves the source when publishing its replacement fails", async () => {
+      const { directory, source } = await fixture();
+      await expect(publishOutput(join(directory, "missing.tmp"), source.path, true, source.path, true)).rejects.toThrow();
+      expect(await readFile(source.path, "utf8")).toBe("original");
    });
 });
 describe("output filenames", () => {
