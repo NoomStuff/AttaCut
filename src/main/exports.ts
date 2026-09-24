@@ -1,15 +1,24 @@
 import { randomUUID } from "node:crypto";
 import { access, constants, mkdir, stat } from "node:fs/promises";
-import { basename, extname, join, resolve } from "node:path";
-import type { Clip, ExportApproval, ExportDestinations, ExportJob, ExportPlan, PlanRequest, CutReport } from "../shared/types.ts";
-import { exportExtensionFor, planRequestSchema } from "../shared/types.ts";
+import { join, resolve } from "node:path";
+import type {
+   AnalyzeRequest,
+   Clip,
+   DestinationConflict,
+   ExportApproval,
+   ExportDestinations,
+   ExportJob,
+   ExportPlan,
+   PlanRequest,
+   CutReport,
+} from "../shared/types.ts";
+import { analyzeRequestSchema, exportExtensionFor, planRequestSchema } from "../shared/types.ts";
 import { analyzeCut, exportCut } from "./media/cut.ts";
 import type { CutAnalysis } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import { protectSource } from "./media/publish.ts";
 import { exportCombined } from "./media/combine.ts";
 import { sanitizeName } from "./media/filename.ts";
-export { sanitizeName } from "./media/filename.ts";
 
 interface StoredPlan {
    plan: ExportPlan;
@@ -66,8 +75,8 @@ export class ExportService {
       const analysis = { ...cached, clip: { ...cached.clip, id: clip.id, color: clip.color } };
       return analysis;
    }
-   private async analyze(source: ProbedSource, request: PlanRequest): Promise<CutAnalysis[]> {
-      const settings = planRequestSchema.parse(request);
+   private async analyze(source: ProbedSource, request: AnalyzeRequest): Promise<CutAnalysis[]> {
+      const settings = analyzeRequestSchema.parse(request);
       const signal = this.analysisController.signal;
       const audio = source.streams.filter((stream) => stream.type === "audio");
       const tracks = settings.audioTracks ?? audio.map((stream) => stream.index);
@@ -89,20 +98,23 @@ export class ExportService {
       signal.throwIfAborted();
       return results;
    }
-   async inspect(source: ProbedSource, request: PlanRequest): Promise<CutReport[]> {
+   async inspect(source: ProbedSource, request: AnalyzeRequest): Promise<CutReport[]> {
       return (await this.analyze(source, request)).map(({ clip, method, encodedSeconds, message }) => ({ clip, method, encodedSeconds, message }));
    }
+   /** Per-item destination conflicts; the renderer never reconstructs export naming itself. */
    async checkDestinations(source: ProbedSource, request: PlanRequest): Promise<ExportDestinations> {
       const settings = planRequestSchema.parse(request);
-      const paths = outputNames(source, settings).map((name) => join(resolve(settings.directory), name));
-      const existingPaths: string[] = [];
-      let sourcePath: string | null = null;
-      for (const path of paths) {
-         const isSource = await protectSource(source.path, path, true);
-         if (isSource) sourcePath = path;
-         if (await exists(path)) existingPaths.push(path);
-      }
-      return { paths, existingPaths, sourcePath };
+      const directoryPath = resolve(settings.directory);
+      const names = outputNames(source, settings);
+      const conflictFor = async (path: string): Promise<string | null> => {
+         if (await protectSource(source.path, path, true)) return "Will replace the source video";
+         return (await exists(path)) ? "Will replace an existing file" : null;
+      };
+      if (settings.mode === "combined") return { items: [{ clipId: null, conflict: await conflictFor(join(directoryPath, names[0]!)) }] };
+      const sorted = [...settings.items].sort((a, b) => a.clip.start - b.clip.start);
+      const items: DestinationConflict[] = [];
+      for (const [index, item] of sorted.entries()) items.push({ clipId: item.clip.id, conflict: await conflictFor(join(directoryPath, names[index]!)) });
+      return { items };
    }
    async plan(source: ProbedSource, request: PlanRequest): Promise<ExportPlan> {
       const settings = planRequestSchema.parse(request);
@@ -292,7 +304,4 @@ async function exists(path: string): Promise<boolean> {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
       throw error;
    }
-}
-export function sourceStem(path: string): string {
-   return basename(path, extname(path));
 }

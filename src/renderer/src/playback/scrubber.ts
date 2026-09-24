@@ -7,6 +7,7 @@ import type { ScrubAudio } from "../../../shared/types";
 export class AudioScrubber {
    private context: AudioContext | null = null;
    private buffer: AudioBuffer | null = null;
+   private previous: { start: number; buffer: AudioBuffer } | null = null;
    private voice: AudioBufferSourceNode | null = null;
    private decoding: { view: DataView; frames: number; position: number } | null = null;
    private timer = 0;
@@ -26,6 +27,7 @@ export class AudioScrubber {
       this.loading = -1;
       this.load = null;
       this.stop();
+      this.previous = null;
       this.cancelDecode();
       this.lastScrub = -Infinity;
    }
@@ -40,6 +42,9 @@ export class AudioScrubber {
       const generation = ++this.generation;
       this.loading = start;
       this.stop();
+      // Keep the outgoing chunk so scrubbing back and forth over a boundary does not
+      // re-request the same chunk on every crossing; it is swapped back in by scrub().
+      this.previous = this.buffer ? { start: this.start, buffer: this.buffer } : null;
       this.cancelDecode();
       void this.load(start)
          .then((data) => {
@@ -92,15 +97,25 @@ export class AudioScrubber {
    /** Play a short burst starting at `time`; each call replaces the previous burst. Dense
       pointer input re-triggers at most every 50ms — the playing burst already covers that. */
    scrub(time: number, volume: number): void {
-      const buffer = this.buffer;
       if (volume <= 0) {
          this.stop();
          return;
       }
-      if (!buffer || time < this.start || time >= this.start + buffer.duration) {
-         this.request(time);
-         return;
+      const covers = (chunk: { start: number; buffer: AudioBuffer } | null) => !!chunk && time >= chunk.start && time < chunk.start + chunk.buffer.duration;
+      const current = this.buffer ? { start: this.start, buffer: this.buffer } : null;
+      if (!covers(current)) {
+         if (this.previous && covers(this.previous)) {
+            // Re-entering the retained neighbor chunk: swap the two instead of reloading.
+            const swapped = current;
+            this.buffer = this.previous.buffer;
+            this.start = this.previous.start;
+            this.previous = swapped;
+         } else {
+            this.request(time);
+            return;
+         }
       }
+      const buffer = this.buffer!;
       time -= this.start;
       const stamp = performance.now();
       if (stamp - this.lastScrub < 50) return;

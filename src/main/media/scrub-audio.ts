@@ -48,22 +48,48 @@ export async function extractScrubPcm(
       let size = 0;
       let stderr = "";
       let failure: Error | null = null;
+      let settled = false;
+      let idleTimer: NodeJS.Timeout | null = null;
+      let killTimer: NodeJS.Timeout | null = null;
+      const disarm = () => {
+         if (idleTimer) clearTimeout(idleTimer);
+         if (killTimer) clearTimeout(killTimer);
+      };
+      // Same inactivity watchdog as runMedia: silence on a 30-second chunk means a wedged decoder.
+      const armIdle = () => {
+         if (idleTimer) clearTimeout(idleTimer);
+         idleTimer = setTimeout(() => {
+            failure ??= new Error("FFmpeg stopped responding and was stopped.");
+            child.kill();
+            killTimer = setTimeout(() => child.kill("SIGKILL"), 5000);
+         }, 120_000);
+      };
+      armIdle();
       child.stdout.on("data", (chunk: Buffer) => {
+         armIdle();
          size += chunk.length;
          if (size > limit) {
-            failure = new Error("Scrub audio exceeded its memory budget.");
+            failure ??= new Error("Scrub audio exceeded its memory budget.");
             child.kill();
             return;
          }
          chunks.push(chunk);
       });
       child.stderr.on("data", (data: Buffer) => {
+         armIdle();
          stderr = (stderr + data).slice(-4000);
       });
       child.on("error", (error) => {
-         failure = error.message.includes("ENOENT") ? new Error("FFmpeg was not found.") : error;
+         if (settled) return;
+         settled = true;
+         disarm();
+         failure ??= error.message.includes("ENOENT") ? new Error("FFmpeg was not found.") : error;
+         reject(signal?.aborted ? new Error("Cancelled") : failure);
       });
       child.on("close", (code) => {
+         if (settled) return;
+         settled = true;
+         disarm();
          if (signal?.aborted) return reject(new Error("Cancelled"));
          if (failure) return reject(failure);
          if (code !== 0) return reject(new Error(stderr.trim() || `FFmpeg exited with code ${code}`));

@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { test, waitForVideo } from "./app.mjs";
+import { test, waitForVideo, wrapIpcHandler } from "./app.mjs";
 import { resolve } from "node:path";
 
 test("opening shows a skeleton, then permits editing while preview loads", async ({ launchApp, profile }) => {
@@ -7,31 +7,25 @@ test("opening shows a skeleton, then permits editing while preview loads", async
    const page = await app.firstWindow();
    await page.getByRole("button", { name: "Import video", exact: true }).first().waitFor();
    // Hold the real probe result so the transient opening state can be inspected reliably.
-   await app.evaluate(({ ipcMain }) => {
-      const original = ipcMain._invokeHandlers.get("source:open");
-      ipcMain.removeHandler("source:open");
-      ipcMain.handle("source:open", async (...args) => {
-         const result = await original(...args);
-         await new Promise((resolve) => {
-            globalThis.finishOpening = resolve;
-         });
-         return { ...result, url: "media://source/delayed-preview" };
+   await wrapIpcHandler(app, "source:open", async (original, ...args) => {
+      const result = await original(...args);
+      await new Promise((resolve) => {
+         globalThis.finishOpening = resolve;
       });
-      const prepare = ipcMain._invokeHandlers.get("preview:prepare");
-      ipcMain.removeHandler("preview:prepare");
-      ipcMain.handle("preview:prepare", async (...args) => {
-         await new Promise((resolve) => {
-            globalThis.finishPreview = resolve;
-         });
-         return prepare(...args);
+      return { ...result, url: "media://source/delayed-preview" };
+   });
+   await wrapIpcHandler(app, "preview:prepare", async (prepare, ...args) => {
+      await new Promise((resolve) => {
+         globalThis.finishPreview = resolve;
       });
+      return prepare(...args);
+   });
+   await app.evaluate(() => {
       globalThis.keyframeRequests = 0;
-      const keys = ipcMain._invokeHandlers.get("source:keyframes");
-      ipcMain.removeHandler("source:keyframes");
-      ipcMain.handle("source:keyframes", (...args) => {
-         globalThis.keyframeRequests++;
-         return keys(...args);
-      });
+   });
+   await wrapIpcHandler(app, "source:keyframes", async (keys, ...args) => {
+      globalThis.keyframeRequests++;
+      return keys(...args);
    });
    // Hold playback rather than simulating a successful decoded frame.
    await page.route("media://source/delayed-preview", () => {});
@@ -86,15 +80,11 @@ test("a stalled seek keeps the decoded preview visible through both fades", asyn
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
    await waitForVideo(page);
    await expect(page.locator(".player-stage video.frame-ready")).toBeVisible();
-   await app.evaluate(({ ipcMain }) => {
-      const original = ipcMain._invokeHandlers.get("source:frame-time");
-      ipcMain.removeHandler("source:frame-time");
-      ipcMain.handle("source:frame-time", async (...args) => {
-         await new Promise((release) => {
-            globalThis.releaseFrameTime = release;
-         });
-         return original(...args);
+   await wrapIpcHandler(app, "source:frame-time", async (original, ...args) => {
+      await new Promise((release) => {
+         globalThis.releaseFrameTime = release;
       });
+      return original(...args);
    });
    await page.locator(".timeline-viewport").click({ position: { x: 180, y: 20 } });
    await expect.poll(() => app.evaluate(() => typeof globalThis.releaseFrameTime)).toBe("function");
@@ -128,21 +118,16 @@ test("a prepared preview replaces the source frame without a blank flash", async
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();
    await page.getByRole("button", { name: "Import video", exact: true }).waitFor();
-   await app.evaluate(({ ipcMain }) => {
-      const open = ipcMain._invokeHandlers.get("source:open");
-      ipcMain.removeHandler("source:open");
-      ipcMain.handle("source:open", async (...args) => {
-         const source = await open(...args);
-         globalThis.testPreviewUrl = source.url;
-         return { ...source, streams: source.streams.map((stream) => (stream.type === "audio" ? { ...stream, codec: "unsupported" } : stream)) };
+   await wrapIpcHandler(app, "source:open", async (open, ...args) => {
+      const source = await open(...args);
+      globalThis.testPreviewUrl = source.url;
+      return { ...source, streams: source.streams.map((stream) => (stream.type === "audio" ? { ...stream, codec: "unsupported" } : stream)) };
+   });
+   await wrapIpcHandler(app, "preview:prepare", async () => {
+      await new Promise((release) => {
+         globalThis.releasePreview = release;
       });
-      ipcMain.removeHandler("preview:prepare");
-      ipcMain.handle("preview:prepare", async () => {
-         await new Promise((release) => {
-            globalThis.releasePreview = release;
-         });
-         return `${globalThis.testPreviewUrl}?preview=1`;
-      });
+      return `${globalThis.testPreviewUrl}?preview=1`;
    });
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
    await waitForVideo(page);
@@ -200,17 +185,15 @@ test("idle time warms dialogs and keyframes before they are requested", async ({
       );
    await debuggerSession.detach();
    expect(await page.locator("dialog[open]").count()).toBe(0);
-   await app.evaluate(({ ipcMain }) => {
+   await app.evaluate(() => {
       globalThis.keyframeRequests = 0;
       globalThis.keysReady = false;
-      const original = ipcMain._invokeHandlers.get("source:keyframes");
-      ipcMain.removeHandler("source:keyframes");
-      ipcMain.handle("source:keyframes", async (...args) => {
-         globalThis.keyframeRequests++;
-         const keys = await original(...args);
-         globalThis.keysReady = true;
-         return keys;
-      });
+   });
+   await wrapIpcHandler(app, "source:keyframes", async (original, ...args) => {
+      globalThis.keyframeRequests++;
+      const keys = await original(...args);
+      globalThis.keysReady = true;
+      return keys;
    });
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
    await waitForVideo(page);

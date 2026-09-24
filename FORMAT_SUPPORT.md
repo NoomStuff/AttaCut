@@ -1,6 +1,6 @@
-# Format support in 0.5.2
+# Format support in 0.9.0
 
-Tested on Windows with Electron 44.2.0 and FFmpeg 8.0.1. The app uses FFmpeg to read the source and export clips. Chromium handles playback when it can; a temporary compatible preview handles the other tested formats.
+Tested on Windows with Electron 44.4.5 and the pinned FFmpeg builds: 8.1.2 on Windows and Linux, 9.0.2 on macOS. The app uses FFmpeg to read the source and export clips. Chromium handles playback when it can; a temporary compatible preview handles the other tested formats.
 
 ## Verified video combinations
 

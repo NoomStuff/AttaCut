@@ -1,11 +1,45 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProbedSource } from "./probe.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
 import type { RunOptions } from "./process.ts";
 import { probeSource } from "./probe.ts";
+import { isHdrTransfer, tonemapToBt709 } from "./formats.ts";
+import { removeTemporary } from "./publish.ts";
 const previewByteLimit = 1024 * 1024 * 1024;
+
+/**
+ * Cache id stays stable across opens of the same unchanged file, so reopening a recording
+ * reuses its preview instead of re-copying or re-encoding it. The key trusts the same
+ * signals as assertSourceUnchanged: file identity plus size and mtime. File names are hashed
+ * rather than embedded so odd characters never reach a URL or path.
+ */
+function previewId(source: ProbedSource, audioKey: string, transcode: boolean): string {
+   const file = createHash("sha1").update(source.path.toLowerCase()).digest("hex").slice(0, 12);
+   return `${file}-${source.size.toString(36)}-${Math.round(source.modified).toString(36)}-${audioKey}-${transcode ? "proxy" : "remux"}`;
+}
+
+/** Startup pruning: keep the newest previews across sessions and sweep interrupted runs. */
+export async function prunePreviews(folder: string, keep = 2): Promise<void> {
+   const entries = await readdir(folder).catch(() => [] as string[]);
+   for (const name of entries.filter((name) => name.startsWith("preparing-")))
+      await rm(join(folder, name), { recursive: true, force: true }).catch(() => undefined);
+   const previews = (
+      await Promise.all(
+         entries
+            .filter((name) => name.endsWith(".mp4"))
+            .map(async (name) => {
+               const path = join(folder, name);
+               const stats = await stat(path).catch(() => null);
+               return stats ? { path, modified: stats.mtimeMs } : null;
+            })
+      )
+   ).filter((item): item is { path: string; modified: number } => item !== null);
+   previews.sort((a, b) => b.modified - a.modified);
+   for (const stale of previews.slice(keep)) await rm(stale.path, { force: true }).catch(() => undefined);
+}
 
 export async function preparePreview(
    source: ProbedSource,
@@ -16,18 +50,16 @@ export async function preparePreview(
 ): Promise<{ id: string; path: string }> {
    await mkdir(folder, { recursive: true });
    const audioKey = audioIndices.length ? audioIndices.join("-") : "silent";
-   const id = `${source.id}-${audioKey}-${transcode ? "proxy" : "remux"}`;
+   const id = previewId(source, audioKey, transcode);
    const path = join(folder, `${id}.mp4`);
    if (existsSync(path)) return { id, path };
    const temporary = await mkdtemp(join(folder, "preparing-"));
    const partial = join(temporary, "preview.mp4");
    const video = source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!;
-   const hdr = ["smpte2084", "arib-std-b67"].includes(video.colorTransfer);
+   const hdr = isHdrTransfer(video.colorTransfer);
    const primaries = ["", "unknown", "unspecified"].includes(video.colorPrimaries) ? "bt2020" : video.colorPrimaries;
    const space = ["", "unknown", "unspecified"].includes(video.colorSpace) ? "bt2020nc" : video.colorSpace;
-   const toneMap = hdr
-      ? `zscale=pin=${primaries}:tin=${video.colorTransfer}:min=${space}:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=mobius:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p,`
-      : "";
+   const toneMap = hdr ? `${tonemapToBt709("yuv420p", `zscale=pin=${primaries}:tin=${video.colorTransfer}:min=${space}`)},` : "";
    const encode = [
       "-vf",
       `${toneMap}scale=w='trunc(min(1280,iw)/2)*2':h=-2`,
@@ -87,6 +119,6 @@ export async function preparePreview(
       await rename(partial, path);
       return { id, path };
    } finally {
-      await rm(temporary, { recursive: true, force: true });
+      await removeTemporary(temporary);
    }
 }

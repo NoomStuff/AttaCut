@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-   clipAt,
    ClipPriority,
    gapAt,
    mergePair,
@@ -18,10 +17,16 @@ import {
 import type { EditDocument } from "./model";
 import { undoLimit } from "../../../shared/types";
 const source: EditDocument = { clips: [{ id: "a", start: 0, end: 120, color: 0 }], selectedId: "a" };
+/** The runtime equivalent of the removed clipAt helper: playhead targeting through ClipPriority. */
+function priorityTarget(document: EditDocument, time: number) {
+   const priority = new ClipPriority();
+   priority.move(document, time);
+   return priority.resolve(document, time);
+}
 describe("source-time editing", () => {
    it("splits, trims a gap, and undoes the whole edit without moving other clips", () => {
       const trimmed = trimClip(trimClip(source, "a", "start", 10, 120), "a", "end", 100, 120);
-      const split = splitClip(trimmed, 40);
+      const split = splitClip(trimmed, "a", 40);
       const right = split.clips[1]!;
       const state = editorReducer({ ...emptyEditor, document: split }, { type: "commit", document: trimClip(split, right.id, "start", 55, 120) });
       expect(state.document.clips.map(({ start, end }) => [start, end])).toEqual([
@@ -31,23 +36,23 @@ describe("source-time editing", () => {
       expect(editorReducer(state, { type: "undo" }).document).toEqual(split);
    });
    it("clamps boundaries to neighbors but permits restoring into gaps", () => {
-      const split = splitClip(source, 40);
+      const split = splitClip(source, "a", 40);
       const trimmed = trimClip(split, split.selectedId!, "start", 55, 120);
       expect(trimClip(trimmed, "a", "end", 70, 120).clips[0]!.end).toBe(55);
       expect(trimClip(trimmed, split.selectedId!, "start", 10, 120).clips[1]!.start).toBe(40);
    });
    it("does not split at endpoints or outside the selected clip", () => {
-      expect(splitClip(source, 0)).toBe(source);
-      expect(splitClip(source, 120)).toBe(source);
-      expect(splitClip(source, 150)).toBe(source);
+      expect(splitClip(source, "a", 0)).toBe(source);
+      expect(splitClip(source, "a", 120)).toBe(source);
+      expect(splitClip(source, "a", 150)).toBe(source);
    });
    it("recovers an empty timeline and clears redo on a new edit", () => {
-      const deleted = deleteClip(source);
+      const deleted = deleteClip(source, "a");
       expect(deleted.clips).toEqual([]);
       expect(addGap(deleted, 50, 120).clips[0]).toMatchObject({ start: 0, end: 120 });
       const committed = editorReducer({ ...emptyEditor, document: source }, { type: "commit", document: deleted });
       const undone = editorReducer(committed, { type: "undo" });
-      expect(editorReducer(undone, { type: "commit", document: splitClip(source, 50) }).future).toEqual([]);
+      expect(editorReducer(undone, { type: "commit", document: splitClip(source, "a", 50) }).future).toEqual([]);
    });
    it("caps the undo history at undoLimit previous states", () => {
       let state = { ...emptyEditor, document: source };
@@ -96,8 +101,8 @@ it("keeps two frames at maximum zoom and scales the drag floor with the view", (
    expect(minClipLength(0.5, 1 / 30)).toBeCloseTo(2 / 30);
    expect(minClipLength(120, 1 / 30)).toBeCloseTo(1.8);
    const floor = minClipLength(0.5, 1 / 30);
-   expect(splitClip(source, 1 / 30, floor)).toBe(source);
-   expect(splitClip(source, 120 - 1 / 30, floor)).toBe(source);
+   expect(splitClip(source, "a", 1 / 30, floor)).toBe(source);
+   expect(splitClip(source, "a", 120 - 1 / 30, floor)).toBe(source);
    expect(trimClip(source, "a", "start", 120, 120, floor).clips[0]!.start).toBeCloseTo(120 - floor);
 });
 
@@ -121,7 +126,7 @@ describe("merge and playhead targeting", () => {
       expect(mergePair(document, 35, 1 / 30, 0.1)).toBe(-1);
    });
    it("merges a split in one undoable edit", () => {
-      const split = splitClip(source, 40);
+      const split = splitClip(source, "a", 40);
       expect(mergePair(split, 40, 1 / 30, 0.1)).toBe(0);
       expect(mergePair(split, 41, 1 / 30, 0.1)).toBe(-1);
       const merged = mergeClips(split, 0);
@@ -142,18 +147,17 @@ describe("merge and playhead targeting", () => {
       expect(mergeClips({ ...document, clips: document.clips.map((clip, index) => (index === 2 ? { ...clip, color: 2 } : clip)) }, 0).clips[0]!.color).toBe(0);
    });
    it("allows a one-frame gap but rejects a removed section", () => {
-      const split = splitClip(source, 40);
+      const split = splitClip(source, "a", 40);
       const near = trimClip(split, split.selectedId!, "start", 40 + 1 / 30, 120);
       expect(mergePair(near, 40, 1 / 30, 0.1)).toBe(0);
       const gap = trimClip(split, split.selectedId!, "start", 41, 120);
       expect(mergePair(gap, 40.5, 1 / 30, 1)).toBe(-1);
    });
-   it("targets the clip under playback, the right clip at a seam, and no clip in a gap", () => {
-      const split = splitClip(source, 40);
-      expect(clipAt(split, 10)?.id).toBe("a");
-      expect(clipAt(split, 40)?.id).toBe(split.selectedId);
-      expect(clipAt(split, 120)?.id).toBe(split.selectedId);
-      expect(clipAt(trimClip(split, split.selectedId!, "start", 50, 120), 45)).toBeUndefined();
+   it("targets the clip under playback, the remembered side at a seam, and no clip in a gap", () => {
+      const split = splitClip(source, "a", 40);
+      expect(priorityTarget(split, 10)?.id).toBe("a");
+      expect(priorityTarget(split, 120)?.id).toBe(split.selectedId);
+      expect(priorityTarget(trimClip(split, split.selectedId!, "start", 50, 120), 45)).toBeUndefined();
    });
 });
 
@@ -173,7 +177,7 @@ describe("clip interaction priority", () => {
    it("remembers the deleted side instead of targeting its neighbor", () => {
       const priority = new ClipPriority();
       priority.remember(a);
-      const deleted = deleteClip({ ...document, selectedId: a.id });
+      const deleted = deleteClip(document, a.id);
       expect(priority.resolve(deleted, 10)).toEqual(a);
       expect(priority.resolve(deleted, 10, false)).toEqual(b);
       expect(priority.resolve(document, 10)).toEqual(a);

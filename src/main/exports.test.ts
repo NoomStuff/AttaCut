@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { link, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { ExportService, sanitizeName } from "./exports";
+import { ExportService } from "./exports";
 import { publishOutput } from "./media/publish";
+import { sanitizeName } from "./media/filename";
 import type { ProbedSource } from "./media/probe";
 import type { Clip } from "../shared/types";
 

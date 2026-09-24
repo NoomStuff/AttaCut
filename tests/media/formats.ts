@@ -5,6 +5,7 @@ import { runMedia, ffmpegBase } from "../../src/main/media/process.ts";
 import { probeSource } from "../../src/main/media/probe.ts";
 import { analyzeCut, exportCut } from "../../src/main/media/cut.ts";
 import { outputExtension } from "../../src/main/media/formats.ts";
+import { frameHashes, ssimScore } from "./compare.ts";
 
 const folder = resolve("work/formats");
 await mkdir(folder, { recursive: true });
@@ -218,10 +219,7 @@ async function frames(path: string): Promise<Frame[]> {
          path,
       ])
    );
-   const hashes = text
-      .split("\n")
-      .filter((line) => line && !line.startsWith("#"))
-      .map((line) => line.split(",")[5]!.trim());
+   const hashes = frameHashes(text);
    assert.equal(hashes.length, data.frames.length);
    assert.ok(
       data.frames.every((frame) => Number.isFinite(Number(frame.best_effort_timestamp_time))),
@@ -306,25 +304,11 @@ for (const fixture of fixtures.filter((item) => !selected || selected.includes(i
          for (const boundaryIndex of [0, reference.length - 1]) {
             const originalIndex = original.indexOf(reference[boundaryIndex]!);
             const qualityPath = `work/formats/${fixture.name}-quality.txt`;
-            await runMedia("ffmpeg", [
-               "-v",
-               "error",
-               "-noautorotate",
-               "-i",
-               path,
-               "-noautorotate",
-               "-i",
-               destination,
-               "-filter_complex",
-               `[0:v]trim=start_frame=${originalIndex}:end_frame=${originalIndex + 1},setpts=PTS-STARTPTS[a];[1:v]trim=start_frame=${boundaryIndex}:end_frame=${boundaryIndex + 1},setpts=PTS-STARTPTS[b];[a][b]ssim=stats_file=${qualityPath}`,
-               "-frames:v",
-               "1",
-               "-an",
-               "-f",
-               "null",
-               "-",
-            ]);
-            const quality = Number(/All:([\d.]+)/.exec(await readFile(qualityPath, "utf8"))?.[1]);
+            const quality = await ssimScore({
+               inputs: ["-v", "error", "-noautorotate", "-i", path, "-noautorotate", "-i", destination],
+               filter: `[0:v]trim=start_frame=${originalIndex}:end_frame=${originalIndex + 1},setpts=PTS-STARTPTS[a];[1:v]trim=start_frame=${boundaryIndex}:end_frame=${boundaryIndex + 1},setpts=PTS-STARTPTS[b];[a][b]ssim=stats_file=${qualityPath}`,
+               statsPath: qualityPath,
+            });
             assert.ok(quality > 0.94, `boundary frame ${boundaryIndex} SSIM ${quality}`);
          }
          detail += `${actual.length} frames/${copies} copied; `;

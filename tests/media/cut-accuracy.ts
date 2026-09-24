@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { probeSource } from "../../src/main/media/probe.ts";
 import { analyzeCut, exportCut } from "../../src/main/media/cut.ts";
 import { runMedia } from "../../src/main/media/process.ts";
+import { frameHashes, ssimScore } from "./compare.ts";
 
 const path = resolve(process.env["ATTACUT_MEDIA_FILE"] || "work/fixture.mp4");
 const source = await probeSource(path);
@@ -12,12 +13,6 @@ const before = await stat(path);
 const prefix = process.env["ATTACUT_MEDIA_FILE"] ? "obs" : "fixture";
 await mkdir("work/media-test", { recursive: true });
 const video = source.streams.find((stream) => stream.type === "video")!;
-function hashes(text: string): string[] {
-   return text
-      .split("\n")
-      .filter((line) => line && !line.startsWith("#"))
-      .map((line) => line.split(",").at(-1)!.trim());
-}
 for (const [start, end] of [
    [1.3, 14.7],
    [2, 12],
@@ -88,8 +83,8 @@ for (const [start, end] of [
       ]),
       runMedia("ffmpeg", ["-v", "error", "-i", output, "-map", "0:v:0", "-an", "-f", "framemd5", "-"]),
    ]);
-   const originals = hashes(originalFrames);
-   const results = hashes(resultFrames);
+   const originals = frameHashes(originalFrames);
+   const results = frameHashes(resultFrames);
    assert.equal(results.length, originals.length);
    let identical = 0;
    for (const span of analysis.spans.filter((span) => !span.encode)) {
@@ -101,29 +96,22 @@ for (const [start, end] of [
       }
    }
    for (const offset of [0, (expected - 1) / video.frameRate]) {
-      const qualityPath = `work/media-test/${prefix}-quality.txt`;
-      await runMedia("ffmpeg", [
-         "-v",
-         "error",
-         "-ss",
-         String(Math.max(0, analysis.clip.start + offset - 0.001)),
-         "-i",
-         path,
-         "-ss",
-         String(Math.max(0, offset - 0.001)),
-         "-i",
-         output,
-         "-filter_complex",
-         `[0:v]setpts=PTS-STARTPTS[a];[1:v]setpts=PTS-STARTPTS[b];[a][b]ssim=stats_file=${qualityPath}`,
-         "-frames:v",
-         "1",
-         "-an",
-         "-f",
-         "null",
-         "-",
-      ]);
-      const quality = await readFile(qualityPath, "utf8");
-      const score = Number(/All:([\d.]+)/.exec(quality)?.[1]);
+      const score = await ssimScore({
+         inputs: [
+            "-v",
+            "error",
+            "-ss",
+            String(Math.max(0, analysis.clip.start + offset - 0.001)),
+            "-i",
+            path,
+            "-ss",
+            String(Math.max(0, offset - 0.001)),
+            "-i",
+            output,
+         ],
+         filter: "[0:v]setpts=PTS-STARTPTS[a];[1:v]setpts=PTS-STARTPTS[b];[a][b]ssim=stats_file=work/media-test/quality.txt",
+         statsPath: "work/media-test/quality.txt",
+      });
       assert.ok(score > 0.95, `Boundary frame at ${offset}s does not match its source frame: SSIM ${score}`);
    }
    await assert.rejects(() => exportCut(source, analysis, output), "A repeated export must refuse to overwrite an existing file");

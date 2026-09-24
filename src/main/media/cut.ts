@@ -1,5 +1,5 @@
-import { mkdtemp, writeFile, rm, copyFile, constants } from "node:fs/promises";
-import { publishOutput } from "./publish.ts";
+import { mkdtemp, writeFile, copyFile, constants } from "node:fs/promises";
+import { publishOutput, removeTemporary } from "./publish.ts";
 import { join, extname, dirname, resolve } from "node:path";
 import type { Clip, ExportPlanItem } from "../../shared/types.ts";
 import type { ProbedSource, PacketPoint } from "./probe.ts";
@@ -8,7 +8,8 @@ import { ffmpegBase, runMedia } from "./process.ts";
 import type { RunOptions } from "./process.ts";
 import { metadataInputs, textSubtitleCodecs } from "./metadata.ts";
 import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
-import { encoderArguments, isIntraCodec, segmentExtension, colorArguments } from "./formats.ts";
+import { encoderArguments, isIntraCodec, segmentExtension, colorArguments, isMp4Container, containerFlags } from "./formats.ts";
+import { ffconcatList, isLosslessAudio } from "./mux.ts";
 import { resolveFrameTime } from "../../shared/frames.ts";
 
 export interface Span {
@@ -155,6 +156,8 @@ export interface CutOptions extends RunOptions {
    audioTracks?: number[];
    overwrite?: boolean;
    replaceSource?: boolean;
+   /** Skip output verification; the combined path verifies the concatenated result itself. */
+   verify?: boolean;
 }
 export async function exportCut(source: ProbedSource, analysis: CutAnalysis, destination: string, options: CutOptions = {}): Promise<void> {
    if (analysis.method === "unsupported") throw new Error(analysis.message);
@@ -245,7 +248,10 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
          const listPath = join(temporary, "parts.ffconcat");
          await writeFile(
             listPath,
-            `ffconcat version 1.0\n${segmentPaths.map((path, index) => `file '${path.replaceAll("\\", "/").replaceAll("'", "'\\''")}'\nduration ${analysis.spans[index]!.end - analysis.spans[index]!.start}`).join("\n")}\n`
+            ffconcatList(
+               segmentPaths,
+               analysis.spans.map((span) => span.end - span.start)
+            )
          );
          const metadata = await metadataInputs(
             { ...source, streams: source.streams.filter((stream) => stream.type !== "audio" || selectedAudio.some((audio) => audio.index === stream.index)) },
@@ -284,11 +290,10 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             "-t",
             String(duration),
          ];
-         if ([".mp4", ".mov", ".m4v"].includes(extname(destination).toLowerCase()))
-            args.push("-movflags", "+faststart", ...(video.codec === "hevc" ? ["-tag:v", "hvc1"] : []));
+         if (isMp4Container(extname(destination))) args.push(...containerFlags(video));
          else args.push("-bsf:a", `noise=drop='lt(pts*tb,0)+gte(pts*tb,${duration})'`, "-avoid_negative_ts", "disabled");
          for (const [index, audio] of selectedAudio.entries()) {
-            if (["flac", "alac", "wavpack"].includes(audio.codec) || audio.codec.startsWith("pcm_")) {
+            if (isLosslessAudio(audio.codec)) {
                args.push(`-c:a:${index}`, audio.codec, `-filter:a:${index}`, `atrim=start=0:end=${duration}`, `-bsf:a:${index}`, "null");
             }
          }
@@ -300,21 +305,23 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
          });
       }
       options.signal?.throwIfAborted();
-      if (analysis.execution !== "file-copy" || !allAudio || extname(destination).toLowerCase() !== source.extension.toLowerCase())
-         await verifyOutputStructure(
-            source,
-            finalTemporary,
-            selectedAudio.map((stream) => stream.index),
-            duration,
-            options.signal,
-            clip.start
-         );
-      if (analysis.verifyTimes?.length) await verifyCopiedFrames(source, finalTemporary, clip.start, analysis.verifyTimes, options.signal);
-      if (analysis.encodedVerifyTimes?.length) await verifyEncodedFrames(source, finalTemporary, clip.start, analysis.encodedVerifyTimes, options.signal);
+      if (options.verify ?? true) {
+         if (analysis.execution !== "file-copy" || !allAudio || extname(destination).toLowerCase() !== source.extension.toLowerCase())
+            await verifyOutputStructure(
+               source,
+               finalTemporary,
+               selectedAudio.map((stream) => stream.index),
+               duration,
+               options.signal,
+               clip.start
+            );
+         if (analysis.verifyTimes?.length) await verifyCopiedFrames(source, finalTemporary, clip.start, analysis.verifyTimes, options.signal);
+         if (analysis.encodedVerifyTimes?.length) await verifyEncodedFrames(source, finalTemporary, clip.start, analysis.encodedVerifyTimes, options.signal);
+      }
       await assertSourceUnchanged(source);
       await publishOutput(finalTemporary, destination, options.overwrite, source.path, options.replaceSource);
       options.onProgress?.(1);
    } finally {
-      await rm(temporary, { recursive: true, force: true });
+      await removeTemporary(temporary);
    }
 }

@@ -1,4 +1,5 @@
 import { constants, copyFile, link, rename, rm, stat } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { resolve } from "node:path";
 
 /** Publish verified output; replacements require explicit approval. */
@@ -18,6 +19,20 @@ export async function publishOutput(temporary: string, destination: string, over
       await copyFile(temporary, destination, constants.COPYFILE_EXCL);
    }
    await rm(temporary, { force: true });
+}
+
+/** Remove a work directory. Windows keeps handles open briefly after a killed child, so retry. */
+export async function removeTemporary(path: string): Promise<void> {
+   for (let attempt = 0; ; attempt++) {
+      try {
+         await rm(path, { recursive: true, force: true });
+         return;
+      } catch (error) {
+         const code = (error as NodeJS.ErrnoException).code;
+         if (attempt >= 5 || !["EBUSY", "EPERM", "ENOTEMPTY", "EACCES"].includes(code ?? "")) throw error;
+         await delay(100 * (attempt + 1));
+      }
+   }
 }
 
 export async function protectSource(source: string, destination: string, replaceSource = false): Promise<boolean> {

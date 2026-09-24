@@ -8,6 +8,7 @@ import { packetsAround, probeSource, sourceKeyframes } from "../../src/main/medi
 import { resolveFrameTime } from "../../src/shared/frames.ts";
 import { exportFrame } from "../../src/main/media/frame.ts";
 import { runMedia } from "../../src/main/media/process.ts";
+import { ssimScore } from "./compare.ts";
 
 const source = await probeSource(resolve("work/fixture.mp4"));
 const directory = await mkdtemp(resolve("work/export-options-"));
@@ -74,23 +75,12 @@ for (const muteAudio of [false, true]) {
       [440, 326],
    ]) {
       const stats = `work/combined-quality-${muteAudio}.txt`;
-      await runMedia("ffmpeg", [
-         "-v",
-         "error",
-         "-i",
-         source.path,
-         "-i",
-         output,
-         "-filter_complex",
-         `[0:v]trim=start_frame=${originalIndex}:end_frame=${originalIndex! + 1},setpts=PTS-STARTPTS[a];[1:v]trim=start_frame=${outputIndex}:end_frame=${outputIndex! + 1},setpts=PTS-STARTPTS[b];[a][b]ssim=stats_file=${stats}`,
-         "-frames:v",
-         "1",
-         "-an",
-         "-f",
-         "null",
-         "-",
-      ]);
-      assert.ok(Number(/All:([\d.]+)/.exec(await readFile(stats, "utf8"))?.[1]) > 0.94, "Joined boundary frame matches its source");
+      const score = await ssimScore({
+         inputs: ["-v", "error", "-i", source.path, "-i", output],
+         filter: `[0:v]trim=start_frame=${originalIndex}:end_frame=${originalIndex! + 1},setpts=PTS-STARTPTS[a];[1:v]trim=start_frame=${outputIndex}:end_frame=${outputIndex! + 1},setpts=PTS-STARTPTS[b];[a][b]ssim=stats_file=${stats}`,
+         statsPath: stats,
+      });
+      assert.ok(score > 0.94, "Joined boundary frame matches its source");
    }
    if (!muteAudio)
       for (const [originalTime, outputTime] of [
@@ -161,28 +151,15 @@ for (const format of ["png", "jpg"] as const) {
    const duplicate = await exportFrame(source, { sourceId: source.id, time: 1.3, directory, name: "frame", format, quality: 95 });
    assert.notEqual(path, duplicate);
    await runMedia("ffmpeg", ["-v", "error", "-xerror", "-i", path, "-f", "null", "-"]);
-   const quality = join(directory, `quality-${format}.txt`)
-      .replaceAll("\\", "/")
-      .replace(/^([A-Za-z]):/, "$1\\:");
-   await runMedia("ffmpeg", [
-      "-v",
-      "error",
-      "-ss",
-      "1.3",
-      "-i",
-      source.path,
-      "-i",
-      path,
-      "-filter_complex",
-      `[0:v]setpts=PTS-STARTPTS[a];[1:v]setpts=PTS-STARTPTS[b];[a][b]ssim=stats_file='${quality}'`,
-      "-frames:v",
-      "1",
-      "-an",
-      "-f",
-      "null",
-      "-",
-   ]);
-   assert.ok(Number(/All:([\d.]+)/.exec(await readFile(join(directory, `quality-${format}.txt`), "utf8"))?.[1]) > 0.94);
+   const statsPath = join(directory, `quality-${format}.txt`);
+   // ffmpeg filtergraphs need Windows drive colons escaped in the stats file path.
+   const statsFilter = statsPath.replaceAll("\\", "/").replace(/^([A-Za-z]):/, "$1\\:");
+   const score = await ssimScore({
+      inputs: ["-v", "error", "-ss", "1.3", "-i", source.path, "-i", path],
+      filter: `[0:v]setpts=PTS-STARTPTS[a];[1:v]setpts=PTS-STARTPTS[b];[a][b]ssim=stats_file='${statsFilter}'`,
+      statsPath,
+   });
+   assert.ok(score > 0.94);
 }
 console.log("PASS full-file mute, keyframes, PNG/JPEG frame export and collisions");
 const multiTrackSource = await probeSource(resolve("work/details/multiple-tracks.mkv"));

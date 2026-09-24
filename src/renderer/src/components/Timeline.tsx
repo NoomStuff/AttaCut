@@ -8,17 +8,18 @@ import { trimClip } from "../editor/model";
 import type { PlaybackClock } from "../playback/clock";
 import { useClock } from "../playback/clock";
 import { clamp, formatTime } from "../../../shared/time";
-import { adjacentKeyframe, clipFloor, resolveBoundary } from "../editor/navigation";
+import { resolveBoundary, stepBoundary } from "../editor/navigation";
 import { IconButton } from "./Controls";
 import { pointerSmoothingMs, useSmoothValue } from "../lib/motion";
 import { faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
 
+const ZOOM_LEVELS = Array.from({ length: 10 }, (_, decade) => [100, 125, 150, 200, 250, 300, 400, 500, 600, 800].map((step) => step * 10 ** decade)).flat();
+
 function zoomLength(length: number, duration: number, direction: number): number {
    if (direction === 0) return duration;
    const percent = (100 * duration) / length;
-   const levels = Array.from({ length: 10 }, (_, decade) => [100, 125, 150, 200, 250, 300, 400, 500, 600, 800].map((step) => step * 10 ** decade)).flat();
-   const next = direction > 0 ? levels.find((level) => level > percent + 0.001) : levels.findLast((level) => level < percent - 0.001);
-   return clamp((100 * duration) / (next ?? (direction > 0 ? levels.at(-1)! : 100)), Math.min(0.5, duration), duration);
+   const next = direction > 0 ? ZOOM_LEVELS.find((level) => level > percent + 0.001) : ZOOM_LEVELS.findLast((level) => level < percent - 0.001);
+   return clamp((100 * duration) / (next ?? (direction > 0 ? ZOOM_LEVELS.at(-1)! : 100)), Math.min(0.5, duration), duration);
 }
 
 // Stationary ruler ladder: tick times come from this scale, so their meaning survives zooming
@@ -264,27 +265,201 @@ export function Timeline({
    const minorStep = minorStepFor(rulerStep);
    const minorSpacing = minorStep * pxPerSecond;
    const minorOpacity = clamp((minorSpacing - 50) / 50, 0, 1);
-   const rulerMarks = (() => {
-      if (pxPerSecond <= 0) return { major: [], minor: [] as number[] };
-      const first = Math.ceil((drawn.start - 0.0001) / rulerStep) * rulerStep;
-      const major: number[] = [];
-      for (let point = first; point <= drawn.start + drawn.length; point += rulerStep) major.push(+point.toFixed(6));
-      const minor: number[] = [];
-      if (minorOpacity > 0) {
-         const minorFirst = Math.ceil((drawn.start - 0.0001) / minorStep) * minorStep;
-         for (let point = minorFirst; point <= drawn.start + drawn.length; point += minorStep) {
-            if (Math.abs(point / rulerStep - Math.round(point / rulerStep)) > 0.001) minor.push(+point.toFixed(6));
-         }
-      }
-      return { major, minor };
-   })();
+   // Labels near the centered time chip would be occluded by it, so they yield to the chip.
+   const chipHalf = chipWidth / 2 + 10;
+   const underChip = (point: number) => Math.abs(point - (drawn.start + drawn.length / 2)) * pxPerSecond < chipHalf;
    const tickAlign = (point: number) => {
       const percent = ((point - drawn.start) / drawn.length) * 100;
       return percent < 2 ? " edge-start" : percent > 98 ? " edge-end" : "";
    };
-   // Labels near the centered time chip would be occluded by it, so they yield to the chip.
-   const chipHalf = chipWidth / 2 + 10;
-   const underChip = (point: number) => Math.abs(point - (drawn.start + drawn.length / 2)) * pxPerSecond < chipHalf;
+   // The ruler and clip track are memoized subtrees: during playback only the playhead and
+   // time chip re-render each frame, and a drag re-renders the track through the drawEdge dep.
+   const ruler = useMemo(
+      () => {
+         const rulerMarks = (() => {
+            if (pxPerSecond <= 0) return { major: [], minor: [] as number[] };
+            const first = Math.ceil((drawn.start - 0.0001) / rulerStep) * rulerStep;
+            const major: number[] = [];
+            for (let point = first; point <= drawn.start + drawn.length; point += rulerStep) major.push(+point.toFixed(6));
+            const minor: number[] = [];
+            if (minorOpacity > 0) {
+               const minorFirst = Math.ceil((drawn.start - 0.0001) / minorStep) * minorStep;
+               for (let point = minorFirst; point <= drawn.start + drawn.length; point += minorStep) {
+                  if (Math.abs(point / rulerStep - Math.round(point / rulerStep)) > 0.001) minor.push(+point.toFixed(6));
+               }
+            }
+            return { major, minor };
+         })();
+         return (
+            <div className="timeline-ruler" aria-hidden="true">
+               {rulerMarks.major.map((point) => (
+                  <span key={point} className={`ruler-tick major${tickAlign(point)}`} style={{ left: x(point) }}>
+                     {!underChip(point) && <em>{formatTime(point, rulerStep < 1 ? 2 : 0)}</em>}
+                  </span>
+               ))}
+               {rulerMarks.minor.map((point) => (
+                  <span key={point} className={`ruler-tick minor${tickAlign(point)}`} style={{ left: x(point), opacity: minorOpacity }}>
+                     {!underChip(point) && <em>{formatTime(point, minorStep < 1 ? 2 : 0)}</em>}
+                  </span>
+               ))}
+            </div>
+         );
+      },
+      // eslint: the x/tickAlign/underChip helpers derive from the listed values
+      [pxPerSecond, rulerStep, minorStep, minorOpacity, drawn.start, drawn.length, chipHalf]
+   );
+   const track = useMemo(
+      () => (
+         <div className="timeline-track">
+            <div className="excluded-track" />
+            {presence.seams.map((seam) => (
+               <span
+                  key={seam.time}
+                  className="merging-seam"
+                  aria-hidden="true"
+                  style={{ left: x(seam.time), "--clip-color": clipColor(seam.color) } as CSSProperties}
+                  onAnimationEnd={() => setPresence((current) => ({ ...current, seams: current.seams.filter((item) => item !== seam) }))}
+               />
+            ))}
+            {presence.exiting.map(({ clip, index }) => (
+               <div
+                  key={clip.id}
+                  className="clip-range selected leaving"
+                  aria-hidden="true"
+                  style={
+                     {
+                        left: x(clip.start),
+                        width: `${((clip.end - clip.start) / drawn.length) * 100}%`,
+                        "--clip-color": clipColor(clip.color),
+                     } as CSSProperties
+                  }
+                  onAnimationEnd={(event) => {
+                     if (event.animationName === "clip-leave")
+                        setPresence((current) => ({ ...current, exiting: current.exiting.filter((item) => item.clip.id !== clip.id) }));
+                  }}
+               >
+                  <span className="clip-number">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="trim-handle start" />
+                  <span className="trim-handle end" />
+               </div>
+            ))}
+            {visible.clips.map((clip, index) => {
+               // While one of its handles is dragged, render the chasing boundary so the
+               // clip glides with the pointer; everything else stays exact.
+               const draggingHere = dragging?.id === clip.id;
+               const start = draggingHere && dragging!.side === "start" ? drawEdge : clip.start;
+               const end = draggingHere && dragging!.side === "end" ? drawEdge : clip.end;
+               return (
+                  <div
+                     key={clip.id}
+                     className={`clip-range ${clip.id === visible.selectedId ? "selected" : ""}${presence.flashes.has(clip.id) ? " flash" : presence.entering.includes(clip.id) ? " entering" : ""}`}
+                     onAnimationEnd={(event) => {
+                        if (event.target !== event.currentTarget) return;
+                        setPresence((current) => {
+                           const flashes = new Map(current.flashes);
+                           flashes.delete(clip.id);
+                           return { ...current, flashes, entering: current.entering.filter((id) => id !== clip.id) };
+                        });
+                     }}
+                     onPointerMove={(event) => {
+                        if (drag.current) return;
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        const side = event.clientX < rect.left + rect.width / 2 ? "start" : "end";
+                        if (hoveredEdge?.id !== clip.id || hoveredEdge.side !== side) setHoveredEdge({ id: clip.id, side });
+                     }}
+                     onPointerLeave={() => setHoveredEdge(null)}
+                     style={
+                        {
+                           left: x(start),
+                           width: `${((end - start) / drawn.length) * 100}%`,
+                           "--clip-color": clipColor(clip.color),
+                        } as CSSProperties
+                     }
+                  >
+                     <span className="clip-number" aria-hidden="true">
+                        {String(index + 1).padStart(2, "0")}
+                     </span>
+                     {snapping &&
+                        visibleKeys
+                           .filter((point) => point > clip.start && point < clip.end)
+                           .map((point) => (
+                              <i key={point} className="keyframe-tick" style={{ left: `${((point - clip.start) / (clip.end - clip.start)) * 100}%` }} />
+                           ))}
+                     {(["start", "end"] as const).map((side) => (
+                        <button
+                           key={side}
+                           className={`trim-handle ${side}${draggingHere && dragging?.side === side ? " dragging" : ""}${hoveredEdge?.id === clip.id && hoveredEdge.side === side ? " nearby" : ""}${presence.flashes.get(clip.id)?.includes(side) ? " split-edge" : ""}`}
+                           role="slider"
+                           data-adjacent={
+                              side === "start"
+                                 ? clip.start - (visible.clips[index - 1]?.end ?? -Infinity) <= frameStep
+                                 : (visible.clips[index + 1]?.start ?? Infinity) - clip.end <= frameStep
+                           }
+                           aria-label={`Clip ${index + 1} ${side}`}
+                           aria-valuemin={0}
+                           aria-valuemax={duration}
+                           aria-valuenow={clip[side]}
+                           aria-valuetext={formatTime(clip[side])}
+                           onPointerDown={(event) => startDrag(event, clip.id, side)}
+                           onClick={(event) => {
+                              if (event.detail === 0) {
+                                 onSelect(clip.id);
+                                 onSeek(clip[side], true);
+                              }
+                           }}
+                           onPointerMove={moveDrag}
+                           onPointerUp={endDrag}
+                           onPointerCancel={cancel}
+                           onLostPointerCapture={() => {
+                              if (drag.current) cancel();
+                           }}
+                           data-press-ignore
+                           onKeyDown={(event) => {
+                              if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && !event.altKey && !event.ctrlKey && !event.metaKey) {
+                                 event.preventDefault();
+                                 event.stopPropagation();
+                                 const direction = event.key === "ArrowLeft" ? -1 : 1;
+                                 const target = stepBoundary(document, clip.id, side, direction, {
+                                    duration,
+                                    viewLength: drawn.length,
+                                    frameStep,
+                                    snapping,
+                                    keyframes,
+                                    step: event.shiftKey ? 1 : frameStep,
+                                 });
+                                 const next = trimClip(document, clip.id, side, target, duration);
+                                 onCommit(next);
+                                 onSeek(next.clips.find((item) => item.id === clip.id)![side], true);
+                              }
+                           }}
+                        >
+                           <span />
+                        </button>
+                     ))}
+                  </div>
+               );
+            })}
+         </div>
+      ),
+      // eslint: the handlers inside derive from these values; while dragging, the drawEdge
+      // entry re-renders the track each frame so the dragged clip glides with the pointer
+      [
+         visible,
+         presence,
+         hoveredEdge,
+         snapping,
+         visibleKeys,
+         drawn.start,
+         drawn.length,
+         frameStep,
+         duration,
+         document,
+         onSelect,
+         onCommit,
+         onSeek,
+         dragging ? drawEdge : 0,
+      ]
+   );
    return (
       <section className="timeline-section" aria-label="Clip timeline">
          <div
@@ -346,156 +521,8 @@ export function Timeline({
                if (event.button === 1) event.preventDefault();
             }}
          >
-            <div className="timeline-ruler" aria-hidden="true">
-               {rulerMarks.major.map((point) => (
-                  <span key={point} className={`ruler-tick major${tickAlign(point)}`} style={{ left: x(point) }}>
-                     {!underChip(point) && <em>{formatTime(point, rulerStep < 1 ? 2 : 0)}</em>}
-                  </span>
-               ))}
-               {rulerMarks.minor.map((point) => (
-                  <span key={point} className={`ruler-tick major${tickAlign(point)}`} style={{ left: x(point), opacity: minorOpacity }}>
-                     {!underChip(point) && <em>{formatTime(point, minorStep < 1 ? 2 : 0)}</em>}
-                  </span>
-               ))}
-            </div>
-            <div className="timeline-track">
-               <div className="excluded-track" />
-               {presence.seams.map((seam) => (
-                  <span
-                     key={seam.time}
-                     className="merging-seam"
-                     aria-hidden="true"
-                     style={{ left: x(seam.time), "--clip-color": clipColor(seam.color) } as CSSProperties}
-                     onAnimationEnd={() => setPresence((current) => ({ ...current, seams: current.seams.filter((item) => item !== seam) }))}
-                  />
-               ))}
-               {presence.exiting.map(({ clip, index }) => (
-                  <div
-                     key={clip.id}
-                     className="clip-range selected leaving"
-                     aria-hidden="true"
-                     style={
-                        {
-                           left: x(clip.start),
-                           width: `${((clip.end - clip.start) / drawn.length) * 100}%`,
-                           "--clip-color": clipColor(clip.color),
-                        } as CSSProperties
-                     }
-                     onAnimationEnd={(event) => {
-                        if (event.animationName === "clip-leave")
-                           setPresence((current) => ({ ...current, exiting: current.exiting.filter((item) => item.clip.id !== clip.id) }));
-                     }}
-                  >
-                     <span className="clip-number">{String(index + 1).padStart(2, "0")}</span>
-                     <span className="trim-handle start" />
-                     <span className="trim-handle end" />
-                  </div>
-               ))}
-               {visible.clips.map((clip, index) => {
-                  // While one of its handles is dragged, render the chasing boundary so the
-                  // clip glides with the pointer; everything else stays exact.
-                  const draggingHere = dragging?.id === clip.id;
-                  const start = draggingHere && dragging!.side === "start" ? drawEdge : clip.start;
-                  const end = draggingHere && dragging!.side === "end" ? drawEdge : clip.end;
-                  return (
-                     <div
-                        key={clip.id}
-                        className={`clip-range ${clip.id === visible.selectedId ? "selected" : ""}${presence.flashes.has(clip.id) ? " flash" : presence.entering.includes(clip.id) ? " entering" : ""}`}
-                        onAnimationEnd={(event) => {
-                           if (event.target !== event.currentTarget) return;
-                           setPresence((current) => {
-                              const flashes = new Map(current.flashes);
-                              flashes.delete(clip.id);
-                              return { ...current, flashes, entering: current.entering.filter((id) => id !== clip.id) };
-                           });
-                        }}
-                        onPointerMove={(event) => {
-                           if (drag.current) return;
-                           const rect = event.currentTarget.getBoundingClientRect();
-                           const side = event.clientX < rect.left + rect.width / 2 ? "start" : "end";
-                           if (hoveredEdge?.id !== clip.id || hoveredEdge.side !== side) setHoveredEdge({ id: clip.id, side });
-                        }}
-                        onPointerLeave={() => setHoveredEdge(null)}
-                        style={
-                           {
-                              left: x(start),
-                              width: `${((end - start) / drawn.length) * 100}%`,
-                              "--clip-color": clipColor(clip.color),
-                           } as CSSProperties
-                        }
-                     >
-                        <span className="clip-number" aria-hidden="true">
-                           {String(index + 1).padStart(2, "0")}
-                        </span>
-                        {snapping &&
-                           visibleKeys
-                              .filter((point) => point > clip.start && point < clip.end)
-                              .map((point) => (
-                                 <i key={point} className="keyframe-tick" style={{ left: `${((point - clip.start) / (clip.end - clip.start)) * 100}%` }} />
-                              ))}
-                        {(["start", "end"] as const).map((side) => (
-                           <button
-                              key={side}
-                              className={`trim-handle ${side}${draggingHere && dragging?.side === side ? " dragging" : ""}${hoveredEdge?.id === clip.id && hoveredEdge.side === side ? " nearby" : ""}${presence.flashes.get(clip.id)?.includes(side) ? " split-edge" : ""}`}
-                              role="slider"
-                              data-adjacent={
-                                 side === "start"
-                                    ? clip.start - (visible.clips[index - 1]?.end ?? -Infinity) <= frameStep
-                                    : (visible.clips[index + 1]?.start ?? Infinity) - clip.end <= frameStep
-                              }
-                              aria-label={`Clip ${index + 1} ${side}`}
-                              aria-valuemin={0}
-                              aria-valuemax={duration}
-                              aria-valuenow={clip[side]}
-                              aria-valuetext={formatTime(clip[side])}
-                              onPointerDown={(event) => startDrag(event, clip.id, side)}
-                              onClick={(event) => {
-                                 if (event.detail === 0) {
-                                    onSelect(clip.id);
-                                    onSeek(clip[side], true);
-                                 }
-                              }}
-                              onPointerMove={moveDrag}
-                              onPointerUp={endDrag}
-                              onPointerCancel={cancel}
-                              onLostPointerCapture={() => {
-                                 if (drag.current) cancel();
-                              }}
-                              data-press-ignore
-                              onKeyDown={(event) => {
-                                 if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && !event.altKey && !event.ctrlKey && !event.metaKey) {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    const direction = event.key === "ArrowLeft" ? -1 : 1;
-                                    const floor = clipFloor(document, clip.id, drawn.length, frameStep);
-                                    const target = snapping
-                                       ? adjacentKeyframe(
-                                            clip[side],
-                                            direction,
-                                            keyframes,
-                                            duration,
-                                            side === "start" ? { high: clip.end - floor } : { low: clip.start + floor }
-                                         )
-                                       : clip[side] + direction * (event.shiftKey ? 1 : frameStep);
-                                    const next = trimClip(
-                                       document,
-                                       clip.id,
-                                       side,
-                                       resolveBoundary(document, clip.id, side, target, { duration, viewLength: drawn.length, frameStep, snapping: false }),
-                                       duration
-                                    );
-                                    onCommit(next);
-                                    onSeek(next.clips.find((item) => item.id === clip.id)![side], true);
-                                 }
-                              }}
-                           >
-                              <span />
-                           </button>
-                        ))}
-                     </div>
-                  );
-               })}
-            </div>
+            {ruler}
+            {track}
             {drawTime >= drawn.start && drawTime <= drawn.start + drawn.length && (
                <div className="playhead" style={{ left: x(drawTime) }}>
                   <span />

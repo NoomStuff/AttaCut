@@ -10,6 +10,9 @@ export class PlaybackController {
    private state: PlaybackState = { phase: "empty", sourceId: null, url: "", transcode: false, intent: "paused", showWait: false };
    private sequence = 0;
    private listeners = new Set<() => void>();
+   private holdHandler: (() => void) | null = null;
+   /** Kept-range end the current preview play should stop at; null plays freely. */
+   previewEnd: number | null = null;
    get = (): PlaybackState => this.state;
    subscribe = (listener: () => void): (() => void) => {
       this.listeners.add(listener);
@@ -21,16 +24,26 @@ export class PlaybackController {
       this.state = state;
       for (const listener of this.listeners) listener();
    }
+   /** Player registers how to freeze the last decoded frame across a preview swap. */
+   setHoldFrame(handler: (() => void) | null): void {
+      this.holdHandler = handler;
+   }
+   holdPreviewFrame(): void {
+      this.holdHandler?.();
+   }
    invalidate(): void {
       this.sequence++;
+      this.previewEnd = null;
       this.pause();
    }
    suspend(): void {
       this.sequence++;
+      this.previewEnd = null;
       if (this.state.sourceId) this.set({ ...this.state, phase: "source", url: "", intent: "paused", showWait: false });
    }
    source(source: MediaSource): void {
       this.sequence++;
+      this.previewEnd = null;
       this.set({ phase: "source", sourceId: source.id, url: source.url, transcode: false, intent: "paused", showWait: false });
    }
    request(showWait: boolean): void {

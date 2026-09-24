@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { MediaSource } from "../../shared/types.ts";
 import { runMedia } from "./process.ts";
-import { outputExtension } from "./formats.ts";
+import { outputExtension, isHdrTransfer } from "./formats.ts";
 import { indexedKeyframes } from "./mp4-index.ts";
 
 const numberLike = z.union([z.string(), z.number()]).optional();
@@ -92,7 +92,7 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
    const video = streams.find((stream) => stream.type === "video" && !stream.attachedPicture);
    if (
       video &&
-      (["smpte2084", "arib-std-b67"].includes(video.colorTransfer) ||
+      (isHdrTransfer(video.colorTransfer) ||
          ["bt2020", "bt2020nc", "bt2020c"].includes(video.colorPrimaries || video.colorSpace) ||
          /(?:10|12|16)(?:le|be)$/.test(video.pixelFormat))
    ) {

@@ -3,6 +3,8 @@ import { join, extname } from "node:path";
 import type { Clip } from "../../shared/types.ts";
 import type { ProbedSource } from "./probe.ts";
 import { runMedia } from "./process.ts";
+import { dispositionFlags, serializeChapters } from "./mux.ts";
+import { isMp4Container } from "./formats.ts";
 
 export const textSubtitleCodecs = new Set(["subrip", "ass", "ssa", "mov_text", "webvtt", "text"]);
 function assTime(value: string): number {
@@ -39,7 +41,7 @@ export async function metadataInputs(
    const outputs: string[] = [];
    let nextInput = 2;
    let subtitleIndex = 0;
-   const mp4 = [".mp4", ".m4v", ".mov"].includes(extname(destination).toLowerCase());
+   const mp4 = isMp4Container(extname(destination));
    for (const stream of source.streams.filter((item) => item.type === "subtitle")) {
       const ass = await runMedia("ffmpeg", ["-v", "error", "-i", source.path, "-map", `0:${stream.index}`, "-c:s", "ass", "-f", "ass", "-"], {
          signal,
@@ -60,35 +62,24 @@ export async function metadataInputs(
          `-metadata:s:s:${subtitleIndex}`,
          `title=${stream.title}`,
          `-disposition:s:${subtitleIndex}`,
-         Object.entries(stream.disposition)
-            .filter(([, value]) => value === 1)
-            .map(([name]) => name)
-            .join("+") || "0"
+         dispositionFlags(stream.disposition)
       );
       subtitleIndex++;
    }
    for (const [index, stream] of source.streams.filter((item) => item.type === "attachment").entries())
       outputs.push("-map", `1:${stream.index}`, `-map_metadata:s:t:${index}`, `1:s:${stream.index}`);
    for (const [index, stream] of source.streams.filter((item) => item.type === "audio").entries())
-      outputs.push(
-         `-map_metadata:s:a:${index}`,
-         `1:s:${stream.index}`,
-         `-disposition:a:${index}`,
-         Object.entries(stream.disposition)
-            .filter(([, value]) => value === 1)
-            .map(([name]) => name)
-            .join("+") || "0"
-      );
-   const escape = (value: string) => value.replace(/[\\=;#\n\r]/g, (character) => `\\${character}`);
+      outputs.push(`-map_metadata:s:a:${index}`, `1:s:${stream.index}`, `-disposition:a:${index}`, dispositionFlags(stream.disposition));
    const chapters = source.chapters
       .filter((chapter) => chapter.end > clip.start && chapter.start < clip.end)
-      .map(
-         (chapter) =>
-            `[CHAPTER]\nTIMEBASE=1/1000\nSTART=${Math.round((Math.max(chapter.start, clip.start) - clip.start) * 1000)}\nEND=${Math.round((Math.min(chapter.end, clip.end) - clip.start) * 1000)}\ntitle=${escape(chapter.title)}\n`
-      );
+      .map((chapter) => ({
+         start: Math.max(chapter.start, clip.start) - clip.start,
+         end: Math.min(chapter.end, clip.end) - clip.start,
+         title: chapter.title,
+      }));
    if (chapters.length) {
       const path = join(directory, "chapters.ffmetadata");
-      await writeFile(path, `;FFMETADATA1\n${chapters.join("")}`);
+      await writeFile(path, serializeChapters(chapters));
       inputs.push("-f", "ffmetadata", "-i", path);
       outputs.push("-map_chapters", String(nextInput));
    } else outputs.push("-map_chapters", "-1");

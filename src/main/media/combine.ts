@@ -1,11 +1,13 @@
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
-import { publishOutput } from "./publish.ts";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { publishOutput, removeTemporary } from "./publish.ts";
 import { dirname, extname, join } from "node:path";
 import type { ProbedSource } from "./probe.ts";
 import { assertSourceUnchanged } from "./probe.ts";
 import { exportCut } from "./cut.ts";
 import type { CutAnalysis, CutOptions } from "./cut.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
+import { isMp4Container, containerFlags } from "./formats.ts";
+import { ffconcatList, isLosslessAudio, dispositionFlags, serializeChapters } from "./mux.ts";
 import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
 
 export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], destination: string, options: CutOptions): Promise<void> {
@@ -19,8 +21,11 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
       for (const [index, cut] of cuts.entries()) {
          const rawPath = join(temporary, `raw-${index}${extname(destination)}`);
          const path = join(temporary, `clip-${index}${extname(destination)}`);
+         // Verification of each cut happens on the concatenated output below, so the
+         // intermediate files skip it instead of decoding every clip twice.
          await exportCut(source, cut, rawPath, {
             ...options,
+            verify: false,
             onProgress: (fraction) => options.onProgress?.((index + fraction) / (cuts.length + 1)),
          });
          // Remove audio hidden by edit lists before concatenation; otherwise its
@@ -45,37 +50,30 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
                "disabled",
                path,
             ],
-            options
+            { ...options, duration: cut.clip.end - cut.clip.start }
          );
          paths.push(path);
       }
       const list = join(temporary, "clips.ffconcat");
       await writeFile(
          list,
-         `ffconcat version 1.0\n${paths.map((path, index) => `file '${path.replaceAll("\\", "/").replaceAll("'", "'\\''")}'\nduration ${cuts[index]!.clip.end - cuts[index]!.clip.start}`).join("\n")}\n`
+         ffconcatList(
+            paths,
+            cuts.map((cut) => cut.clip.end - cut.clip.start)
+         )
       );
       const output = join(temporary, `combined${extname(destination)}`);
       // Separately trimmed lossless streams can carry encoder settings that differ between
       // clips. Concatenating those packets under the first clip's codec header corrupts the
       // result on stricter decoders. Re-encode these tracks losslessly at the final join so the
       // output has one consistent stream configuration.
-      const joinedAudioCodecs = selectedAudio.flatMap((audio, index) =>
-         ["flac", "alac", "wavpack"].includes(audio.codec) || audio.codec.startsWith("pcm_") ? [`-c:a:${index}`, audio.codec] : []
-      );
+      const joinedAudioCodecs = selectedAudio.flatMap((audio, index) => (isLosslessAudio(audio.codec) ? [`-c:a:${index}`, audio.codec] : []));
       const trackMetadata = (["audio", "subtitle"] as const).flatMap((type) =>
          source.streams
             .filter((stream) => stream.type === type && (type !== "audio" || selectedAudio.some((audio) => audio.index === stream.index)))
             .flatMap((stream, index) => {
                const specifier = `${type === "audio" ? "a" : "s"}:${index}`;
-               return [
-                  `-map_metadata:s:${specifier}`,
-                  `1:s:${stream.index}`,
-                  `-disposition:${specifier}`,
-                  Object.entries(stream.disposition)
-                     .filter(([, value]) => value === 1)
-                     .map(([name]) => name)
-                     .join("+") || "0",
-               ];
+               return [`-map_metadata:s:${specifier}`, `1:s:${stream.index}`, `-disposition:${specifier}`, dispositionFlags(stream.disposition)];
             })
       );
       let chapterOffset = 0;
@@ -91,11 +89,8 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
          return result;
       });
       const chapterPath = join(temporary, "chapters.ffmetadata");
-      if (chapters.length)
-         await writeFile(
-            chapterPath,
-            `;FFMETADATA1\n${chapters.map((chapter) => `[CHAPTER]\nTIMEBASE=1/1000\nSTART=${Math.round(chapter.start * 1000)}\nEND=${Math.round(chapter.end * 1000)}\ntitle=${chapter.title.replace(/[\\=;#\n\r]/g, (char) => `\\${char}`)}\n`).join("")}`
-         );
+      if (chapters.length) await writeFile(chapterPath, serializeChapters(chapters));
+      const video = source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!;
       await runMedia(
          "ffmpeg",
          [
@@ -119,18 +114,18 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
             "1",
             ...trackMetadata,
             "-map_metadata:s:v:0",
-            `1:s:${source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!.index}`,
+            `1:s:${video.index}`,
             "-c",
             "copy",
             ...joinedAudioCodecs,
             "-map_chapters",
             chapters.length ? "2" : "-1",
-            ...([".mp4", ".mov", ".m4v"].includes(extname(destination)) ? ["-movflags", "+faststart"] : []),
+            ...(isMp4Container(extname(destination)) ? containerFlags(video) : []),
             "-t",
             String(duration),
             output,
          ],
-         options
+         { ...options, duration }
       );
       let offset = 0;
       for (const cut of cuts) {
@@ -150,6 +145,6 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
       await assertSourceUnchanged(source);
       await publishOutput(output, destination, options.overwrite, source.path, options.replaceSource);
    } finally {
-      await rm(temporary, { recursive: true, force: true });
+      await removeTemporary(temporary);
    }
 }

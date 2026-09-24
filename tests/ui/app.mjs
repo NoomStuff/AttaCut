@@ -5,6 +5,23 @@ import { mkdir } from "node:fs/promises";
 export const appEnv = { ...process.env };
 delete appEnv.ELECTRON_RUN_AS_NODE;
 
+// Replace an ipcMain invoke handler with a wrapper around the original implementation,
+// so specs can hold, count, or reshape main-process replies without reaching into
+// Electron's private handler map from every test. Wrappers must be closure-free; they
+// travel as source text because Electron cannot serialize function arguments.
+export async function wrapIpcHandler(app, channel, wrapper) {
+   await app.evaluate(
+      ({ ipcMain }, { channel, source }) => {
+         const original = ipcMain._invokeHandlers.get(channel);
+         if (!original) throw new Error(`No handler registered for ${channel}`);
+         ipcMain.removeHandler(channel);
+         const restored = new Function(`return (${source})`)();
+         ipcMain.handle(channel, (event, request) => restored(original, event, request));
+      },
+      { channel, source: wrapper.toString() }
+   );
+}
+
 export async function waitForVideo(page) {
    try {
       // Cold CI runners may need to initialize software decoding and prepare audio.

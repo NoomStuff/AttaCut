@@ -14,7 +14,6 @@ export interface EditorState {
 }
 export type EditAction =
    | { type: "load"; document: EditDocument; past?: EditDocument[]; future?: EditDocument[] }
-   | { type: "select"; id: string }
    | { type: "commit"; document: EditDocument }
    | { type: "undo" }
    | { type: "redo" };
@@ -27,8 +26,6 @@ export function editorReducer(state: EditorState, action: EditAction): EditorSta
             past: action.past ?? [],
             future: action.future ?? [],
          };
-      case "select":
-         return state.document.clips.some((clip) => clip.id === action.id) ? { ...state, document: { ...state.document, selectedId: action.id } } : state;
       case "commit": {
          if (JSON.stringify(state.document.clips) === JSON.stringify(action.document.clips)) return state;
          return {
@@ -74,18 +71,23 @@ export function insideClip(clips: Clip[], time: number, duration: number): boole
       (clip) => time >= clip.start - timeEpsilon && (time <= clip.end + timeEpsilon || (clip.end >= duration - timeEpsilon && time <= duration + timeEpsilon))
    );
 }
-export function canSplit(document: EditDocument, time: number, step = timeEpsilon): boolean {
-   const clip = selectedClip(document);
+/**
+ * Structural edits name their target clip explicitly. The document's selectedId only records
+ * the last edit for persistence; which clip a command operates on is resolved by the caller
+ * from the playhead, never re-derived inside these functions.
+ */
+export function canSplit(document: EditDocument, id: string, time: number, step = timeEpsilon): boolean {
+   const clip = document.clips.find((item) => item.id === id);
    return !!clip && time >= clip.start + step && time <= clip.end - step;
 }
-export function splitClip(document: EditDocument, time: number, step = timeEpsilon): EditDocument {
-   if (!canSplit(document, time, step)) return document;
-   const index = document.clips.findIndex((clip) => clip.id === document.selectedId);
+export function splitClip(document: EditDocument, id: string, time: number, step = timeEpsilon): EditDocument {
+   if (!canSplit(document, id, time, step)) return document;
+   const index = document.clips.findIndex((clip) => clip.id === id);
    const nextId = crypto.randomUUID();
    const color = nextClipColor(document.clips, document.clips[index], document.clips[index + 1]);
    return {
       clips: document.clips.flatMap((clip) =>
-         clip.id === document.selectedId
+         clip.id === id
             ? [
                  { ...clip, end: time },
                  { ...clip, id: nextId, start: time, color },
@@ -104,10 +106,10 @@ export function trimClip(document: EditDocument, id: string, side: "start" | "en
    const next = { ...clip, [side]: clamp(time, low, high) };
    return { clips: document.clips.map((item) => (item.id === id ? next : item)), selectedId: id };
 }
-export function deleteClip(document: EditDocument): EditDocument {
-   const index = document.clips.findIndex((clip) => clip.id === document.selectedId);
+export function deleteClip(document: EditDocument, id: string): EditDocument {
+   const index = document.clips.findIndex((clip) => clip.id === id);
    if (index < 0) return document;
-   const clips = document.clips.filter((clip) => clip.id !== document.selectedId);
+   const clips = document.clips.filter((clip) => clip.id !== id);
    return { clips, selectedId: clips[index]?.id ?? clips[index - 1]?.id ?? null };
 }
 export function gapAt(document: EditDocument, time: number, duration: number): { start: number; end: number } | null {
@@ -160,9 +162,6 @@ export function mergeClips(document: EditDocument, index: number): EditDocument 
       clips: document.clips.flatMap((clip, i) => (i === index ? [{ ...left, end: right.end, color }] : i === index + 1 ? [] : [clip])),
       selectedId: left.id,
    };
-}
-export function clipAt(document: EditDocument, time: number) {
-   return document.clips.find((clip) => time >= clip.start && time < clip.end) ?? document.clips.find((clip) => Math.abs(time - clip.end) <= timeEpsilon);
 }
 
 /** Interaction memory is independent of selection and survives deletion until the next move/edit. */

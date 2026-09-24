@@ -1,0 +1,68 @@
+name: Verify
+
+on:
+   workflow_call:
+      inputs:
+         tag_check:
+            description: Fail when the pushed tag does not match package.json's version.
+            type: boolean
+            default: false
+
+permissions:
+   contents: read
+
+jobs:
+   verify:
+      name: Verify (${{ github.event_name }})
+      runs-on: windows-2025
+      timeout-minutes: 30
+      env:
+         ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+      steps:
+         - uses: actions/checkout@v7
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version-file: .bun-version
+         - name: Cache Electron and Playwright browser downloads
+           uses: actions/cache@v6
+           with:
+              path: |
+                 ${{ runner.temp }}/electron-cache
+                 ~\AppData\Local\ms-playwright
+              key: verify-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+              restore-keys: verify-downloads-${{ runner.os }}-${{ runner.arch }}-
+         - run: bun install --frozen-lockfile
+           env:
+              ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+         - run: bun scripts/provision-media.ts
+         - name: Verify tag matches package version
+           if: inputs.tag_check && startsWith(github.ref, 'refs/tags/')
+           run: |
+              $tag = $env:GITHUB_REF_NAME.Substring(1)
+              $version = node -p "require('./package.json').version"
+              if ($tag -ne $version) {
+                 Write-Error "Tag ($env:GITHUB_REF_NAME) does not match package.json version ($version)."
+                 exit 1
+              }
+         - run: bun run verify
+         - run: bun run test:media
+         - run: bun x --no-install playwright install chromium
+         - run: bun x --no-install playwright test
+         - name: Upload browser retry traces
+           if: always()
+           uses: actions/upload-artifact@v7
+           with:
+              name: traces-verify-${{ github.run_id }}
+              path: test-results/**/trace.zip
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true
+         - name: Upload failure diagnostics
+           if: failure()
+           uses: actions/upload-artifact@v7
+           with:
+              name: diagnostics-verify-${{ github.run_id }}
+              path: test-results/
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true

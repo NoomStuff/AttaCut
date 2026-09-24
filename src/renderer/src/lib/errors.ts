@@ -11,3 +11,7 @@ export function errorText(value: unknown): string {
    }
    return message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
 }
+/** The main process cancels work by rejecting with "Cancelled"; match that in one place. */
+export function isCancellation(message: string): boolean {
+   return /cancel/i.test(message);
+}

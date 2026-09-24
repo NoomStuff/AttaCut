@@ -7,36 +7,7 @@ permissions:
    contents: read
 jobs:
    verify:
-      runs-on: windows-2025
-      timeout-minutes: 30
-      steps:
-         - uses: actions/checkout@v7
-         - uses: oven-sh/setup-bun@v2
-           with:
-              bun-version-file: .bun-version
-         - run: bun install --frozen-lockfile
-         - run: bun scripts/provision-media.ts
-         - run: bun run verify
-         - run: bun run test:media
-         - run: bun x --no-install playwright test
-         - name: Upload browser retry traces
-           if: always()
-           uses: actions/upload-artifact@v7
-           with:
-              name: traces-checks
-              path: test-results/**/trace.zip
-              if-no-files-found: ignore
-              retention-days: 14
-              overwrite: true
-         - name: Upload failure diagnostics
-           if: failure()
-           uses: actions/upload-artifact@v7
-           with:
-              name: diagnostics-checks
-              path: test-results/
-              if-no-files-found: ignore
-              retention-days: 14
-              overwrite: true
+      uses: ./.github/workflows/verify.yml
    packages:
       if: github.event_name == 'pull_request'
       needs: verify

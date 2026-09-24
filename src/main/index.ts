@@ -4,9 +4,18 @@ import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
 import { z } from "zod";
-import { preferencesSchema, planRequestSchema, savedSessionSchema, frameRequestSchema } from "../shared/types.ts";
+import {
+   preferencesSchema,
+   planRequestSchema,
+   savedSessionSchema,
+   frameRequestSchema,
+   frameTimeRequestSchema,
+   scrubRequestSchema,
+   previewRequestSchema,
+   exportApprovalSchema,
+   analyzeRequestSchema,
+} from "../shared/types.ts";
 import { packetsAround } from "./media/probe.ts";
 import { exportFrame } from "./media/frame.ts";
 import type { ProbedSource } from "./media/probe.ts";
@@ -16,7 +25,9 @@ import { ExportService } from "./exports.ts";
 import { Storage } from "./storage.ts";
 import { serveMedia } from "./media/serve.ts";
 import { videoExtensions } from "./media/formats.ts";
+import { prunePreviews } from "./media/preview.ts";
 import type { IpcCalls } from "../shared/ipc.ts";
+import { IpcEvents } from "../shared/ipc.ts";
 import { fetchAvailableUpdate, updateInterval } from "./updates.ts";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
@@ -28,7 +39,7 @@ const fileArgument = (args: string[]): string | null =>
    args.find((arg) => videoExtensions.some((extension) => arg.toLowerCase().endsWith(`.${extension}`)) && existsSync(arg)) ?? null;
 let pendingFile = process.env["ATTACUT_OPEN_FILE"] ?? fileArgument(process.argv.slice(1));
 const receiveFile = (path: string | null) => {
-   if (path && rendererReady && appWindow && !appWindow.isDestroyed()) appWindow.webContents.send("app:open-file", path);
+   if (path && rendererReady && appWindow && !appWindow.isDestroyed()) appWindow.webContents.send(IpcEvents.openFile, path);
    else if (path) pendingFile = path;
    if (appWindow && !appWindow.isDestroyed()) {
       if (appWindow.isMinimized()) appWindow.restore();
@@ -73,7 +84,7 @@ protocol.registerSchemesAsPrivileged([
 async function start(): Promise<void> {
    const frameOutputs = new Set<string>();
    const exportsService = new ExportService((job) => {
-      if (!window.isDestroyed()) window.webContents.send("export:progress", job);
+      if (!window.isDestroyed()) window.webContents.send(IpcEvents.jobProgress, job);
    });
    function validSender(event: IpcMainInvokeEvent): void {
       if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error("Invalid application request.");
@@ -88,7 +99,7 @@ async function start(): Promise<void> {
       return sourceSession.get(z.string().parse(value));
    }
    function sendCommand(id: string): void {
-      window.webContents.send("app:command", id);
+      window.webContents.send(IpcEvents.command, id);
    }
    function installMenu(): void {
       const item = (label: string, id: string) => ({ label, click: () => sendCommand(id) });
@@ -136,9 +147,8 @@ async function start(): Promise<void> {
    const storage = new Storage(app.getPath("userData"));
    await storage.load();
    const previewFolder = resolve(app.getPath("userData"), "previews");
-   if (resolve(previewFolder, "..") !== resolve(app.getPath("userData"))) throw new Error("Invalid preview cache path.");
-   // Cleanup can run alongside window loading. Preview writers wait for it below.
-   const previewCleanup = rm(previewFolder, { recursive: true, force: true });
+   // Keep recent previews across sessions and sweep interrupted runs; preview writers wait for this below.
+   const previewCleanup = prunePreviews(previewFolder);
    void previewCleanup.catch(() => undefined);
    const sourceSession = new SourceSession(previewFolder, previewCleanup);
    session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
@@ -239,7 +249,9 @@ async function start(): Promise<void> {
       sourceSession.dispose();
       exportsService.cancelPlanning();
       exportsService.cancel();
-      app.quit();
+      // Give killed children and their cleanup handlers a bounded window to finish so
+      // temporary export folders are removed instead of stranded beside the user's output.
+      void Promise.race([exportsService.waitForIdle(), new Promise((resolve) => setTimeout(resolve, 15_000))]).finally(() => app.quit());
    });
    installMenu();
    handle("app:bootstrap", () => {
@@ -257,10 +269,11 @@ async function start(): Promise<void> {
    });
    handle("update:check", async () => {
       if (!app.isPackaged || Date.now() - storage.updates.lastCheckedAt < updateInterval) return null;
-      storage.updates = { ...storage.updates, lastCheckedAt: Date.now() };
-      await storage.save();
       try {
          const update = await fetchAvailableUpdate(app.getVersion(), (url, init) => net.fetch(url, init));
+         // Only a completed check suppresses the next one; a failed network call retries next launch.
+         storage.updates = { ...storage.updates, lastCheckedAt: Date.now() };
+         await storage.save();
          return update?.version === storage.updates.ignoredVersion ? null : update;
       } catch {
          return null;
@@ -301,9 +314,7 @@ async function start(): Promise<void> {
       return sourceSession.keyframes(z.string().parse(value));
    });
    handle("source:frame-time", async (value) => {
-      const request = z
-         .object({ sourceId: z.string(), time: z.number().finite().nonnegative(), direction: z.union([z.literal(-1), z.literal(0), z.literal(1)]) })
-         .parse(value);
+      const request = frameTimeRequestSchema.parse(value);
       const source = getSource(request.sourceId);
       const points = await packetsAround(source, request.time, sourceSession.signal);
       return resolveFrameTime(
@@ -314,13 +325,11 @@ async function start(): Promise<void> {
       );
    });
    handle("audio:scrub", async (value) => {
-      const { sourceId, streamIndices, time } = z
-         .object({ sourceId: z.string(), streamIndices: z.array(z.number().int()).min(1), time: z.number().finite().nonnegative().default(0) })
-         .parse(value);
-      const source = getSource(sourceId);
-      if (streamIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
+      const request = scrubRequestSchema.parse(value);
+      const source = getSource(request.sourceId);
+      if (request.streamIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
          throw new Error("Audio track not found.");
-      return sourceSession.scrubAudio(source.id, streamIndices, time);
+      return sourceSession.scrubAudio(source.id, request.streamIndices, request.time);
    });
    handle("audio:cancel", () => sourceSession.cancelScrub());
    handle("export:cancel-planning", () => exportsService.cancelPlanning());
@@ -346,12 +355,8 @@ async function start(): Promise<void> {
       storage.session = savedSessionSchema.parse(value);
       await storage.save();
    });
-   handle("session:clear", async () => {
-      storage.session = null;
-      await storage.save();
-   });
    handle("preview:prepare", async (value) => {
-      const request = z.object({ sourceId: z.string(), audioIndices: z.array(z.number().int()), transcode: z.boolean() }).parse(value);
+      const request = previewRequestSchema.parse(value);
       const source = getSource(request.sourceId);
       if (request.audioIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
          throw new Error("Audio track not found.");
@@ -369,18 +374,11 @@ async function start(): Promise<void> {
       return exportsService.checkDestinations(getSource(request.sourceId), request);
    });
    handle("export:analyze", (value) => {
-      const request = planRequestSchema.parse(value);
+      const request = analyzeRequestSchema.parse(value);
       return exportsService.inspect(getSource(request.sourceId), request);
    });
    handle("export:start", (value) => {
-      const request = z
-         .object({
-            id: z.string(),
-            approval: z
-               .object({ createDirectory: z.boolean().optional(), overwrite: z.boolean().optional(), replaceSource: z.boolean().optional() })
-               .optional(),
-         })
-         .parse(value);
+      const request = z.object({ id: z.string(), approval: exportApprovalSchema.optional() }).parse(value);
       return exportsService.start(request.id, request.approval);
    });
    handle("export:cancel", () => exportsService.cancel());
@@ -415,7 +413,7 @@ async function start(): Promise<void> {
       const failure = await shell.openPath(path);
       if (failure) throw new Error(failure);
    });
-   ipcMain.on("window:action", (event, value: unknown) => {
+   ipcMain.on(IpcEvents.windowAction, (event, value: unknown) => {
       if (event.sender !== window.webContents) return;
       if (value === "minimize") window.minimize();
       if (value === "maximize") {

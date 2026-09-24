@@ -144,6 +144,33 @@ export const frameRequestSchema = z.object({
    quality: z.number().min(1).max(100),
 });
 export type FrameRequest = z.infer<typeof frameRequestSchema>;
+export const frameTimeRequestSchema = z.object({
+   sourceId: z.string(),
+   time: z.number().finite().nonnegative(),
+   direction: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
+});
+export type FrameTimeRequest = z.infer<typeof frameTimeRequestSchema>;
+export const scrubRequestSchema = z.object({
+   sourceId: z.string(),
+   streamIndices: z.array(z.number().int()).min(1),
+   time: z.number().finite().nonnegative().default(0),
+});
+export type ScrubRequest = z.input<typeof scrubRequestSchema>;
+export const previewRequestSchema = z.object({
+   sourceId: z.string(),
+   audioIndices: z.array(z.number().int()),
+   transcode: z.boolean(),
+});
+export type PreviewRequest = z.infer<typeof previewRequestSchema>;
+export const exportApprovalSchema = z.object({
+   createDirectory: z.boolean().optional(),
+   overwrite: z.boolean().optional(),
+   replaceSource: z.boolean().optional(),
+});
+export type ExportApproval = z.infer<typeof exportApprovalSchema>;
+/** Media analysis is independent of the destination, so it never receives one. */
+export const analyzeRequestSchema = planRequestSchema.omit({ directory: true });
+export type AnalyzeRequest = z.input<typeof analyzeRequestSchema>;
 export interface ExportPlanItem {
    id: string;
    clip: Clip;
@@ -163,17 +190,15 @@ export interface ExportPlan {
    existingPaths: string[];
    sourcePath: string | null;
 }
+export interface DestinationConflict {
+   /** Clip the conflict belongs to, or null for a combined export's single output. */
+   clipId: string | null;
+   conflict: string | null;
+}
 export interface ExportDestinations {
-   paths: string[];
-   existingPaths: string[];
-   sourcePath: string | null;
+   items: DestinationConflict[];
 }
 export type CutReport = Pick<ExportPlanItem, "clip" | "method" | "encodedSeconds" | "message">;
-export interface ExportApproval {
-   createDirectory?: boolean | undefined;
-   overwrite?: boolean | undefined;
-   replaceSource?: boolean | undefined;
-}
 export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export interface JobItem {
    id: string;
@@ -209,7 +234,6 @@ export interface DesktopApi {
    chooseDirectory(current: string): Promise<string | null>;
    savePreferences(value: Preferences): Promise<void>;
    saveSession(value: SavedSession): Promise<void>;
-   clearSession(): Promise<void>;
    preparePreview(sourceId: string, audioIndices: number[], transcode: boolean): Promise<string>;
    cancelPreview(): Promise<void>;
    keyframes(sourceId: string): Promise<number[]>;
@@ -223,7 +247,7 @@ export interface DesktopApi {
    exportFrame(request: FrameRequest): Promise<string>;
    planExport(request: PlanRequest): Promise<ExportPlan>;
    checkExportDestinations(request: PlanRequest): Promise<ExportDestinations>;
-   analyzeExport(request: PlanRequest): Promise<CutReport[]>;
+   analyzeExport(request: AnalyzeRequest): Promise<CutReport[]>;
    startExport(planId: string, approval?: ExportApproval): Promise<ExportJob>;
    cancelExport(): Promise<void>;
    retryExport(jobId: string): Promise<ExportJob>;

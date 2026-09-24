@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { adjacentBoundary, adjacentKeyframe, clipFloor, resolveBoundary, snapBoundary } from "./navigation";
+import { adjacentBoundary, adjacentKeyframe, clipFloor, resolveBoundary, snapBoundary, splitTargetAt, stepBoundary } from "./navigation";
 const clips = [
    { id: "a", start: 1, end: 4, color: 0 },
    { id: "b", start: 7, end: 10, color: 1 },
@@ -39,4 +39,24 @@ it("floors boundaries without expanding already shorter clips", () => {
    const drag = { duration: 12, viewLength: 12, frameStep: 0.01 };
    expect(clipFloor(document, "s", 12, 0.01)).toBeCloseTo(0.1);
    expect(resolveBoundary(document, "s", "end", 5.05, { ...drag, snapping: false })).toBeCloseTo(5.1);
+});
+it("picks the nearest keyframe inside the clip for a split, or disables it", () => {
+   const document = { clips: [{ id: "a", start: 2, end: 10, color: 0 }], selectedId: "a" };
+   expect(splitTargetAt(document, "a", 5, { snapping: false, keyframes: [3, 6] })).toBe(5);
+   expect(splitTargetAt(document, "a", 5, { snapping: true, keyframes: [3, 6, 11] })).toBe(6);
+   expect(splitTargetAt(document, "a", 5, { snapping: true, keyframes: [11] })).toBe(Infinity);
+   expect(splitTargetAt(document, "missing", 5, { snapping: true, keyframes: [6] })).toBe(5);
+});
+it("steps keyboard boundaries by keyframe or frame without violating floors", () => {
+   const document = { clips: [{ id: "b", start: 7, end: 10, color: 1 }], selectedId: "b" };
+   const options = { duration: 12, viewLength: 12, frameStep: 0.5, snapping: true, keyframes: [6, 8, 9.5] };
+   expect(stepBoundary(document, "b", "start", 1, options)).toBe(8);
+   expect(stepBoundary(document, "b", "end", -1, options)).toBe(9.5);
+   // Stepping the start leftward extends the clip into the gap; the keyframe at 6 is legal.
+   expect(stepBoundary(document, "b", "start", -1, options)).toBe(6);
+   const free = { ...options, snapping: false };
+   expect(stepBoundary(document, "b", "start", 1, free)).toBe(7.5);
+   expect(stepBoundary(document, "b", "start", 1, { ...free, step: 1 })).toBe(8);
+   // A large step cannot cross the two-frame minimum-length floor.
+   expect(stepBoundary(document, "b", "end", -1, { ...free, step: 3 })).toBe(8);
 });

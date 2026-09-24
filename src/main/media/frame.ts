@@ -1,11 +1,12 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { publishOutput } from "./publish.ts";
+import { mkdtemp } from "node:fs/promises";
+import { publishOutput, removeTemporary } from "./publish.ts";
 import { join, resolve } from "node:path";
 import type { FrameRequest } from "../../shared/types.ts";
 import { assertSourceUnchanged, packetsAround } from "./probe.ts";
 import type { ProbedSource } from "./probe.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
 import { sanitizeName } from "./filename.ts";
+import { isHdrTransfer, tonemapToBt709 } from "./formats.ts";
 import { resolveFrameTime } from "../../shared/frames.ts";
 
 export async function exportFrame(source: ProbedSource, request: FrameRequest): Promise<string> {
@@ -22,10 +23,8 @@ export async function exportFrame(source: ProbedSource, request: FrameRequest): 
          source.duration
       );
       const video = source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!;
-      const hdr = ["smpte2084", "arib-std-b67"].includes(video.colorTransfer);
-      const filter =
-         `trim=start=${time + source.startOffset - 0.0001},setpts=PTS-STARTPTS` +
-         (hdr ? ",zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=mobius:desat=0,zscale=t=bt709:m=bt709:r=tv,format=rgb24" : "");
+      const hdr = isHdrTransfer(video.colorTransfer);
+      const filter = `trim=start=${time + source.startOffset - 0.0001},setpts=PTS-STARTPTS` + (hdr ? `,${tonemapToBt709("rgb24")}` : "");
       await runMedia("ffmpeg", [
          ...ffmpegBase,
          "-copyts",
@@ -54,6 +53,6 @@ export async function exportFrame(source: ProbedSource, request: FrameRequest): 
          }
       }
    } finally {
-      await rm(temporary, { recursive: true, force: true });
+      await removeTemporary(temporary);
    }
 }

@@ -13,6 +13,24 @@ export function outputExtension(source: Pick<MediaSource, "extension">): string 
    if ([".mp4", ".m4v", ".mov", ".mkv", ".webm"].includes(extension)) return extension;
    return ".mkv";
 }
+export function isHdrTransfer(transfer: string): boolean {
+   return ["smpte2084", "arib-std-b67"].includes(transfer);
+}
+export function isMp4Container(extension: string): boolean {
+   return [".mp4", ".mov", ".m4v"].includes(extension.toLowerCase());
+}
+/** Container options for MP-family outputs; hvc1 tags HEVC the way Apple's decoders require. */
+export function containerFlags(video: MediaStream): string[] {
+   return ["-movflags", "+faststart", ...(video.codec === "hevc" ? ["-tag:v", "hvc1"] : [])];
+}
+/**
+ * Convert HDR input to bt709 SDR. `inputMatrix` carries the source primaries/transfer/matrix
+ * when stream headers leave them unspecified and they must be pinned by hand.
+ */
+export function tonemapToBt709(outputFormat: string, inputMatrix?: string): string {
+   const source = inputMatrix ? `${inputMatrix}:t=linear:npl=100` : "zscale=t=linear:npl=100";
+   return `${source},format=gbrpf32le,zscale=p=bt709,tonemap=mobius:desat=0,zscale=t=bt709:m=bt709:r=tv,format=${outputFormat}`;
+}
 export function colorArguments(video: MediaStream): string[] {
    const args: string[] = [];
    for (const [flag, value] of [

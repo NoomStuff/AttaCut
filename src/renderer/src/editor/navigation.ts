@@ -76,3 +76,54 @@ export function resolveBoundary(document: EditDocument, id: string, side: "start
       side === "start" ? { high: clip.end - floor } : { low: clip.start + floor }
    );
 }
+
+export interface SplitOptions {
+   snapping: boolean;
+   keyframes: number[];
+}
+
+/**
+ * Where a split at `time` should land: the playhead itself, or when snapping is on the
+ * nearest keyframe inside the clip. Infinity when no keyframe qualifies, which disables the
+ * split rather than moving it to an unintended boundary.
+ */
+export function splitTargetAt(document: EditDocument, id: string, time: number, options: SplitOptions): number {
+   if (!options.snapping) return time;
+   const clip = document.clips.find((item) => item.id === id);
+   if (!clip) return time;
+   return options.keyframes
+      .filter((point) => point >= clip.start && point <= clip.end)
+      .reduce((best, point) => (Math.abs(point - time) < Math.abs(best - time) ? point : best), Infinity);
+}
+
+export interface StepOptions {
+   duration: number;
+   viewLength: number;
+   frameStep: number;
+   snapping: boolean;
+   keyframes: number[];
+   /** Distance in seconds for a non-snapped step, e.g. one frame, or a full second with Shift. */
+   step?: number;
+}
+
+/** One keyboard step of a boundary from its current position, respecting the same legality floor as drags. */
+export function stepBoundary(document: EditDocument, id: string, side: "start" | "end", direction: -1 | 1, options: StepOptions): number {
+   const clip = document.clips.find((item) => item.id === id);
+   if (!clip) return 0;
+   const floor = clipFloor(document, id, options.viewLength, options.frameStep);
+   const target = options.snapping
+      ? adjacentKeyframe(
+           clip[side],
+           direction,
+           options.keyframes,
+           options.duration,
+           side === "start" ? { high: clip.end - floor } : { low: clip.start + floor }
+        )
+      : clip[side] + direction * (options.step ?? options.frameStep);
+   return resolveBoundary(document, id, side, target, {
+      duration: options.duration,
+      viewLength: options.viewLength,
+      frameStep: options.frameStep,
+      snapping: false,
+   });
+}

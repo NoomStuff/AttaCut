@@ -70,7 +70,8 @@ export class PlaybackSeeker {
    }
    private flush(): void {
       const video = this.video;
-      if (!video?.readyState || video.seeking || this.scheduled || this.requested === null) return;
+      // One resolve at a time: a seek arriving mid-resolve waits for it, then flushes below.
+      if (!video?.readyState || video.seeking || this.scheduled || this.resolving || this.requested === null) return;
       const time = this.requested;
       this.requested = null;
       const revision = this.revision;
@@ -89,10 +90,11 @@ export class PlaybackSeeker {
             if (revision === this.revision && this.video === video) video.currentTime = time;
          })
          .finally(() => {
-            if (revision === this.revision) {
-               this.resolving = false;
-               this.finishIfReady();
-            }
+            // Only one resolve runs at a time, so this always owns the flag; a seek that
+            // arrived mid-resolve is flushed here. configure() may have already reset it.
+            this.resolving = false;
+            this.flush();
+            this.finishIfReady();
          });
    }
 }

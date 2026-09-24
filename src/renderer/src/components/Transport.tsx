@@ -20,7 +20,6 @@ import {
    faMagnifyingGlassPlus,
    faMagnifyingGlassMinus,
 } from "@fortawesome/free-solid-svg-icons";
-import type { Commands } from "../editor/commands";
 import { AudioPicker } from "./AudioPicker";
 import { pointerSmoothingMs, useSmoothValue } from "../lib/motion";
 import { clipColor } from "../editor/colors";
@@ -93,7 +92,6 @@ export function Transport({
    source,
    clock,
    playing,
-   commands,
    volume,
    muted,
    onVolume,
@@ -109,7 +107,6 @@ export function Transport({
    source: MediaSource;
    clock: PlaybackClock;
    playing: boolean;
-   commands: Commands;
    volume: number;
    muted: boolean;
    onVolume: (value: number, restore: number) => void;
@@ -149,13 +146,7 @@ export function Transport({
          </div>
          <div className="playback-controls">
             <div>
-               <IconButton
-                  command="previous"
-                  icon={faBackwardStep}
-                  label="Previous clip"
-                  disabled={!commands.previous.enabled()}
-                  onClick={commands.previous.run}
-               />
+               <IconButton command="previous" icon={faBackwardStep} label="Previous clip" />
                <IconButton
                   command="play"
                   icon={playing ? faPause : faPlay}
@@ -165,9 +156,8 @@ export function Transport({
                   // toggle would wipe the shortcut-flash and press-ripple classes this button
                   // relies on for its feedback animations.
                   data-playing={playing ? "" : undefined}
-                  onClick={commands.play.run}
                />
-               <IconButton command="next" icon={faForwardStep} label="Next clip" disabled={!commands.next.enabled()} onClick={commands.next.run} />
+               <IconButton command="next" icon={faForwardStep} label="Next clip" />
             </div>
          </div>
          <div className="volume-controls">
@@ -180,11 +170,11 @@ export function Transport({
             <VolumeSlider volume={volume} muted={muted} onChange={onVolume} />
             <span className="control-divider" />
             <div className="zoom-controls" role="group" aria-label="Timeline zoom">
-               <IconButton command="zoomOut" icon={faMagnifyingGlassMinus} label="Zoom out" onClick={commands.zoomOut.run} />
-               <Button shortcut="" command="fit" className="zoom-percent" aria-label="Fit timeline" onClick={commands.fit.run}>
+               <IconButton command="zoomOut" icon={faMagnifyingGlassMinus} label="Zoom out" />
+               <Button shortcut="" command="fit" className="zoom-percent" aria-label="Fit timeline">
                   {Math.round(zoom)}%
                </Button>
-               <IconButton command="zoomIn" icon={faMagnifyingGlassPlus} label="Zoom in" onClick={commands.zoomIn.run} />
+               <IconButton command="zoomIn" icon={faMagnifyingGlassPlus} label="Zoom in" />
             </div>
             <span className="control-divider" />
             <IconButton

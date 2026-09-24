@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Clip, ExportDestinations, ExportJob, ExportPlan, CutReport, MediaSource, Preferences } from "../../../shared/types";
+import type { Clip, ExportJob, ExportPlan, CutReport, MediaSource, Preferences } from "../../../shared/types";
 import { exportExtensionFor } from "../../../shared/export-format";
 import { formatTime } from "../../../shared/time";
 import { faArrowUpFromBracket, faCircleExclamation, faCircleInfo, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
@@ -38,7 +38,7 @@ export function ExportPanel({
    onDraft: (draft: ExportDraft) => void;
    clips: Clip[];
    preferences: Preferences;
-   onPreferences: (value: Preferences) => void;
+   onPreferences: (value: Preferences | ((current: Preferences) => Preferences)) => void;
    onClose: () => void;
    onStarted: (job: ExportJob) => void;
    onBeforeSourceReplace: () => Promise<void>;
@@ -61,18 +61,26 @@ export function ExportPanel({
    useEffect(() => {
       onDraft({ sourceId: source.id, directory, mode, audioTracks, name, rows });
    }, [source.id, directory, mode, audioTracks, name, rows, onDraft]);
+   // Panel choices persist as export preferences; the updater form keeps this from
+   // re-running (and from clobbering) when unrelated preferences change while the panel is open.
    useEffect(() => {
-      const exportAudio = rememberAudioSelection(sourceAudio, audioTracks);
-      if (preferences.exportMode !== mode || JSON.stringify(preferences.exportAudio) !== JSON.stringify(exportAudio))
-         onPreferences({ ...preferences, exportMode: mode, exportAudio });
-   }, [directory, mode, audioTracks, preferences, onPreferences]);
+      const exportAudio = rememberAudioSelection(
+         source.streams.filter((stream) => stream.type === "audio"),
+         audioTracks
+      );
+      onPreferences((current) =>
+         current.exportMode === mode && JSON.stringify(current.exportAudio) === JSON.stringify(exportAudio)
+            ? current
+            : { ...current, exportMode: mode, exportAudio }
+      );
+   }, [source, mode, audioTracks, onPreferences]);
    const [confirmation, setConfirmation] = useState<ExportPlan | null>(null);
    const [replaceSourceChecked, setReplaceSourceChecked] = useState(false);
    const [conflicts, setConflicts] = useState<Map<string, string | null>>(() => new Map());
    const request = {
       sourceId: source.id,
       directory,
-      mode: mode,
+      mode,
       audioTracks,
       name,
       items: rows.filter((row) => row.included).map((row, index) => ({ clip: row.clip, name: mode === "combined" ? `Clip ${index + 1}` : row.name })),
@@ -86,7 +94,7 @@ export function ExportPanel({
       let cancelled = false;
       setAnalysis(null);
       window.desktop
-         .analyzeExport({ sourceId: source.id, directory, mode, audioTracks, items: clips.map((clip) => ({ clip, name: "clip" })) })
+         .analyzeExport({ sourceId: source.id, mode, audioTracks, items: clips.map((clip) => ({ clip, name: "clip" })) })
          .then((items) => {
             if (!cancelled) setAnalysis(items);
          })
@@ -99,19 +107,8 @@ export function ExportPanel({
       };
    }, [source.id, mode, audioTracks]);
    const valid = request.items.length > 0 && !!directory.trim() && (mode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim()));
-   const sortedItems = [...request.items].sort((a, b) => a.clip.start - b.clip.start);
-   const combinedKey = JSON.stringify([source.id, directory, "combined", name]);
-   // Earlier names can add a numeric suffix to this clip's output filename.
-   const separateKey = (index: number) =>
-      JSON.stringify([
-         source.id,
-         directory,
-         "separate",
-         exportExtensionFor(source, sortedItems[index]!.clip, { separate: true, allAudio: audioTracks.length === sourceAudio.length }),
-         sortedItems.slice(0, index + 1).map((item) => [item.clip.id, item.name, item.clip.start, item.clip.end]),
-      ]);
-   const destinationKey =
-      mode === "combined" ? combinedKey : JSON.stringify([source.id, directory, "separate", sortedItems.map((_, index) => separateKey(index))]);
+   // Main reports conflicts per clip, so the panel never replicates export naming rules.
+   const requestKey = JSON.stringify(request);
    useEffect(() => {
       let cancelled = false;
       if (!valid) return;
@@ -119,13 +116,7 @@ export function ExportPanel({
          void window.desktop
             .checkExportDestinations(request)
             .then((result) => {
-               if (cancelled) return;
-               setConflicts((previous) => {
-                  const next = new Map(previous);
-                  if (mode === "combined") next.set(combinedKey, conflictText(result.paths[0], result));
-                  else sortedItems.forEach((_, index) => next.set(separateKey(index), conflictText(result.paths[index], result)));
-                  return next;
-               });
+               if (!cancelled) setConflicts(new Map(result.items.map((item) => [item.clipId ?? "combined", item.conflict])));
             })
             .catch(() => {
                // Final planning shows destination errors when Export is pressed.
@@ -135,7 +126,7 @@ export function ExportPanel({
          cancelled = true;
          window.clearTimeout(timer);
       };
-   }, [destinationKey, valid]);
+   }, [requestKey, valid]);
    const start = async (approved?: ExportPlan) => {
       if (!valid || starting) return;
       setStarting(true);
@@ -287,7 +278,7 @@ export function ExportPanel({
                         <div className="filename-field">
                            <span className="export-name-input">
                               <input aria-label="Combined filename" value={name} disabled={starting} onChange={(event) => setName(event.target.value)} />
-                              <ConflictIndicator message={conflicts.get(combinedKey) ?? null} />
+                              <ConflictIndicator message={conflicts.get("combined") ?? null} />
                            </span>
                            <span className="filename-extension">{source.exportExtension}</span>
                         </div>
@@ -337,8 +328,7 @@ export function ExportPanel({
                            separate: mode === "separate",
                            allAudio: audioTracks.length === sourceAudio.length,
                         });
-                        const sortedIndex = sortedItems.findIndex((item) => item.clip.id === row.clip.id);
-                        const conflict = mode === "separate" && row.included && sortedIndex >= 0 ? (conflicts.get(separateKey(sortedIndex)) ?? null) : null;
+                        const conflict = mode === "separate" && row.included ? (conflicts.get(row.clip.id) ?? null) : null;
                         return (
                            <div key={row.clip.id} className="export-clip-entry">
                               <div className="export-row">
@@ -409,11 +399,6 @@ export function ExportPanel({
          {confirmationModal}
       </>
    );
-}
-
-function conflictText(path: string | undefined, destinations: ExportDestinations): string | null {
-   if (!path || !destinations.existingPaths.includes(path)) return null;
-   return path === destinations.sourcePath ? "Will replace the source video" : "Will replace an existing file";
 }
 
 function ConflictIndicator({ message }: { message: string | null }) {

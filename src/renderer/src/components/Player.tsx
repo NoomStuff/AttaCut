@@ -5,6 +5,7 @@ import type { PlaybackClock } from "../playback/clock";
 import { useClock } from "../playback/clock";
 import { insideClip } from "../editor/model";
 import { selectNativeAudio } from "../playback/audio";
+import type { PlaybackController } from "../playback/controller";
 import type { PlaybackSeeker } from "../playback/seeker";
 import { nextKeptTime } from "../playback/ranges";
 import { useExitValue } from "../lib/motion";
@@ -13,15 +14,13 @@ export function Player({
    source,
    url,
    videoRef,
-   holdPreviewFrame,
+   playback,
    clock,
    clips,
    keptOnly,
-   previewEnd,
    volume,
    muted,
    onPlaying,
-   onPreviewEnd,
    onFailure,
    playWhenReady,
    waitForPlay,
@@ -35,15 +34,13 @@ export function Player({
    source: MediaSource;
    url: string;
    videoRef: RefObject<HTMLVideoElement | null>;
-   holdPreviewFrame: RefObject<(() => void) | null>;
+   playback: PlaybackController;
    clock: PlaybackClock;
    clips: Clip[];
    keptOnly: boolean;
-   previewEnd: RefObject<number | null>;
    volume: number;
    muted: boolean;
    onPlaying: (playing: boolean) => void;
-   onPreviewEnd: () => void;
    onFailure: () => void;
    playWhenReady: boolean;
    waitForPlay: boolean;
@@ -77,10 +74,10 @@ export function Player({
          : null,
       240
    );
-   const latest = useRef({ clips, keptOnly, onPreviewEnd });
-   latest.current = { clips, keptOnly, onPreviewEnd };
+   const latest = useRef({ clips, keptOnly });
+   latest.current = { clips, keptOnly };
    useLayoutEffect(() => {
-      holdPreviewFrame.current = () => {
+      playback.setHoldFrame(() => {
          const video = videoRef.current;
          const canvas = snapshotRef.current;
          if (!video || !canvas || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
@@ -103,11 +100,9 @@ export function Player({
             setSkipFrameFade(false);
             setFrameHeld(false);
          }
-      };
-      return () => {
-         holdPreviewFrame.current = null;
-      };
-   }, [holdPreviewFrame, videoRef]);
+      });
+      return () => playback.setHoldFrame(null);
+   }, [playback, videoRef]);
    useEffect(() => {
       if (!url) {
          setFrameHeld(false);
@@ -134,11 +129,11 @@ export function Player({
       let frame = 0;
       const update = () => {
          if (!video.paused && video.readyState >= 2 && !video.seeking && !seeker.pending) {
-            if (previewEnd.current !== null && video.currentTime >= previewEnd.current) {
+            if (playback.previewEnd !== null && video.currentTime >= playback.previewEnd) {
                video.pause();
-               seeker.seek(previewEnd.current);
-               latest.current.onPreviewEnd();
-            } else if (previewEnd.current === null && latest.current.keptOnly && latest.current.clips.length) {
+               seeker.seek(playback.previewEnd);
+               playback.previewEnd = null;
+            } else if (playback.previewEnd === null && latest.current.keptOnly && latest.current.clips.length) {
                const next = nextKeptTime(latest.current.clips, video.currentTime);
                if (next === null) seeker.seek(latest.current.clips.at(-1)!.end);
                else if (next !== video.currentTime) seeker.seek(next, true);
@@ -162,7 +157,7 @@ export function Player({
          video.removeEventListener("pause", stop);
          video.removeEventListener("ended", stop);
       };
-   }, [clock, previewEnd, videoRef, seeker]);
+   }, [clock, playback, videoRef, seeker]);
    useEffect(() => {
       if (videoRef.current) {
          videoRef.current.volume = volume;
