@@ -1,6 +1,6 @@
 {
    "name": "attacut",
-   "version": "0.9.0",
+   "version": "0.10.0",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -8,7 +8,7 @@
    "main": "out/main/index.js",
    "author": "NoomStuff",
    "scripts": {
-      "dev": "bun run build:icons && electron-vite dev",
+      "dev": "bun run build:icons && bun scripts/dev.ts",
       "build": "bun run check:bun && bun run build:icons && bun run typecheck && electron-vite build",
       "check:bun": "bun scripts/check-bun.ts",
       "build:icons": "bun scripts/build-icons.ts",
@@ -35,6 +35,7 @@
       "appId": "dev.attacut.app",
       "productName": "AttaCut",
       "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+      "afterPack": "scripts/after-pack.cjs",
       "directories": {
          "output": "release"
       },
@@ -70,6 +71,9 @@
             "portable"
          ],
          "signExecutable": false
+      },
+      "portable": {
+         "splashImage": "build/splash.bmp"
       },
       "mac": {
          "icon": "build/icon.icns",

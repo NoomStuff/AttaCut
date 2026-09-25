@@ -3,6 +3,7 @@ out/
 release/
 resources/media/
 work/
+build/.icons-cache
 test-results/
 *.tsbuildinfo
 .DS_Store

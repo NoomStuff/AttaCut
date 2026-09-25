@@ -1,9 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { z } from "zod";
 import {
    preferencesSchema,
@@ -143,30 +144,11 @@ async function start(): Promise<void> {
       Menu.setApplicationMenu(Menu.buildFromTemplate(template));
    }
 
-   await app.whenReady();
+   // The read is small, but starting it here overlaps it with app and window init; IPC
+   // handlers that answer from storage go live only after it resolves below.
    const storage = new Storage(app.getPath("userData"));
-   await storage.load();
-   const previewFolder = resolve(app.getPath("userData"), "previews");
-   // Keep recent previews across sessions and sweep interrupted runs; preview writers wait for this below.
-   const previewCleanup = prunePreviews(previewFolder);
-   void previewCleanup.catch(() => undefined);
-   const sourceSession = new SourceSession(previewFolder, previewCleanup);
-   session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
-      callback(contents === window.webContents && permission === "fullscreen")
-   );
-   session.defaultSession.setPermissionCheckHandler((contents, permission) => contents === window.webContents && permission === "fullscreen");
-   protocol.handle("media", async (request) => {
-      const id = new URL(request.url).pathname.slice(1);
-      const path = sourceSession.mediaPaths.get(id);
-      return path ? serveMedia(path, request) : new Response("Not found", { status: 404 });
-   });
-   protocol.handle("app", (request) => {
-      const pathname = decodeURIComponent(new URL(request.url).pathname);
-      const root = resolve(currentDirectory, "../renderer");
-      const target = resolve(root, `.${pathname === "/" ? "/index.html" : pathname}`);
-      if (!target.startsWith(`${root}${process.platform === "win32" ? "\\" : "/"}`)) return new Response("Not found", { status: 404 });
-      return net.fetch(pathToFileURL(target).toString());
-   });
+   const storageReady = storage.load();
+   await app.whenReady();
    const icon = windowIcon();
    const window = new BrowserWindow({
       width: 1360,
@@ -187,19 +169,56 @@ async function start(): Promise<void> {
    });
    appWindow = window;
    if (process.platform === "win32" && icon) {
+      // Taskbar relaunches must show the splash too, so they go through the launcher
+      // whenever it fronts the renamed Electron executable.
+      const launcherExe = join(dirname(process.execPath), "AttaCut.exe");
+      const relaunchExe = basename(process.execPath) === "AttaCut-app.exe" && existsSync(launcherExe) ? launcherExe : process.execPath;
       window.setAppDetails({
          appId: "dev.attacut.app",
          appIconPath: icon,
          appIconIndex: 0,
          relaunchDisplayName: "AttaCut",
-         relaunchCommand: app.isPackaged ? `"${process.execPath}"` : `"${process.execPath}" "${app.getAppPath()}"`,
+         relaunchCommand: app.isPackaged ? `"${relaunchExe}"` : `"${process.execPath}" "${app.getAppPath()}"`,
       });
    }
    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
    window.webContents.on("will-navigate", (event) => event.preventDefault());
-   window.once("ready-to-show", () => {
+   // Show on first paint; the timer only covers a renderer that never reaches paint.
+   let presented = false;
+   const presentWindow = () => {
+      if (presented) return;
+      presented = true;
       if (process.env["ATTACUT_HIDDEN"] !== "1") window.show();
       registerWindowsIdentity();
+      // The dev launcher's native splash watches for this file and closes itself.
+      const splashSignal = process.env["ATTACUT_SPLASH_SIGNAL"];
+      if (splashSignal) void writeFile(splashSignal, "1").catch(() => undefined);
+   };
+   window.once("ready-to-show", presentWindow);
+   setTimeout(() => {
+      if (!window.isDestroyed()) presentWindow();
+   }, 1000);
+   await storageReady;
+   const previewFolder = resolve(app.getPath("userData"), "previews");
+   // Keep recent previews across sessions and sweep interrupted runs; preview writers wait for this below.
+   const previewCleanup = prunePreviews(previewFolder);
+   void previewCleanup.catch(() => undefined);
+   const sourceSession = new SourceSession(previewFolder, previewCleanup);
+   session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
+      callback(contents === window.webContents && permission === "fullscreen")
+   );
+   session.defaultSession.setPermissionCheckHandler((contents, permission) => contents === window.webContents && permission === "fullscreen");
+   protocol.handle("media", async (request) => {
+      const id = new URL(request.url).pathname.slice(1);
+      const path = sourceSession.mediaPaths.get(id);
+      return path ? serveMedia(path, request) : new Response("Not found", { status: 404 });
+   });
+   protocol.handle("app", (request) => {
+      const pathname = decodeURIComponent(new URL(request.url).pathname);
+      const root = resolve(currentDirectory, "../renderer");
+      const target = resolve(root, `.${pathname === "/" ? "/index.html" : pathname}`);
+      if (!target.startsWith(`${root}${process.platform === "win32" ? "\\" : "/"}`)) return new Response("Not found", { status: 404 });
+      return net.fetch(pathToFileURL(target).toString());
    });
    let confirmedClose = false;
    let closing = false;

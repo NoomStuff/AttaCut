@@ -1,7 +1,8 @@
 import js from "@eslint/js";
 import ts from "typescript-eslint";
 export default ts.config(
-   { ignores: ["out/**", "release/**", "resources/**", "work/**", "test-results/**"] },
+   // after-pack.cjs stays CommonJS because electron-builder loads hooks with require().
+   { ignores: ["out/**", "release/**", "resources/**", "work/**", "test-results/**", "scripts/after-pack.cjs"] },
    js.configs.recommended,
    ...ts.configs.recommended,
    {

@@ -16,8 +16,8 @@ jobs:
       name: Verify (${{ github.event_name }})
       runs-on: windows-2025
       timeout-minutes: 30
-      env:
-         ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+      # The electron download cache is set per-step because the runner context is not
+      # available in job-level env; using it there fails the whole workflow at parse.
       steps:
          - uses: actions/checkout@v7
          - uses: oven-sh/setup-bun@v2

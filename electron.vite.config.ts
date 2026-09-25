@@ -13,5 +13,11 @@ function ignoreZodCommentNoise(warning: RollupLog, warn: (log: RollupLog | strin
 export default defineConfig({
    main: { build: { rollupOptions: { onwarn: ignoreZodCommentNoise } } },
    preload: { build: { rollupOptions: { output: { format: "cjs", entryFileNames: "index.cjs" }, onwarn: ignoreZodCommentNoise } } },
-   renderer: { plugins: [react()], build: { minify: true, rollupOptions: { onwarn: ignoreZodCommentNoise } } },
+   renderer: {
+      plugins: [react()],
+      // Transform the entry graph while Electron is still booting so the first page
+      // request in dev does not walk the module waterfall one file at a time.
+      server: { warmup: { clientFiles: ["./src/main.tsx", "./src/styles.css"] } },
+      build: { minify: true, rollupOptions: { onwarn: ignoreZodCommentNoise } },
+   },
 });
