@@ -18,7 +18,11 @@
    text-align: left;
    transition:
       background-color 150ms ease-out,
-      border-color 150ms ease-out;
+      border-color 150ms ease-out,
+      transform 60ms ease-out;
+}
+.select-trigger:active {
+   transform: translateY(1px);
 }
 .select-trigger:hover:not(:disabled),
 .select-trigger[aria-expanded="true"] {

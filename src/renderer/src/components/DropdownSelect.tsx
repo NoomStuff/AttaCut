@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { faCheck, faChevronDown } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { TooltipHost } from "./Controls";
 import { useExitValue } from "../lib/motion";
 
 export interface DropdownOption {
@@ -19,6 +20,7 @@ export function DropdownSelect({
    disabled = false,
    placement = "down",
    trigger,
+   tooltip,
    className = "",
 }: {
    label: string;
@@ -30,10 +32,13 @@ export function DropdownSelect({
    disabled?: boolean;
    placement?: "up" | "down";
    trigger: ReactNode;
+   /** Shows the standard hover tooltip; omit for selects whose trigger already explains itself. */
+   tooltip?: string;
    className?: string;
 }) {
    const [open, setOpen] = useState(false);
    const root = useRef<HTMLDivElement>(null);
+   const tooltipId = useId();
    const presence = useExitValue(open ? true : null, 120);
    useEffect(() => {
       if (!open) return;
@@ -48,20 +53,33 @@ export function DropdownSelect({
       setOpen(false);
       root.current?.querySelector<HTMLButtonElement>(".select-trigger")?.focus();
    };
+   const triggerButton = (
+      <button
+         type="button"
+         className="select-trigger"
+         aria-label={label}
+         aria-describedby={tooltip ? tooltipId : undefined}
+         aria-haspopup="listbox"
+         aria-expanded={open}
+         disabled={disabled || options.length === 0}
+         onClick={() => setOpen((current) => !current)}
+      >
+         <span>{trigger}</span>
+         <FontAwesomeIcon className="select-chevron" icon={faChevronDown} />
+      </button>
+   );
    return (
       <div className={`custom-select ${placement} ${className}`} ref={root}>
-         <button
-            type="button"
-            className="select-trigger"
-            aria-label={label}
-            aria-haspopup="listbox"
-            aria-expanded={open}
-            disabled={disabled || options.length === 0}
-            onClick={() => setOpen((current) => !current)}
-         >
-            <span>{trigger}</span>
-            <FontAwesomeIcon className="select-chevron" icon={faChevronDown} />
-         </button>
+         {tooltip ? (
+            <TooltipHost>
+               {triggerButton}
+               <span role="tooltip" id={tooltipId} className="tooltip">
+                  {tooltip}
+               </span>
+            </TooltipHost>
+         ) : (
+            triggerButton
+         )}
          {presence.mounted && presence.value && (
             <div
                className={`select-menu${presence.closing ? " closing" : ""}`}

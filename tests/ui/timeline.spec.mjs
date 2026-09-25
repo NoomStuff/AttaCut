@@ -102,6 +102,8 @@ test("timeline", async ({ launchApp, profile }) => {
    await expect(page.locator(".timeline-pan-arrow.right")).toHaveCSS("opacity", "0");
    await page.getByRole("button", { name: "Fit timeline", exact: true }).click();
    await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("100%");
+   // Position picks map against the drawn view, which is still chasing the fit for ~240ms.
+   await page.waitForTimeout(300);
    await seek(18);
    await expect(page.locator(".player-excluded")).toHaveClass(/hidden/);
    await end.fill("00:17.00");

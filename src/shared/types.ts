@@ -256,6 +256,7 @@ export interface DesktopApi {
    openExternal(url: string): Promise<void>;
    openNotices(): Promise<void>;
    windowAction(action: "minimize" | "maximize" | "close"): void;
+   rendererReady(): void;
    onJob(listener: (job: ExportJob) => void): () => void;
    onCommand(listener: (command: string) => void): () => void;
 }

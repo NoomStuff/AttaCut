@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import "./check-bun.ts";
 import { provisionMedia } from "./provision-media.ts";
 
 const run = (args: string[], env: NodeJS.ProcessEnv) => execFileSync(process.execPath, args, { stdio: "inherit", env });

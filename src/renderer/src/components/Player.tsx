@@ -58,6 +58,7 @@ export function Player({
    const previewLoading = !!url && !failed && (preparing || readyUrl !== url);
    const frameReady = !!url && readyUrl === url;
    const seekingFrame = useSyncExternalStore(seeker.subscribeWaiting, seeker.getWaiting);
+   const frameProgress = useSyncExternalStore(seeker.subscribeProgress, seeker.getProgress);
    const [waitingForPlayback, setWaitingForPlayback] = useState(false);
    const blocked = !failed && (seekingFrame || waitForPlay || waitingForPlayback);
    const [showBlocked, setShowBlocked] = useState(false);
@@ -122,7 +123,9 @@ export function Player({
       }
       const timer = window.setTimeout(() => setShowBlocked(true), 1000);
       return () => window.clearTimeout(timer);
-   }, [blocked]);
+      // A frame landing restarts the wait: skimming keeps a request pending the whole time
+      // without being slow, and the indicator should only name a stall.
+   }, [blocked, frameProgress]);
    useEffect(() => seeker.attach(videoRef.current!), [seeker, videoRef]);
    useEffect(() => {
       const video = videoRef.current!;

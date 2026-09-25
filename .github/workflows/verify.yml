@@ -22,7 +22,7 @@ jobs:
          - uses: actions/checkout@v7
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version-file: .bun-version
+              bun-version: latest
          - name: Cache Electron and Playwright browser downloads
            uses: actions/cache@v6
            with:

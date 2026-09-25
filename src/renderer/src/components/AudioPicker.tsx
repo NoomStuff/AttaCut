@@ -16,6 +16,7 @@ export function AudioPicker({ tracks, selected, onSelect }: { tracks: MediaStrea
          required
          placement="up"
          className="audio-picker"
+         tooltip="Preview audio tracks"
          onChange={(values) => onSelect(values.map(Number))}
          trigger={
             <>

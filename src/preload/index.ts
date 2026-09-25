@@ -46,6 +46,7 @@ const api: DesktopApi = {
    openExternal: (url) => invoke("open:external", url),
    openNotices: () => invoke("notices:open"),
    windowAction: (action) => ipcRenderer.send(IpcEvents.windowAction, action),
+   rendererReady: () => ipcRenderer.send(IpcEvents.rendererReady),
    onJob: (callback) => listen<ExportJob>(IpcEvents.jobProgress, callback),
    onCommand: (callback) => listen<string>(IpcEvents.command, callback),
 };

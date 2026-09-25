@@ -48,4 +48,5 @@ export const IpcEvents = {
    openFile: "app:open-file",
    command: "app:command",
    windowAction: "window:action",
+   rendererReady: "app:renderer-ready",
 } as const;

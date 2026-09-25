@@ -132,7 +132,7 @@ export function HelpPanel({ initialTab = "intro", onClose }: { initialTab?: Help
                </button>
             ))}
          </div>
-         <div className="modal-body help-body" ref={body}>
+         <div className="modal-body help-body" key={tab} ref={body}>
             {topics.find((topic) => topic.id === tab)!.body}
          </div>
       </Modal>

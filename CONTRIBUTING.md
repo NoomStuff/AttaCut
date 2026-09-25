@@ -1,6 +1,6 @@
 ## Running locally
 
-You need [Bun](https://bun.sh/) at the version in `.bun-version` and FFmpeg with ffprobe on your PATH.
+You need [Bun](https://bun.sh/) and FFmpeg with ffprobe on your PATH.
 
 1. Clone the repository and install its dependencies:
 

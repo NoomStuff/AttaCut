@@ -93,7 +93,7 @@ export function SettingsPanel({
                   Keyboard shortcuts
                </button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" key={tab}>
                {tab === "general" ? (
                   <>
                      <div className="setting-row">
@@ -144,13 +144,13 @@ export function SettingsPanel({
                      />
                      <Toggle
                         label="Keep playing while editing"
-                        description="Keep playback running when seeking, trimming, or splitting."
+                        description="Don't stop playing after seeking, trimming or splitting."
                         checked={preferences.keepPlaying}
                         onChange={(keepPlaying) => onChange({ ...preferences, keepPlaying })}
                      />
                      <Toggle
                         label="Audio scrubbing"
-                        description="Play a short audio burst at the playhead while scrubbing and stepping with playback paused. Unavailable for sources over two hours."
+                        description="Play a short audio burst at the playhead while scrubbing and stepping with playback paused."
                         checked={preferences.audioScrub}
                         onChange={(audioScrub) => onChange({ ...preferences, audioScrub })}
                      />

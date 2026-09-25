@@ -21,7 +21,7 @@
       color 170ms ease-out,
       border-color 170ms ease-out,
       box-shadow 170ms ease-out,
-      transform 90ms cubic-bezier(0.3, 0.7, 0.4, 1);
+      transform 60ms ease-out;
    white-space: nowrap;
 }
 .button > span:empty {
@@ -37,11 +37,15 @@
       color 0ms,
       border-color 0ms,
       box-shadow 0ms,
-      transform 90ms cubic-bezier(0.3, 0.7, 0.4, 1);
+      transform 60ms ease-out;
 }
 .button:is(:active:not(:disabled), .shortcut-active) {
-   transform: scale(0.96);
+   transform: translateY(1px);
 }
+/* Scale stays deliberately absent: a transform shrink displaces the icon about a pixel while
+   held (Chromium snaps the scaled layer to device pixels, and flex centering puts buttons on
+   half-pixel positions at most window sizes). An integer translate never resamples the layer,
+   so it is safe at any position. */
 .button.primary {
    background: var(--accent);
    color: var(--accent-text);
@@ -240,6 +244,19 @@
 .panel-modal.closing {
    display: flex;
    flex-direction: column;
+}
+.modal-tabs + .modal-body {
+   animation: tab-in 150ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes tab-in {
+   from {
+      opacity: 0;
+      transform: translateY(6px);
+   }
+   to {
+      opacity: 1;
+      transform: translateY(0);
+   }
 }
 .panel-modal .modal-body {
    flex: 1;

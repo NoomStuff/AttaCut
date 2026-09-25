@@ -183,7 +183,10 @@ async function start(): Promise<void> {
    }
    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
    window.webContents.on("will-navigate", (event) => event.preventDefault());
-   // Show on first paint; the timer only covers a renderer that never reaches paint.
+   // Show once the renderer's first UI frame is on screen. ready-to-show is not enough: it
+   // fires while the page can still be an empty root element, which reads as a flash of
+   // blank window between the splash and the app. The timer only covers a renderer that
+   // never reports in.
    let presented = false;
    const presentWindow = () => {
       if (presented) return;
@@ -194,10 +197,10 @@ async function start(): Promise<void> {
       const splashSignal = process.env["ATTACUT_SPLASH_SIGNAL"];
       if (splashSignal) void writeFile(splashSignal, "1").catch(() => undefined);
    };
-   window.once("ready-to-show", presentWindow);
+   ipcMain.on(IpcEvents.rendererReady, () => presentWindow());
    setTimeout(() => {
       if (!window.isDestroyed()) presentWindow();
-   }, 1000);
+   }, 2500);
    await storageReady;
    const previewFolder = resolve(app.getPath("userData"), "previews");
    // Keep recent previews across sessions and sweep interrupted runs; preview writers wait for this below.

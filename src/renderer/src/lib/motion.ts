@@ -12,6 +12,9 @@ interface SmoothOptions {
    jump?: number;
    /** Return true to snap for this update, e.g. while the value is under pointer control. */
    snap?: () => boolean;
+   /** Checked when a retarget lands under the jump threshold: returning true tweens anyway,
+       for discrete navigation whose hops are legitimately short. */
+   glide?: () => boolean;
    /** When the key changes, snap to the target instead of easing (e.g. a new drag session). */
    key?: string | number;
 }
@@ -34,8 +37,9 @@ export function useSmoothValue(target: number, options: SmoothOptions = {}): num
 
    if (target !== targetRef.current) {
       targetRef.current = target;
-      const { jump = 0, snap, follow } = optionsRef.current;
-      const immediate = reducedMotion() || Math.abs(target - display.current) < jump || (snap?.() ?? false);
+      const { jump = 0, snap, glide, follow } = optionsRef.current;
+      const gliding = glide?.() ?? false;
+      const immediate = reducedMotion() || (Math.abs(target - display.current) < jump && !gliding) || (snap?.() ?? false);
       if (immediate) {
          cancelAnimationFrame(frame.current);
          frame.current = 0;

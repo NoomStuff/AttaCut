@@ -91,6 +91,27 @@ export function Timeline({
       });
    }
    const [hoveredEdge, setHoveredEdge] = useState<{ id: string; side: "start" | "end" } | null>(null);
+   const prevSnapping = useRef(snapping);
+   const [pop, setPop] = useState<{ time: number; token: number } | null>(null);
+   const [tickExit, setTickExit] = useState(false);
+   if (prevSnapping.current !== snapping) {
+      prevSnapping.current = snapping;
+      // Enabling snapping pops the ticks outward from the playhead; disabling fades them
+      // out before they unmount.
+      if (snapping) setPop((current) => ({ time, token: (current?.token ?? 0) + 1 }));
+      else setTickExit(true);
+   }
+   useEffect(() => {
+      // The entry wave is transient: ticks drop their pop class once the slowest landed.
+      if (!pop) return;
+      const timer = window.setTimeout(() => setPop(null), 800);
+      return () => window.clearTimeout(timer);
+   }, [pop]);
+   useEffect(() => {
+      if (!tickExit) return;
+      const timer = window.setTimeout(() => setTickExit(false), 180);
+      return () => window.clearTimeout(timer);
+   }, [tickExit]);
    const draftRef = useRef<EditDocument | null>(null);
    const drag = useRef<Drag | null>(null);
    const scrubbing = useRef<number | null>(null);
@@ -114,9 +135,11 @@ export function Timeline({
    const dragBoundary = dragging ? visible.clips.find((clip) => clip.id === dragging.id)![dragging.side] : time;
    // Share one follower so the dragged edge and playhead cannot drift apart. While playback
    // runs, the drawn time snaps straight to the clock: the picture jumps on a seek, and a
-   // gliding playhead would land after the content it points at.
+   // gliding playhead would land after the content it points at. Below the jump threshold a
+   // retarget snaps instead of tweening, so frame stepping stays 1:1 — unless the seek asked
+   // to glide (discrete navigation such as keyframe and clip jumps), which tweens regardless.
    const drawTime = useSmoothValue(dragBoundary, {
-      ...(pointerDriven ? { follow: pointerSmoothingMs } : { duration: 170, jump: 0.24 }),
+      ...(pointerDriven ? { follow: pointerSmoothingMs } : { duration: 170, jump: Math.max(frameStep * 1.5, 0.05), glide: () => clock.consumeGlide() }),
       snap: () => playing,
       key: dragging ? "drag:" + dragging.id + ":" + dragging.side : (scrubbing.current ?? "idle"),
    });
@@ -133,16 +156,27 @@ export function Timeline({
       observer.observe(element);
       return () => observer.disconnect();
    }, []);
-   const visibleKeys = useMemo(() => {
+   const pxPerSecond = viewportWidth > 0 && drawn.length > 0 ? viewportWidth / drawn.length : 0;
+   const keyframeView = useMemo(() => {
       // Dense intraframe recordings can have hundreds of thousands of keyframes.
-      // Keep every point for snapping, but draw at most 500 distinct ticks.
+      // Keep every point for snapping, but draw at most 500 distinct ticks, and report how
+      // tightly the points pack the drawn view so the ticks can fade out when too dense.
       let last = -Infinity;
-      return keyframes.filter((point) => {
-         if (point < drawn.start || point > drawn.start + drawn.length || point - last < drawn.length / 500) return false;
+      let count = 0;
+      let first = 0;
+      let lastPoint = 0;
+      const ticks = keyframes.filter((point) => {
+         if (point < drawn.start || point > drawn.start + drawn.length) return false;
+         if (count === 0) first = point;
+         lastPoint = point;
+         count++;
+         if (point - last < drawn.length / 500) return false;
          last = point;
          return true;
       });
-   }, [keyframes, drawn.start, drawn.length]);
+      const gap = count > 1 && pxPerSecond > 0 ? ((lastPoint - first) / (count - 1)) * pxPerSecond : Infinity;
+      return { ticks, opacity: clamp((gap - 8) / 8, 0, 1) };
+   }, [keyframes, drawn.start, drawn.length, pxPerSecond]);
    latest.current = { view, duration };
    useEffect(() => onZoom((100 * duration) / view.length, viewportWidth), [duration, view.length, viewportWidth, onZoom]);
    useEffect(() => {
@@ -158,6 +192,25 @@ export function Timeline({
          return { length, start: clamp(focus - fraction * length, 0, duration - length) };
       });
    }, [zoomRequest, duration, clock]);
+   // Keep the playhead inside the center 80% of a zoomed-in view: when it overflows, page
+   // the view so it lands exactly on the crossed edge (10% after a left overflow, 90% after
+   // a right one), clamped to the timeline ends. Only playhead movement corrects the view,
+   // so zooming and panning never shift it; pointer-driven motion (scrub, handle drag) stays
+   // 1:1 until it ends. The correction rides the smooth view chase, like the pan buttons.
+   const lastPanTime = useRef(-1);
+   useEffect(() => {
+      if (pointerDriven || time === lastPanTime.current) return;
+      lastPanTime.current = time;
+      if (view.length >= duration - 0.0001) return;
+      const margin = view.length * 0.1;
+      let start: number | null = null;
+      if (time < view.start + margin) start = time - margin;
+      else if (time > view.start + view.length - margin) start = time - view.length + margin;
+      if (start === null) return;
+      start = clamp(start, 0, duration - view.length);
+      if (Math.abs(start - view.start) < 0.0001) return;
+      setView({ start, length: view.length });
+   }, [time, view, duration, pointerDriven]);
    useEffect(() => {
       const element = viewport.current!;
       const wheel = (event: WheelEvent) => {
@@ -173,7 +226,9 @@ export function Timeline({
             const fraction = clamp((event.clientX - rect.left) / rect.width, 0, 1);
             if (event.deltaY === 0) return;
             const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1);
-            const length = clamp(current.length * Math.exp(delta * 0.0014), Math.min(0.5, total), total);
+            // Trackpads emit many small pixel deltas; the coefficient keeps a two-finger
+            // gesture responsive while a mouse notch stays around a third of the view.
+            const length = clamp(current.length * Math.exp(delta * 0.003), Math.min(0.5, total), total);
             setView({ length, start: clamp(current.start + fraction * (current.length - length), 0, total - length) });
          }
       };
@@ -260,7 +315,6 @@ export function Timeline({
    };
    // Stationary ruler ticks: fixed times from the ladder, so labels keep their meaning while
    // zooming; the next-finer step fades in between as spacing allows.
-   const pxPerSecond = viewportWidth > 0 && drawn.length > 0 ? viewportWidth / drawn.length : 0;
    const rulerStep = RULER_STEPS.find((step) => step * pxPerSecond >= 100) ?? RULER_STEPS.at(-1)!;
    const minorStep = minorStepFor(rulerStep);
    const minorSpacing = minorStep * pxPerSecond;
@@ -293,19 +347,23 @@ export function Timeline({
          return (
             <div className="timeline-ruler" aria-hidden="true">
                {rulerMarks.major.map((point) => (
-                  <span key={point} className={`ruler-tick major${tickAlign(point)}`} style={{ left: x(point) }}>
+                  <span key={point} className={`ruler-tick major${tickAlign(point)}`} style={{ left: `${Math.round((point - drawn.start) * pxPerSecond)}px` }}>
                      {!underChip(point) && <em>{formatTime(point, rulerStep < 1 ? 2 : 0)}</em>}
                   </span>
                ))}
                {rulerMarks.minor.map((point) => (
-                  <span key={point} className={`ruler-tick minor${tickAlign(point)}`} style={{ left: x(point), opacity: minorOpacity }}>
+                  <span
+                     key={point}
+                     className={`ruler-tick minor${tickAlign(point)}`}
+                     style={{ left: `${Math.round((point - drawn.start) * pxPerSecond)}px`, opacity: minorOpacity }}
+                  >
                      {!underChip(point) && <em>{formatTime(point, minorStep < 1 ? 2 : 0)}</em>}
                   </span>
                ))}
             </div>
          );
       },
-      // eslint: the x/tickAlign/underChip helpers derive from the listed values
+      // eslint: the tickAlign/underChip helpers derive from the listed values
       [pxPerSecond, rulerStep, minorStep, minorOpacity, drawn.start, drawn.length, chipHalf]
    );
    const track = useMemo(
@@ -379,12 +437,27 @@ export function Timeline({
                      <span className="clip-number" aria-hidden="true">
                         {String(index + 1).padStart(2, "0")}
                      </span>
-                     {snapping &&
-                        visibleKeys
+                     {(snapping || tickExit) &&
+                        keyframeView.ticks
                            .filter((point) => point > clip.start && point < clip.end)
-                           .map((point) => (
-                              <i key={point} className="keyframe-tick" style={{ left: `${((point - clip.start) / (clip.end - clip.start)) * 100}%` }} />
-                           ))}
+                           .map((point) => {
+                              // The pop wave travels out from the playhead at toggle time.
+                              const delay = pop && pxPerSecond > 0 ? Math.round(Math.min((Math.abs(point - pop.time) * pxPerSecond) / 2400, 0.5) * 1000) : null;
+                              return (
+                                 <i
+                                    key={point}
+                                    className={`keyframe-tick${pop ? " pop" : ""}${!snapping && tickExit ? " leaving" : ""}`}
+                                    style={
+                                       {
+                                          left: `${((point - clip.start) / (clip.end - clip.start)) * 100}%`,
+                                          opacity: keyframeView.opacity,
+                                          "--kf-o": keyframeView.opacity,
+                                          ...(delay !== null ? { "--pop-delay": `${delay}ms` } : {}),
+                                       } as CSSProperties
+                                    }
+                                 />
+                              );
+                           })}
                      {(["start", "end"] as const).map((side) => (
                         <button
                            key={side}
@@ -448,7 +521,10 @@ export function Timeline({
          presence,
          hoveredEdge,
          snapping,
-         visibleKeys,
+         keyframeView,
+         pop,
+         tickExit,
+         pxPerSecond,
          drawn.start,
          drawn.length,
          frameStep,

@@ -38,7 +38,7 @@
    height: 5px;
    background: var(--line);
 }
-.timeline-ruler > .ruler-tick.major > em {
+.timeline-ruler > .ruler-tick > em {
    position: absolute;
    left: 0;
    top: 0;
@@ -46,10 +46,10 @@
    white-space: nowrap;
    font-style: normal;
 }
-.timeline-ruler > .ruler-tick.major.edge-start > em {
+.timeline-ruler > .ruler-tick.edge-start > em {
    transform: none;
 }
-.timeline-ruler > .ruler-tick.major.edge-end > em {
+.timeline-ruler > .ruler-tick.edge-end > em {
    transform: translateX(-100%);
 }
 .timeline-ruler > .ruler-tick.minor::before {
@@ -337,6 +337,37 @@
    top: 7px;
    background: color-mix(in srgb, var(--text) 45%, transparent);
    pointer-events: none;
+   transform-origin: center bottom;
+   transition: opacity 160ms ease-out;
+}
+/* Toggling snapping plays a wave from the playhead: each tick pops as the wave passes it.
+   The end frames resolve --kf-o so the pop settles onto the density opacity without a jump. */
+.keyframe-tick.pop {
+   animation: keyframe-pop 240ms cubic-bezier(0.34, 1.45, 0.5, 1) both;
+   animation-delay: var(--pop-delay, 0ms);
+}
+@keyframes keyframe-pop {
+   0% {
+      opacity: 0;
+      scale: 0.5 0.6;
+   }
+   100% {
+      opacity: var(--kf-o, 1);
+      scale: 1 1;
+   }
+}
+.keyframe-tick.leaving {
+   animation: keyframe-leave 160ms ease-in forwards;
+}
+@keyframes keyframe-leave {
+   from {
+      opacity: var(--kf-o, 1);
+      scale: 1 1;
+   }
+   to {
+      opacity: 0;
+      scale: 0.5 0.6;
+   }
 }
 .timeline-edge {
    position: absolute;

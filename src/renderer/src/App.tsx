@@ -249,7 +249,7 @@ export default function App() {
       remember(selectedClip(document));
       dispatch({ type: "commit", document });
    };
-   const seek = (time: number, preservePriority = false) => {
+   const seek = (time: number, preservePriority = false, glide = false) => {
       if (!source) return;
       const target = clamp(time, 0, source.duration);
       if (!trimmingRef.current && !preservePriority) {
@@ -257,7 +257,7 @@ export default function App() {
          refreshPriority();
       }
       playback.previewEnd = null;
-      seeker.seek(target, preferences.keepPlaying);
+      seeker.seek(target, preferences.keepPlaying, glide);
       // Scrub bursts only belong to paused seeking; playing video provides its own audio.
       if (videoRef.current?.paused && preferences.audioScrub) scrubber.scrub(target, muted ? 0 : preferences.volume);
    };
@@ -461,7 +461,7 @@ export default function App() {
    const selectAdjacent = (direction: -1 | 1) => {
       const time = adjacentBoundary(editor.document.clips, clock.get(), direction);
       if (time !== null) {
-         seek(time);
+         seek(time, false, true);
       }
    };
    const setBoundary = (side: "start" | "end", value: number, target = clip) => {
@@ -486,6 +486,14 @@ export default function App() {
    };
    const minimumClipLength = () => minClipLength(0, frameStep);
    const splitTime = () => (clip ? splitTargetAt(editor.document, clip.id, clock.get(), { snapping, keyframes }) : clock.get());
+   const seekKeyframe = (direction: -1 | 1) => {
+      // Sitting on a keyframe steps to its neighbor, not back onto the same point. The seek
+      // glides even when the hop is a single frame: the move is discrete navigation, not a
+      // continuous step.
+      const points = keyframes.filter((point) => (direction < 0 ? point < clock.get() - 0.0005 : point > clock.get() + 0.0005));
+      const target = direction < 0 ? points.at(-1) : points[0];
+      if (target !== undefined) seek(target, false, true);
+   };
    const available = () => !!source && !loading && !trimmingRef.current;
    const frameStep = 1 / (source?.streams.find((stream) => stream.type === "video")?.frameRate || 100);
    const frameSequence = useRef(0);
@@ -575,10 +583,18 @@ export default function App() {
             if (!preparing) void videoRef.current.play().catch(() => undefined);
          },
       },
-      back: { enabled: available, run: () => seek(clock.get() - 1) },
-      forward: { enabled: available, run: () => seek(clock.get() + 1) },
-      backFast: { enabled: available, run: () => seek(clock.get() - 5) },
-      forwardFast: { enabled: available, run: () => seek(clock.get() + 5) },
+      back: { enabled: available, run: () => seek(clock.get() - 1, false, true) },
+      forward: { enabled: available, run: () => seek(clock.get() + 1, false, true) },
+      backFast: { enabled: available, run: () => seek(clock.get() - 5, false, true) },
+      forwardFast: { enabled: available, run: () => seek(clock.get() + 5, false, true) },
+      previousKeyframe: {
+         enabled: () => available() && keyframes.some((point) => point < clock.get() - 0.0005),
+         run: () => seekKeyframe(-1),
+      },
+      nextKeyframe: {
+         enabled: () => available() && keyframes.some((point) => point > clock.get() + 0.0005),
+         run: () => seekKeyframe(1),
+      },
       previous: {
          enabled: () => available() && adjacentBoundary(editor.document.clips, clock.get(), -1) !== null,
          run: () => selectAdjacent(-1),
@@ -856,8 +872,8 @@ export default function App() {
                   <EmptyState onImport={() => void choose()} loading={loading} mac={mac} />
                )}
                {(loading || !ready) && (
-                  <div className="loading-overlay" role="status" aria-label={loading ? "Opening video" : "Loading editor"}>
-                     <LoadingEditor />
+                  <div className="loading-overlay" role="status" aria-label={loading ? "Opening video" : "Starting"}>
+                     <LoadingEditor label={loading ? "Opening..." : "Starting..."} />
                   </div>
                )}
             </main>

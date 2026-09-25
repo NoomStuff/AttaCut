@@ -10,11 +10,24 @@ export class PlaybackSeeker {
    private resolveTime: ((time: number) => Promise<number>) | null = null;
    private waitingForFrame = false;
    private waitingListeners = new Set<() => void>();
+   private progressCount = 0;
+   private progressListeners = new Set<() => void>();
    getWaiting = (): boolean => this.waitingForFrame;
    subscribeWaiting = (listener: () => void): (() => void) => {
       this.waitingListeners.add(listener);
       return () => this.waitingListeners.delete(listener);
    };
+   getProgress = (): number => this.progressCount;
+   subscribeProgress = (listener: () => void): (() => void) => {
+      this.progressListeners.add(listener);
+      return () => this.progressListeners.delete(listener);
+   };
+   /** Counts frames the pipeline produced, so a wait indicator keyed on it can tell a stall
+       from continuous skimming, which keeps a request pending without dropping frames. */
+   private bumpProgress(): void {
+      this.progressCount++;
+      this.progressListeners.forEach((listener) => listener());
+   }
    private setWaiting(waiting: boolean): void {
       if (this.waitingForFrame === waiting) return;
       this.waitingForFrame = waiting;
@@ -37,6 +50,7 @@ export class PlaybackSeeker {
    attach(video: HTMLVideoElement): () => void {
       this.video = video;
       const complete = () => {
+         this.bumpProgress();
          this.scheduled = requestAnimationFrame(() => {
             this.scheduled = 0;
             this.flush();
@@ -60,9 +74,9 @@ export class PlaybackSeeker {
          this.setWaiting(false);
       };
    }
-   seek(time: number, keepPlaying = false): void {
+   seek(time: number, keepPlaying = false, glide = false): void {
       this.revision++;
-      this.clock.set(time);
+      this.clock.set(time, { glide });
       this.requested = time;
       this.setWaiting(true);
       if (!keepPlaying) this.video?.pause();
@@ -93,6 +107,7 @@ export class PlaybackSeeker {
             // Only one resolve runs at a time, so this always owns the flag; a seek that
             // arrived mid-resolve is flushed here. configure() may have already reset it.
             this.resolving = false;
+            this.bumpProgress();
             this.flush();
             this.finishIfReady();
          });

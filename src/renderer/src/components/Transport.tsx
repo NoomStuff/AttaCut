@@ -141,7 +141,7 @@ export function Transport({
                   </div>
                </>
             ) : (
-               <span className="muted">Add a clip to keep part of this video.</span>
+               <span className="muted">Add a clip to keep this part of the video.</span>
             )}
          </div>
          <div className="playback-controls">

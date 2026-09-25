@@ -6,6 +6,9 @@ test("shortcut search focus and reset confirmation", async ({ launchApp, profile
    const page = await app.firstWindow();
    await expect(page.getByRole("button", { name: "Import video", exact: true })).toBeVisible();
    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(800, 560));
+   // The settings command ignores keys until bootstrap finished; the overlay clearing is the
+   // ready signal. Without this wait a cold runner drops the shortcut below.
+   await expect(page.locator(".loading-overlay")).toHaveCount(0);
    await page.keyboard.press("ControlOrMeta+,");
    await page.getByRole("tab", { name: "Keyboard shortcuts" }).click();
    const search = page.getByRole("searchbox", { name: "Search shortcuts" });

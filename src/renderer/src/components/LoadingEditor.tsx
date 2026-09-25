@@ -20,10 +20,10 @@ function Control({ icon, label, className = "" }: { icon: IconDefinition; label:
    );
 }
 
-export function LoadingEditor() {
+export function LoadingEditor({ label }: { label?: string }) {
    return (
       <>
-         <div className="loading-preview skeleton" />
+         <div className="loading-preview skeleton">{label}</div>
          <div className="editor-dock loading-editor-dock" aria-hidden="true">
             <div className="loading-editor-timeline">
                <div className="loading-editor-ruler">

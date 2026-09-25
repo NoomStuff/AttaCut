@@ -7,9 +7,9 @@ import { faScissors } from "@fortawesome/free-solid-svg-icons";
 await mkdir("build", { recursive: true });
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect x="8" y="8" width="240" height="240" rx="54" fill="#20262d"/><path transform="translate(58 58) scale(.2734)" fill="#9bc9f0" d="${faScissors.icon[4]}"/></svg>`;
 // Shown behind the portable stub while it extracts; must be a BMP for NSIS BgImage.
-// Deliberately spinner-free (a static spinner reads as frozen) and sized to the exact
-// splash-window layout so the native launcher's window hands over in place.
-const splashSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="216" height="148"><rect width="216" height="148" fill="#17191c"/><g transform="translate(76 22)"><rect width="64" height="64" rx="13.5" fill="#20262d"/><path transform="translate(14.5 14.5) scale(.06835)" fill="#9bc9f0" d="${faScissors.icon[4]}"/></g></svg>`;
+// The Loading text stands in for the spinner at its exact rect (the static card cannot
+// animate one), so the native splash hands over in place when the real spinner takes over.
+const splashSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="216" height="148"><rect width="216" height="148" fill="#17191c"/><g transform="translate(76 22)"><rect width="64" height="64" rx="13.5" fill="#20262d"/><path transform="translate(14.5 14.5) scale(.06835)" fill="#9bc9f0" d="${faScissors.icon[4]}"/></g><text x="108" y="123" text-anchor="middle" font-family="Segoe UI" font-size="11" fill="#969da7">Loading...</text></svg>`;
 // Icon generation costs about half a second; dev runs skip it until the inputs change.
 const signature = createHash("sha1").update(svg).update(splashSvg).digest("hex");
 const outputs = await Promise.all(["build/icon.png", "build/icon.ico", "build/icon.icns", "build/splash.bmp"].map((path) => stat(path).catch(() => null)));

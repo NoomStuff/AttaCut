@@ -1,17 +1,31 @@
+/* Match the transport icon buttons: same box, radius, and a background-only hover, while
+   keeping the selected-count readout. */
 .audio-picker .select-trigger {
-   width: 42px;
+   width: 36px;
+   min-width: 36px;
+   height: 36px;
    min-height: 36px;
    padding: 0;
    justify-content: center;
    gap: 4px;
    border-color: transparent;
    background: transparent;
+   border-radius: 7px;
+   transition: background-color 170ms ease-out;
+}
+.audio-picker .select-trigger:hover:not(:disabled),
+.audio-picker .select-trigger[aria-expanded="true"] {
+   border-color: transparent;
+   background: var(--surface-hover);
 }
 .audio-picker .select-trigger > span {
    display: flex;
    align-items: center;
    gap: 4px;
    overflow: visible;
+}
+.audio-picker .select-trigger > span svg {
+   font-size: 14px;
 }
 .audio-picker .select-trigger b {
    min-width: 10px;
@@ -20,6 +34,10 @@
    color: var(--muted);
 }
 .audio-picker .select-chevron {
+   display: none;
+}
+/* The open menu replaces the tooltip as the explanation of the control. */
+.audio-picker:has(.select-trigger[aria-expanded="true"]) .tooltip {
    display: none;
 }
 .audio-picker .select-menu {
