@@ -186,7 +186,8 @@ const fixtures: Fixture[] = [
       extension: ".3gp",
       size: "176x144",
       video: ["-c:v", "h263", "-g", "48", "-q:v", "3"],
-      audio: ["-c:a", "libopencore_amrnb", "-ar", "8000", "-ac", "1"],
+      // AMR-NB would be the authentic 3gp audio, but the pinned macOS ARM ffmpeg cannot encode it.
+      audio: ["-c:a", "aac", "-ar", "8000", "-ac", "1"],
    },
    { name: "msmpeg4", extension: ".avi", video: ["-c:v", "msmpeg4", "-g", "48", "-q:v", "3"], audio: ["-c:a", "wmav2"] },
    { name: "magicyuv", extension: ".mkv", video: ["-c:v", "magicyuv", "-pix_fmt", "yuv420p"], audio: ["-c:a", "flac"] },

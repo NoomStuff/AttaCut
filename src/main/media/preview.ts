@@ -83,9 +83,10 @@ export async function preparePreview(
          "ffmpeg",
          [
             ...ffmpegBase,
-            // Decoding drives proxy speed on long recordings; "auto" falls back to software silently.
-            "-hwaccel",
-            "auto",
+            // Decoding drives proxy speed on long recordings; "auto" falls back to software
+            // silently on Windows and macOS. Linux builds probe GPU libraries during device
+            // init and abort when they are missing, so software decode stays the safe path there.
+            ...(process.platform === "linux" ? [] : ["-hwaccel", "auto"]),
             "-i",
             source.path,
             "-map",
