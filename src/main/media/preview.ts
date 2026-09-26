@@ -8,7 +8,9 @@ import type { RunOptions } from "./process.ts";
 import { probeSource } from "./probe.ts";
 import { isHdrTransfer, tonemapToBt709 } from "./formats.ts";
 import { removeTemporary } from "./publish.ts";
-const previewByteLimit = 1024 * 1024 * 1024;
+/** Long recordings get a lighter proxy so the cache cap stays reachable within any duration. */
+const previewByteLimit = 4 * 1024 * 1024 * 1024;
+const longRecordingSeconds = 2 * 60 * 60;
 
 /**
  * Cache id stays stable across opens of the same unchanged file, so reopening a recording
@@ -60,15 +62,18 @@ export async function preparePreview(
    const primaries = ["", "unknown", "unspecified"].includes(video.colorPrimaries) ? "bt2020" : video.colorPrimaries;
    const space = ["", "unknown", "unspecified"].includes(video.colorSpace) ? "bt2020nc" : video.colorSpace;
    const toneMap = hdr ? `${tonemapToBt709("yuv420p", `zscale=pin=${primaries}:tin=${video.colorTransfer}:min=${space}`)},` : "";
+   // Interlaced previews are deinterlaced for viewing only; the source and every export stay untouched.
+   const deinterlace = video.fieldOrder && !["unknown", "progressive"].includes(video.fieldOrder) ? "yadif=2:-1:0," : "";
+   const long = source.duration > longRecordingSeconds;
    const encode = [
       "-vf",
-      `${toneMap}scale=w='trunc(min(1280,iw)/2)*2':h=-2`,
+      `${toneMap}${deinterlace}scale=w='trunc(min(${long ? 960 : 1280},iw)/2)*2':h=-2`,
       "-c:v",
       "libx264",
       "-preset",
       "ultrafast",
       "-crf",
-      "25",
+      long ? "26" : "25",
       "-pix_fmt",
       "yuv420p",
       ...(hdr ? ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"] : []),
@@ -78,6 +83,9 @@ export async function preparePreview(
          "ffmpeg",
          [
             ...ffmpegBase,
+            // Decoding drives proxy speed on long recordings; "auto" falls back to software silently.
+            "-hwaccel",
+            "auto",
             "-i",
             source.path,
             "-map",

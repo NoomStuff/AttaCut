@@ -51,6 +51,9 @@ test("timeline", async ({ launchApp, profile }) => {
    expect(await video.evaluate((video) => video.currentTime)).toBeCloseTo(4, 1);
    await page.getByRole("button", { name: "Preview audio tracks", exact: true }).click();
    await expect(page.getByRole("option", { name: "Game audio", exact: true })).toBeVisible();
+   await page.keyboard.press("Escape");
+   await expect(page.getByRole("option", { name: "Game audio", exact: true })).toHaveCount(0);
+   await page.getByRole("button", { name: "Preview audio tracks", exact: true }).click();
    await page.getByRole("option", { name: "Microphone", exact: true }).click();
    await page.getByRole("button", { name: "Playback settings", exact: true }).click();
    await page.getByRole("switch", { name: "Keep playing while editing", exact: true }).check();

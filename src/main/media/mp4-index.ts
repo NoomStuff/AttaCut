@@ -32,8 +32,13 @@ function entries(data: Buffer, box: Box, stride: number): number {
    return count;
 }
 
+export interface SampleTimes {
+   keyframes: number[];
+   /** Presentation time of every sample, sorted; lets seeks resolve without spawning ffprobe. */
+   frames: number[] | null;
+}
 /** Read MP4/MOV sample tables without reading or decoding the video payload. */
-export async function indexedKeyframes(source: ProbedSource, signal?: AbortSignal): Promise<number[] | null> {
+export async function indexedSampleTimes(source: ProbedSource, signal?: AbortSignal): Promise<SampleTimes | null> {
    if (![".mp4", ".m4v", ".mov"].includes(source.extension)) return null;
    const file = await open(source.path, "r");
    try {
@@ -85,9 +90,7 @@ export async function indexedKeyframes(source: ProbedSource, signal?: AbortSigna
          }));
          const total = timing.reduce((sum, entry) => sum + entry.count, 0);
          if (!total || total > 20_000_000) return null;
-         const samples = stss
-            ? Array.from({ length: entries(data, stss, 4) }, (_, i) => data.readUInt32BE(stss.start + 8 + i * 4) - 1)
-            : Array.from({ length: total }, (_, i) => i);
+         const keySamples = stss ? new Set(Array.from({ length: entries(data, stss, 4) }, (_, i) => data.readUInt32BE(stss.start + 8 + i * 4) - 1)) : null;
          const composition = ctts
             ? Array.from({ length: entries(data, ctts, 8) }, (_, i) => ({
                  count: data.readUInt32BE(ctts.start + 8 + i * 8),
@@ -119,18 +122,26 @@ export async function indexedKeyframes(source: ProbedSource, signal?: AbortSigna
             time = 0,
             ci = 0,
             cs = 0;
-         const result: number[] = [];
-         for (const sample of samples) {
-            if (sample < ts || sample >= total) return null;
+         const keyframes: number[] = [];
+         // One sequential pass covers every sample; presentation times follow the same
+         // stts/ctts/edit-list math whether we index keyframes only or all frames.
+         const wantFrames = total <= 8_000_000;
+         const frames: number[] = [];
+         for (let sample = 0; sample < total; sample++) {
+            if (sample < ts) return null;
             while (timing[ti] && sample >= ts + timing[ti]!.count) {
                time += timing[ti]!.count * timing[ti]!.delta;
                ts += timing[ti++]!.count;
             }
             while (composition[ci] && sample >= cs + composition[ci]!.count) cs += composition[ci++]!.count;
             const point = (time + (sample - ts) * timing[ti]!.delta + (composition[ci]?.delta ?? 0)) / scale + editOffset - source.startOffset;
-            if (point >= -0.000001 && point <= source.duration) result.push(Math.max(0, point));
+            if (point >= -0.000001 && point <= source.duration) {
+               const stored = Math.max(0, point);
+               if (keySamples === null || keySamples.has(sample)) keyframes.push(stored);
+               if (wantFrames) frames.push(stored);
+            }
          }
-         return result.sort((a, b) => a - b);
+         return { keyframes: keyframes.sort((a, b) => a - b), frames: wantFrames ? frames.sort((a, b) => a - b) : null };
       }
       return null;
    } catch (error) {
@@ -139,4 +150,9 @@ export async function indexedKeyframes(source: ProbedSource, signal?: AbortSigna
    } finally {
       await file.close();
    }
+}
+/** Keyframe presentation times only; the cheapest index for timeline snapping. */
+export async function indexedKeyframes(source: ProbedSource, signal?: AbortSignal): Promise<number[] | null> {
+   const index = await indexedSampleTimes(source, signal);
+   return index?.keyframes ?? null;
 }

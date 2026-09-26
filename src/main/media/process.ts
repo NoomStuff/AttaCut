@@ -17,6 +17,11 @@ export interface RunOptions {
    /** Kill the child after this much silence on stdout and stderr; a hung process must never pin an export. */
    idleTimeoutMs?: number;
    onProgress?: ((fraction: number) => void) | undefined;
+   /**
+    * Consume stdout line by line instead of buffering it. Used for whole-file scans whose
+    * output grows with recording length; only a short tail is kept for error text.
+    */
+   onLines?: ((line: string) => void) | undefined;
 }
 /** ffmpeg and ffprobe stream progress or results continuously, so two minutes of total silence means a wedged decoder or stalled disk. */
 const defaultIdleTimeoutMs = 120_000;
@@ -27,6 +32,7 @@ export function runMedia(name: "ffmpeg" | "ffprobe", args: string[], options: Ru
       const idleLimit = options.idleTimeoutMs ?? defaultIdleTimeoutMs;
       let stdout = "";
       let stderr = "";
+      let pendingLine = "";
       let processError: Error | null = null;
       let settled = false;
       let idleTimer: NodeJS.Timeout | null = null;
@@ -51,13 +57,21 @@ export function runMedia(name: "ffmpeg" | "ffprobe", args: string[], options: Ru
       child.stderr.setEncoding("utf8");
       child.stdout.on("data", (data: string) => {
          armIdle();
+         for (const match of data.matchAll(/out_time_us=(\d+)/g)) {
+            if (options.duration) options.onProgress?.(Math.min(0.99, Number(match[1]) / 1e6 / options.duration));
+         }
+         if (options.onLines) {
+            stdout = (stdout + data).slice(-4096);
+            pendingLine += data;
+            const lines = pendingLine.split(/\r?\n/);
+            pendingLine = lines.pop() ?? "";
+            for (const line of lines) if (line) options.onLines(line);
+            return;
+         }
          stdout += data;
          if (stdout.length > 64 * 1024 * 1024) {
             child.kill();
             processError ??= new Error("Media analysis returned too much data.");
-         }
-         for (const match of data.matchAll(/out_time_us=(\d+)/g)) {
-            if (options.duration) options.onProgress?.(Math.min(0.99, Number(match[1]) / 1e6 / options.duration));
          }
       });
       child.stderr.on("data", (data: string) => {
@@ -79,6 +93,10 @@ export function runMedia(name: "ffmpeg" | "ffprobe", args: string[], options: Ru
          if (settled) return;
          settled = true;
          disarm();
+         if (options.onLines && pendingLine) {
+            options.onLines(pendingLine);
+            pendingLine = "";
+         }
          if (code === 0 && !processError && !options.signal?.aborted) resolve(stdout);
          else reject(options.signal?.aborted ? new Error("Cancelled") : (processError ?? new Error(stderr.trim() || `${name} exited with code ${code}`)));
       });

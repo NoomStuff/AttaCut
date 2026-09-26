@@ -17,7 +17,7 @@ import {
    exportApprovalSchema,
    analyzeRequestSchema,
 } from "../shared/types.ts";
-import { packetsAround } from "./media/probe.ts";
+import { packetsAround, sourceFrames } from "./media/probe.ts";
 import { exportFrame } from "./media/frame.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import { SourceSession } from "./source-session.ts";
@@ -338,13 +338,11 @@ async function start(): Promise<void> {
    handle("source:frame-time", async (value) => {
       const request = frameTimeRequestSchema.parse(value);
       const source = getSource(request.sourceId);
-      const points = await packetsAround(source, request.time, sourceSession.signal);
-      return resolveFrameTime(
-         points.map((point) => point.time),
-         request.time,
-         source.duration,
-         request.direction
-      );
+      // MP4-family sources resolve from their in-memory frame index; everything else reads a
+      // small packet window around the target.
+      const frames = await sourceFrames(source, sourceSession.signal).catch(() => null);
+      const points = frames ?? (await packetsAround(source, request.time, sourceSession.signal, "seek")).map((point) => point.time);
+      return resolveFrameTime(points, request.time, source.duration, request.direction);
    });
    handle("audio:scrub", async (value) => {
       const request = scrubRequestSchema.parse(value);

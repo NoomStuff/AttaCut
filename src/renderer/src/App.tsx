@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, u
 import type { AvailableUpdate, MediaSource, ExportJob, SavedSession, Preferences } from "../../shared/types";
 import { clipColorCount, defaultPreferences } from "../../shared/defaults";
 import { clamp } from "../../shared/time";
-import { adjacentBoundary, resolveBoundary, splitTargetAt } from "./editor/navigation";
+import { adjacentBoundary, neighboringKeyframe, resolveBoundary, splitTargetAt } from "./editor/navigation";
 import { selectNativeAudio } from "./playback/audio";
 import { rememberAudioSelection, resolveAudioSelection } from "./playback/audioSelection";
 import { nativeAudioCodecs } from "./playback/codecs";
@@ -490,9 +490,8 @@ export default function App() {
       // Sitting on a keyframe steps to its neighbor, not back onto the same point. The seek
       // glides even when the hop is a single frame: the move is discrete navigation, not a
       // continuous step.
-      const points = keyframes.filter((point) => (direction < 0 ? point < clock.get() - 0.0005 : point > clock.get() + 0.0005));
-      const target = direction < 0 ? points.at(-1) : points[0];
-      if (target !== undefined) seek(target, false, true);
+      const target = neighboringKeyframe(clock.get(), direction, keyframes);
+      if (target !== null) seek(target, false, true);
    };
    const available = () => !!source && !loading && !trimmingRef.current;
    const frameStep = 1 / (source?.streams.find((stream) => stream.type === "video")?.frameRate || 100);
@@ -588,11 +587,11 @@ export default function App() {
       backFast: { enabled: available, run: () => seek(clock.get() - 5, false, true) },
       forwardFast: { enabled: available, run: () => seek(clock.get() + 5, false, true) },
       previousKeyframe: {
-         enabled: () => available() && keyframes.some((point) => point < clock.get() - 0.0005),
+         enabled: () => available() && neighboringKeyframe(clock.get(), -1, keyframes) !== null,
          run: () => seekKeyframe(-1),
       },
       nextKeyframe: {
-         enabled: () => available() && keyframes.some((point) => point > clock.get() + 0.0005),
+         enabled: () => available() && neighboringKeyframe(clock.get(), 1, keyframes) !== null,
          run: () => seekKeyframe(1),
       },
       previous: {

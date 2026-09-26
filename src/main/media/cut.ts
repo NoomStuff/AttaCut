@@ -8,8 +8,17 @@ import { ffmpegBase, runMedia } from "./process.ts";
 import type { RunOptions } from "./process.ts";
 import { metadataInputs, textSubtitleCodecs } from "./metadata.ts";
 import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
-import { encoderArguments, isIntraCodec, segmentExtension, colorArguments, isMp4Container, containerFlags } from "./formats.ts";
-import { ffconcatList, isLosslessAudio } from "./mux.ts";
+import {
+   encoderArguments,
+   isIntraCodec,
+   segmentExtension,
+   colorArguments,
+   isMp4Container,
+   containerFlags,
+   containerKeepsData,
+   supportsInterlacedEncoding,
+} from "./formats.ts";
+import { ffconcatList, isLosslessAudio, dispositionFlags } from "./mux.ts";
 import { resolveFrameTime } from "../../shared/frames.ts";
 
 export interface Span {
@@ -44,30 +53,38 @@ export interface CutIntent {
 export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: AbortSignal, intent: CutIntent = {}): Promise<CutAnalysis> {
    const unsupported = (message: string): CutAnalysis => ({ execution: "trim", clip, spans: [], method: "unsupported", encodedSeconds: 0, message });
    if (clip.start < 0 || clip.end > source.duration + epsilon || clip.end <= clip.start) return unsupported("The selected range is outside the video.");
+   const destination = (intent.extension ?? source.exportExtension).toLowerCase();
+   const keepsData = containerKeepsData(destination);
+   // Telemetry tracks ride along wherever the container can hold them; elsewhere they are
+   // named as dropped instead of disappearing silently inside the muxer.
+   const dataNote =
+      source.streams.some((stream) => stream.type === "data") && !keepsData
+         ? " This output container cannot store telemetry tracks, so they are left out."
+         : "";
    if (clip.start === 0 && Math.abs(clip.end - source.duration) < epsilon) {
+      const identical = !intent.combined && (intent.extension ?? source.extension).toLowerCase() === source.extension.toLowerCase();
+      const fullCopy =
+         identical &&
+         source.streams
+            .filter((stream) => stream.type === "audio")
+            .every((stream) => intent.audioTracks === undefined || intent.audioTracks.includes(stream.index));
       return {
-         execution:
-            !intent.combined &&
-            (intent.extension ?? source.extension).toLowerCase() === source.extension.toLowerCase() &&
-            source.streams
-               .filter((stream) => stream.type === "audio")
-               .every((stream) => intent.audioTracks === undefined || intent.audioTracks.includes(stream.index))
-               ? "file-copy"
-               : "remux",
+         execution: fullCopy ? "file-copy" : "remux",
          clip,
          spans: [{ start: 0, end: source.duration, encode: false }],
          method: "copy",
          encodedSeconds: 0,
-         message: "Original streams copied",
+         message: fullCopy || !dataNote ? "Original streams copied" : `Original streams copied.${dataNote}`,
       };
    }
    const video = source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture);
    if (!video) return unsupported("No video track.");
-   if (source.streams.some((stream) => !["audio", "video", "subtitle", "attachment"].includes(stream.type)))
-      return unsupported("This file contains timed data tracks that cannot yet be preserved during trimming.");
-   if (source.streams.some((stream) => stream.type === "subtitle" && !textSubtitleCodecs.has(stream.codec)))
-      return unsupported("This file contains bitmap subtitles that cannot yet be trimmed reliably.");
-   if (source.streams.some((stream) => stream.attachedPicture)) return unsupported("Trimming files with embedded cover pictures is not supported yet.");
+   if (source.streams.some((stream) => !["audio", "video", "subtitle", "attachment", "data"].includes(stream.type)))
+      return unsupported("This file contains stream types that cannot yet be preserved during trimming.");
+   if (source.streams.some((stream) => stream.type === "subtitle" && !textSubtitleCodecs.has(stream.codec) && destination !== ".mkv"))
+      return unsupported("This file contains bitmap subtitles that cannot be stored in this output container yet.");
+   if (source.streams.some((stream) => stream.attachedPicture) && intent.combined)
+      return unsupported("Trimming files with embedded cover pictures into one combined video is not supported yet.");
    if (source.streams.filter((stream) => stream.type === "video" && !stream.attachedPicture).length !== 1)
       return unsupported("Cutting files with multiple video tracks is not supported yet.");
    const [startPackets, endPackets] = await Promise.all([packetsAround(source, clip.start, signal), packetsAround(source, clip.end, signal)]);
@@ -126,7 +143,7 @@ export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: Abor
       return unsupported("This cut would need more than a small section re-encoded. Try a nearby boundary or a shorter selection.");
    }
    if (encodedSeconds > epsilon && !encoderArguments(video))
-      return unsupported(`Precise boundary encoding is not available for ${video.codec.toUpperCase()} yet.`);
+      return unsupported(`Precise boundary encoding is not available for ${video.codec.toUpperCase()} yet. Turn on Snap to keyframes to export losslessly.`);
    if (encodedSeconds > epsilon && ["mpeg4", "mpeg2video", "mpeg1video", "wmv1", "wmv2"].includes(video.codec)) {
       const interval = 1 / video.frameRate;
       const irregular = [startPackets, endPackets].some((packets) =>
@@ -138,7 +155,7 @@ export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: Abor
       return unsupported("This file uses dynamic HDR metadata. Encoding its cuts without changing HDR is not supported yet.");
    if (encodedSeconds > epsilon && video.codec !== "hevc" && (video.masterDisplay || video.maxCll))
       return unsupported("Preserving this codec's HDR mastering metadata during boundary encoding is not supported yet.");
-   if (encodedSeconds > epsilon && video.fieldOrder && !["unknown", "progressive"].includes(video.fieldOrder))
+   if (encodedSeconds > epsilon && video.fieldOrder && !["unknown", "progressive"].includes(video.fieldOrder) && !supportsInterlacedEncoding(video.codec))
       return unsupported("Precise boundary encoding for interlaced video is not supported yet.");
    return {
       execution: "trim",
@@ -146,7 +163,8 @@ export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: Abor
       spans,
       method: encodedSeconds > epsilon ? "boundary" : "copy",
       encodedSeconds,
-      message: encodedSeconds > epsilon ? `${encodedSeconds.toFixed(2)}s near the cuts re-encoded; remaining video copied` : "Original streams copied",
+      message:
+         (encodedSeconds > epsilon ? `${encodedSeconds.toFixed(2)}s near the cuts re-encoded; remaining video copied` : "Original streams copied") + dataNote,
       verifyTimes,
       encodedVerifyTimes,
    };
@@ -170,6 +188,8 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
    const sourceAudio = source.streams.filter((stream) => stream.type === "audio");
    const selectedAudio = options.audioTracks === undefined ? sourceAudio : sourceAudio.filter((stream) => options.audioTracks!.includes(stream.index));
    const allAudio = selectedAudio.length === sourceAudio.length;
+   // Matroska-family muxers silently drop data streams, so their absence is expected by verification.
+   const keepsData = containerKeepsData(extname(destination).toLowerCase());
    try {
       if (analysis.execution === "file-copy" && allAudio && extname(destination).toLowerCase() === source.extension.toLowerCase()) {
          await copyFile(source.path, finalTemporary, constants.COPYFILE_EXCL);
@@ -185,6 +205,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                "-map",
                "0",
                ...sourceAudio.filter((stream) => !selectedAudio.includes(stream)).flatMap((stream) => ["-map", `-0:${stream.index}`]),
+               ...(keepsData ? [] : ["-map", "-0:d?"]),
                "-map_metadata",
                "0",
                "-map_chapters",
@@ -261,6 +282,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             options.signal
          );
          const audioPreroll = analysis.spans[0]?.readStart ?? 0;
+         const covers = source.streams.filter((stream) => stream.attachedPicture);
          const args = [
             ...ffmpegBase,
             "-f",
@@ -280,6 +302,10 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             "-map",
             "0:v:0",
             ...selectedAudio.flatMap((audio) => ["-map", `1:${audio.index}`]),
+            // Telemetry follows the audio treatment: copied from the pre-seeked input and
+            // bounded by the output duration. Cover pictures join as secondary video streams.
+            ...source.streams.filter((stream) => stream.type === "data" && keepsData).flatMap((stream) => ["-map", `1:${stream.index}`]),
+            ...covers.flatMap((stream, index) => ["-map", `1:${stream.index}`, "-disposition:v:" + (index + 1), dispositionFlags(stream.disposition)]),
             "-map_metadata",
             "1",
             "-map_metadata:s:v:0",
@@ -291,7 +317,11 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             String(duration),
          ];
          if (isMp4Container(extname(destination))) args.push(...containerFlags(video));
-         else args.push("-bsf:a", `noise=drop='lt(pts*tb,0)+gte(pts*tb,${duration})'`, "-avoid_negative_ts", "disabled");
+         else {
+            args.push("-bsf:a", `noise=drop='lt(pts*tb,0)+gte(pts*tb,${duration})'`, "-avoid_negative_ts", "disabled");
+            if (source.streams.some((stream) => stream.type === "subtitle" && !textSubtitleCodecs.has(stream.codec)))
+               args.push("-bsf:s", `noise=drop='lt(pts*tb,0)+gte(pts*tb,${duration})'`);
+         }
          for (const [index, audio] of selectedAudio.entries()) {
             if (isLosslessAudio(audio.codec)) {
                args.push(`-c:a:${index}`, audio.codec, `-filter:a:${index}`, `atrim=start=0:end=${duration}`, `-bsf:a:${index}`, "null");
@@ -313,7 +343,8 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                selectedAudio.map((stream) => stream.index),
                duration,
                options.signal,
-               clip.start
+               clip.start,
+               keepsData ? [] : ["data"]
             );
          if (analysis.verifyTimes?.length) await verifyCopiedFrames(source, finalTemporary, clip.start, analysis.verifyTimes, options.signal);
          if (analysis.encodedVerifyTimes?.length) await verifyEncodedFrames(source, finalTemporary, clip.start, analysis.encodedVerifyTimes, options.signal);

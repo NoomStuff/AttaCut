@@ -6,7 +6,7 @@ import { assertSourceUnchanged } from "./probe.ts";
 import { exportCut } from "./cut.ts";
 import type { CutAnalysis, CutOptions } from "./cut.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
-import { isMp4Container, containerFlags } from "./formats.ts";
+import { isMp4Container, containerFlags, containerKeepsData } from "./formats.ts";
 import { ffconcatList, isLosslessAudio, dispositionFlags, serializeChapters } from "./mux.ts";
 import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
 
@@ -43,6 +43,8 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
                "0:a?",
                "-map",
                "0:s?",
+               "-map",
+               "0:d?",
                "-c",
                "copy",
                ...(selectedAudio.length ? ["-bsf:a", `noise=drop='lt(pts*tb,0)+gte(pts*tb,${cut.clip.end - cut.clip.start})'`] : []),
@@ -140,7 +142,8 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
          selectedAudio.map((stream) => stream.index),
          duration,
          options.signal,
-         cuts[0]!.clip.start
+         cuts[0]!.clip.start,
+         containerKeepsData(extname(destination).toLowerCase()) ? [] : ["data"]
       );
       await assertSourceUnchanged(source);
       await publishOutput(output, destination, options.overwrite, source.path, options.replaceSource);

@@ -43,6 +43,24 @@ export async function metadataInputs(
    let subtitleIndex = 0;
    const mp4 = isMp4Container(extname(destination));
    for (const stream of source.streams.filter((item) => item.type === "subtitle")) {
+      // Bitmap subtitles (PGS, VobSub, DVB) cannot be re-cut line by line; MKV outputs copy
+      // them from the pre-seeked source input and exportCut drops packets outside the clip.
+      if (!textSubtitleCodecs.has(stream.codec)) {
+         outputs.push(
+            "-map",
+            `1:${stream.index}`,
+            `-c:s:${subtitleIndex}`,
+            "copy",
+            `-metadata:s:s:${subtitleIndex}`,
+            `language=${stream.language || "und"}`,
+            `-metadata:s:s:${subtitleIndex}`,
+            `title=${stream.title}`,
+            `-disposition:s:${subtitleIndex}`,
+            dispositionFlags(stream.disposition)
+         );
+         subtitleIndex++;
+         continue;
+      }
       const ass = await runMedia("ffmpeg", ["-v", "error", "-i", source.path, "-map", `0:${stream.index}`, "-c:s", "ass", "-f", "ass", "-"], {
          signal,
       });

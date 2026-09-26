@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import type { ScrubAudio } from "../shared/types.ts";
-import { packetsAround, probeSource, sourceKeyframes } from "./media/probe.ts";
+import { packetsAround, probeSource, sourceFrames, sourceKeyframes } from "./media/probe.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import { preparePreview } from "./media/preview.ts";
 import { extractScrubPcm, scrubChunkSeconds } from "./media/scrub-audio.ts";
@@ -50,7 +50,10 @@ export class SourceSession {
       this.release();
       this.source = source;
       this.mediaPaths.set(source.id, source.path);
-      void packetsAround(source, 0, this.signal).catch(() => undefined);
+      // Warm what the first seek needs: the in-memory frame index for MP4-family sources,
+      // the first small packet window for everything else.
+      if ([".mp4", ".m4v", ".mov"].includes(source.extension)) void sourceFrames(source, this.signal).catch(() => undefined);
+      else void packetsAround(source, 0, this.signal, "seek").catch(() => undefined);
       return source;
    }
    keyframes(id: string): Promise<number[]> {

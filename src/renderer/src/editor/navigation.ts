@@ -13,6 +13,65 @@ export interface SnapBounds {
    low?: number;
    high?: number;
 }
+/** Keys are sorted; binary search keeps snapping instant on all-intra multi-hour recordings. */
+function firstAfter(keys: number[], value: number): number | null {
+   let low = 0;
+   let high = keys.length;
+   while (low < high) {
+      const mid = (low + high) >> 1;
+      if (keys[mid]! > value) high = mid;
+      else low = mid + 1;
+   }
+   return low < keys.length ? keys[low]! : null;
+}
+function lastBefore(keys: number[], value: number): number | null {
+   let low = 0;
+   let high = keys.length;
+   while (low < high) {
+      const mid = (low + high) >> 1;
+      if (keys[mid]! < value) low = mid + 1;
+      else high = mid;
+   }
+   return low > 0 ? keys[low - 1]! : null;
+}
+/** Navigate source keyframes without scanning every entry in a long recording. */
+export function neighboringKeyframe(value: number, direction: -1 | 1, keys: number[]): number | null {
+   return direction < 0 ? lastBefore(keys, value - 0.0005) : firstAfter(keys, value + 0.0005);
+}
+function nearestKey(keys: number[], value: number, min: number, max: number): number | null {
+   let lo = 0;
+   let hi = keys.length;
+   while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (keys[mid]! < min) lo = mid + 1;
+      else hi = mid;
+   }
+   let l2 = lo;
+   let h2 = keys.length;
+   while (l2 < h2) {
+      const mid = (l2 + h2) >> 1;
+      if (keys[mid]! <= max) l2 = mid + 1;
+      else h2 = mid;
+   }
+   const last = l2 - 1;
+   if (lo > last) return null;
+   const first = keys[lo]!;
+   const final = keys[last]!;
+   // The target can sit outside the in-range span, where the nearest key is an endpoint.
+   if (value <= first) return first;
+   if (value >= final) return final;
+   let low = lo;
+   let high = last + 1;
+   while (low < high) {
+      const mid = (low + high) >> 1;
+      if (keys[mid]! < value) low = mid + 1;
+      else high = mid;
+   }
+   let best = keys[low]!;
+   const before = keys[low - 1]!;
+   if (Math.abs(before - value) < Math.abs(best - value)) best = before;
+   return best;
+}
 export function snapBoundary(
    document: EditDocument,
    id: string,
@@ -26,16 +85,25 @@ export function snapBoundary(
    const clip = document.clips[index]!;
    const min = Math.max(side === "start" ? (document.clips[index - 1]?.end ?? 0) : clip.start + timeEpsilon, bounds?.low ?? -Infinity);
    const max = Math.min(side === "end" ? (document.clips[index + 1]?.start ?? duration) : clip.end - timeEpsilon, bounds?.high ?? Infinity);
-   const best = [0, ...keys, duration]
-      .filter((point) => point >= min && point <= max)
-      .reduce((best, point) => (Math.abs(point - value) < Math.abs(best - value) ? point : best), Infinity);
-   return Number.isFinite(best) ? best : clip[side];
+   const inRange = (point: number) => point >= min && point <= max;
+   let best: number | null = inRange(0) ? 0 : null;
+   const key = nearestKey(keys, value, min, max);
+   if (key !== null && (best === null || Math.abs(key - value) < Math.abs(best - value))) best = key;
+   if (inRange(duration) && (best === null || Math.abs(duration - value) < Math.abs(best - value))) best = duration;
+   return best !== null ? best : clip[side];
 }
 /** Nearest keyframe from a boundary in one direction, treating the timeline ends as keyframes. */
 export function adjacentKeyframe(value: number, direction: -1 | 1, keys: number[], duration: number, bounds?: SnapBounds): number {
-   return direction === 1
-      ? ([...keys, duration].find((point) => point > value + timeEpsilon && point <= (bounds?.high ?? Infinity)) ?? value)
-      : ([0, ...keys].filter((point) => point < value - timeEpsilon && point >= (bounds?.low ?? -Infinity)).at(-1) ?? value);
+   if (direction === 1) {
+      const high = bounds?.high ?? Infinity;
+      const key = firstAfter(keys, value + timeEpsilon);
+      if (key !== null && key <= high) return key;
+      return duration > value + timeEpsilon && duration <= high ? duration : value;
+   }
+   const low = bounds?.low ?? -Infinity;
+   const key = lastBefore(keys, value - timeEpsilon);
+   if (key !== null && key >= low) return key;
+   return 0 < value - timeEpsilon && 0 >= low ? 0 : value;
 }
 
 /** Longest floor a clip must keep at this zoom without expanding already shorter clips. */
@@ -91,9 +159,7 @@ export function splitTargetAt(document: EditDocument, id: string, time: number, 
    if (!options.snapping) return time;
    const clip = document.clips.find((item) => item.id === id);
    if (!clip) return time;
-   return options.keyframes
-      .filter((point) => point >= clip.start && point <= clip.end)
-      .reduce((best, point) => (Math.abs(point - time) < Math.abs(best - time) ? point : best), Infinity);
+   return nearestKey(options.keyframes, time, clip.start, clip.end) ?? Infinity;
 }
 
 export interface StepOptions {

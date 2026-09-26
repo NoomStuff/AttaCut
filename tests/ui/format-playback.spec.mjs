@@ -15,7 +15,8 @@ test("format playback", async ({ launchApp, profile }) => {
       const paths = files
          .filter(
             (file) =>
-               (file.startsWith(`${format.name}.`) || file.startsWith(`${format.name}-1.25-8.75-cut.`)) && /\.(mp4|mov|mkv|webm|avi|wmv|flv|mpg|ts)$/.test(file)
+               (file.startsWith(`${format.name}.`) || file.startsWith(`${format.name}-1.25-8.75-cut.`)) &&
+               /\.(mp4|mov|mkv|webm|avi|wmv|flv|mpg|ts|mts|m2ts|3gp|3g2|dv|ogv|divx)$/.test(file)
          )
          .map((file) => resolve("work/formats", file));
       expect(paths).toHaveLength(2);

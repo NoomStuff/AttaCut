@@ -46,8 +46,19 @@ export function DropdownSelect({
       const outside = (event: PointerEvent) => {
          if (!root.current?.contains(event.target as Node)) setOpen(false);
       };
+      const escape = (event: KeyboardEvent) => {
+         if (event.key !== "Escape") return;
+         event.preventDefault();
+         event.stopPropagation();
+         setOpen(false);
+         root.current?.querySelector<HTMLButtonElement>(".select-trigger")?.focus();
+      };
       window.addEventListener("pointerdown", outside);
-      return () => window.removeEventListener("pointerdown", outside);
+      window.addEventListener("keydown", escape, true);
+      return () => {
+         window.removeEventListener("pointerdown", outside);
+         window.removeEventListener("keydown", escape, true);
+      };
    }, [open]);
    const close = () => {
       setOpen(false);
@@ -87,10 +98,6 @@ export function DropdownSelect({
                aria-label={label}
                aria-multiselectable={multiple || undefined}
                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                     event.stopPropagation();
-                     close();
-                  }
                   if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
                      event.preventDefault();
                      event.stopPropagation();

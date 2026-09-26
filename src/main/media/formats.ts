@@ -1,9 +1,86 @@
 import type { MediaStream, MediaSource } from "../../shared/types.ts";
 
-export const videoExtensions = ["mp4", "mov", "mkv", "webm", "avi", "m4v", "ts", "mts", "m2ts", "mpg", "mpeg", "m2v", "vob", "flv", "wmv", "asf", "ogv", "mxf"];
-const intraCodecs = new Set(["prores", "dnxhd", "mjpeg", "dvvideo", "rawvideo", "v210", "cfhd", "huffyuv", "ffvhuff", "utvideo"]);
+export const videoExtensions = [
+   "mp4",
+   "mov",
+   "mkv",
+   "webm",
+   "avi",
+   "m4v",
+   "ts",
+   "mts",
+   "m2ts",
+   "mpg",
+   "mpeg",
+   "m2v",
+   "vob",
+   "flv",
+   "wmv",
+   "asf",
+   "ogv",
+   "mxf",
+   // Camcorder, phone, TV-recorder and raw-stream containers; opening stays validated by ffprobe content.
+   "3gp",
+   "3g2",
+   "f4v",
+   "m1v",
+   "mpe",
+   "m2p",
+   "m2t",
+   "mod",
+   "tod",
+   "vro",
+   "divx",
+   "dv",
+   "ogm",
+   "wtv",
+   "dvr-ms",
+   "mjpg",
+   "h264",
+   "264",
+   "h265",
+   "265",
+   "hevc",
+];
+const intraCodecs = new Set([
+   "prores",
+   "dnxhd",
+   "mjpeg",
+   "mjpegb",
+   "dvvideo",
+   "rawvideo",
+   "v210",
+   "cfhd",
+   "huffyuv",
+   "ffvhuff",
+   "utvideo",
+   "ffv1",
+   "magicyuv",
+   "lagarith",
+   "fraps",
+   "sheervideo",
+   "png",
+   "qtrle",
+   "rpza",
+   "smc",
+   "8bps",
+   "r10k",
+   "r210",
+   "v410",
+   "v308",
+   "v408",
+   "avrp",
+]);
 export function isIntraCodec(codec: string): boolean {
    return intraCodecs.has(codec);
+}
+/** Encoders that can reproduce an interlaced field structure for boundary sections. */
+export function supportsInterlacedEncoding(codec: string): boolean {
+   return ["h264", "hevc", "mpeg2video"].includes(codec);
+}
+/** Matroska-family muxers silently drop data streams, so telemetry is kept only in MP4-family outputs. */
+export function containerKeepsData(extension: string): boolean {
+   return isMp4Container(extension);
 }
 export function segmentExtension(codec: string): string {
    return ["h264", "hevc", "mpeg2video", "mpeg1video", "mpeg4"].includes(codec) ? ".ts" : ".mkv";
@@ -44,6 +121,13 @@ export function colorArguments(video: MediaStream): string[] {
    }
    return args;
 }
+/** True when the stream's field order marks it as interlaced (top or bottom field first). */
+function isInterlaced(video: MediaStream): boolean {
+   return Boolean(video.fieldOrder) && !["unknown", "progressive"].includes(video.fieldOrder);
+}
+function topFieldFirst(video: MediaStream): boolean {
+   return !["bb", "tb"].includes(video.fieldOrder);
+}
 export function encoderArguments(video: MediaStream): string[] | null {
    const common = [
       "-pix_fmt",
@@ -55,7 +139,17 @@ export function encoderArguments(video: MediaStream): string[] | null {
    ];
    switch (video.codec) {
       case "h264":
-         return ["-c:v", "libx264", "-preset", "fast", "-crf", "17", "-x264-params", "open-gop=0:repeat-headers=1", ...common];
+         return [
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "17",
+            "-x264-params",
+            ["open-gop=0", "repeat-headers=1", ...(isInterlaced(video) ? ["interlaced=1", topFieldFirst(video) ? "tff=1" : "bff=1"] : [])].join(":"),
+            ...common,
+         ];
       case "hevc":
          return [
             "-c:v",
@@ -70,6 +164,7 @@ export function encoderArguments(video: MediaStream): string[] | null {
                "repeat-headers=1",
                "log-level=error",
                "pools=4",
+               ...(isInterlaced(video) ? ["interlaced=1"] : []),
                ...(video.masterDisplay ? [`master-display=${video.masterDisplay}`] : []),
                ...(video.maxCll ? [`max-cll=${video.maxCll}`] : []),
             ].join(":"),
@@ -84,10 +179,25 @@ export function encoderArguments(video: MediaStream): string[] | null {
       case "mpeg4":
          return ["-c:v", "mpeg4", "-q:v", "2", "-bf", "0", ...common, "-enc_time_base", `1:${video.frameRate}`];
       case "mpeg2video":
+         return [
+            "-c:v",
+            "mpeg2video",
+            "-q:v",
+            "2",
+            "-bf",
+            "0",
+            ...(isInterlaced(video) ? ["-flags", "+ilme+ildct", "-field_order", topFieldFirst(video) ? "tt" : "bb"] : []),
+            ...common,
+         ];
       case "mpeg1video":
       case "wmv2":
       case "wmv1":
          return ["-c:v", video.codec, "-q:v", "2", "-bf", "0", ...common];
+      case "msmpeg4v2":
+      case "msmpeg4v3":
+         return ["-c:v", video.codec === "msmpeg4v3" ? "msmpeg4" : "msmpeg4v2", "-q:v", "2", "-bf", "0", ...common];
+      case "h263":
+         return ["-c:v", "h263", "-q:v", "2", ...common];
       case "ffv1":
          return ["-c:v", "ffv1", "-level", "3", ...common];
       default:

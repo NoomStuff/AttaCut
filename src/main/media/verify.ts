@@ -9,10 +9,11 @@ export async function verifyOutputStructure(
    audioTracks: number[],
    duration: number,
    signal?: AbortSignal,
-   start = 0
+   start = 0,
+   ignoreTypes: readonly string[] = []
 ): Promise<void> {
    const actual = await probeSource(output, signal);
-   const expected = source.streams.filter((stream) => stream.type !== "audio" || audioTracks.includes(stream.index));
+   const expected = source.streams.filter((stream) => (stream.type !== "audio" || audioTracks.includes(stream.index)) && !ignoreTypes.includes(stream.type));
    for (const type of new Set([...expected, ...actual.streams].map((stream) => stream.type))) {
       const before = expected.filter((stream) => stream.type === type);
       const after = actual.streams.filter((stream) => stream.type === type);

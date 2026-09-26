@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { adjacentBoundary, adjacentKeyframe, clipFloor, resolveBoundary, snapBoundary, splitTargetAt, stepBoundary } from "./navigation";
+import { adjacentBoundary, adjacentKeyframe, clipFloor, neighboringKeyframe, resolveBoundary, snapBoundary, splitTargetAt, stepBoundary } from "./navigation";
 const clips = [
    { id: "a", start: 1, end: 4, color: 0 },
    { id: "b", start: 7, end: 10, color: 1 },
@@ -59,4 +59,23 @@ it("steps keyboard boundaries by keyframe or frame without violating floors", ()
    expect(stepBoundary(document, "b", "start", 1, { ...free, step: 1 })).toBe(8);
    // A large step cannot cross the two-frame minimum-length floor.
    expect(stepBoundary(document, "b", "end", -1, { ...free, step: 3 })).toBe(8);
+});
+it("snaps and steps identically on a large keyframe index", () => {
+   // All-intra multi-hour recordings hold hundreds of thousands of keys; the binary search
+   // must agree with a linear scan at every probe position.
+   const keys = Array.from({ length: 200_000 }, (_, i) => i * 0.05); // 0 .. 9999.95
+   const document = { clips: [{ id: "a", start: 100, end: 9900, color: 0 }], selectedId: "a" };
+   for (const value of [0, 99.999, 100, 5000, 5000.02, 9900, 10000]) {
+      const linear = [...keys]
+         .filter((point) => point >= 100 && point <= 9900)
+         .reduce((best, point) => (Math.abs(point - value) < Math.abs(best - value) ? point : best), Infinity);
+      expect(splitTargetAt(document, "a", value, { snapping: true, keyframes: keys })).toBe(linear);
+   }
+   expect(adjacentKeyframe(5000.021, 1, keys, 10000)).toBe(5000.05);
+   expect(adjacentKeyframe(5000.021, -1, keys, 10000)).toBe(5000);
+   expect(adjacentKeyframe(9999.96, 1, keys, 10000)).toBe(10000);
+   expect(neighboringKeyframe(5000, -1, keys)).toBe(keys[99_999]);
+   expect(neighboringKeyframe(5000, 1, keys)).toBe(keys[100_001]);
+   expect(neighboringKeyframe(-1, -1, keys)).toBeNull();
+   expect(neighboringKeyframe(10000, 1, keys)).toBeNull();
 });

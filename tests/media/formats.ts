@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { runMedia, ffmpegBase } from "../../src/main/media/process.ts";
 import { probeSource } from "../../src/main/media/probe.ts";
@@ -16,7 +16,10 @@ interface Fixture {
    audio?: string[];
    filter?: string;
    rate?: string;
+   size?: string;
    silent?: boolean;
+   /** Rewrite the finished file with an attached cover picture stream. */
+   cover?: boolean;
 }
 const fixtures: Fixture[] = [
    { name: "h264", extension: ".mp4", video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0", "-crf", "18"] },
@@ -178,6 +181,40 @@ const fixtures: Fixture[] = [
    { name: "wmv2", extension: ".wmv", video: ["-c:v", "wmv2", "-g", "48", "-q:v", "3"], audio: ["-c:a", "wmav2"] },
    { name: "transport", extension: ".ts", video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0"], audio: ["-c:a", "ac3"] },
    { name: "flv", extension: ".flv", video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0"] },
+   {
+      name: "h263",
+      extension: ".3gp",
+      size: "176x144",
+      video: ["-c:v", "h263", "-g", "48", "-q:v", "3"],
+      audio: ["-c:a", "libopencore_amrnb", "-ar", "8000", "-ac", "1"],
+   },
+   { name: "msmpeg4", extension: ".avi", video: ["-c:v", "msmpeg4", "-g", "48", "-q:v", "3"], audio: ["-c:a", "wmav2"] },
+   { name: "magicyuv", extension: ".mkv", video: ["-c:v", "magicyuv", "-pix_fmt", "yuv420p"], audio: ["-c:a", "flac"] },
+   { name: "prores-4444", extension: ".mov", video: ["-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuv444p10le"], audio: ["-c:a", "pcm_s16le"] },
+   {
+      name: "h264-interlaced",
+      extension: ".mts",
+      filter: "tinterlace=interleave_top",
+      rate: "50",
+      video: ["-c:v", "libx264", "-flags", "+ilme+ildct", "-x264-params", "tff=1", "-g", "48", "-sc_threshold", "0", "-crf", "18"],
+   },
+   {
+      name: "dv",
+      extension: ".dv",
+      size: "720x480",
+      rate: "30000/1001",
+      video: ["-c:v", "dvvideo", "-pix_fmt", "yuv411p"],
+      audio: ["-c:a", "pcm_s16le", "-ac", "2"],
+   },
+   {
+      name: "mpeg2-interlaced",
+      extension: ".mpg",
+      filter: "tinterlace=interleave_top",
+      rate: "50",
+      video: ["-c:v", "mpeg2video", "-flags", "+ilme+ildct", "-g", "12", "-bf", "2", "-q:v", "3"],
+      audio: ["-c:a", "mp2"],
+   },
+   { name: "cover", extension: ".mp4", video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0", "-crf", "18"], cover: true },
 ];
 const selected = process.env["ATTACUT_FORMATS"]?.split(",");
 const outcomes: { name: string; passed: boolean; details: string }[] = [];
@@ -241,7 +278,7 @@ for (const fixture of fixtures.filter((item) => !selected || selected.includes(i
             "-f",
             "lavfi",
             "-i",
-            `testsrc2=size=320x180:rate=${fixture.rate ?? "24"}:duration=10`,
+            `testsrc2=size=${fixture.size ?? "320x180"}:rate=${fixture.rate ?? "24"}:duration=10`,
             "-f",
             "lavfi",
             "-i",
@@ -254,6 +291,40 @@ for (const fixture of fixtures.filter((item) => !selected || selected.includes(i
             ...(fixture.audio ?? ["-c:a", "aac"]),
             path,
          ]);
+         if (fixture.cover) {
+            const picture = join(folder, `${fixture.name}-picture.mjpg`);
+            await runMedia("ffmpeg", [
+               ...ffmpegBase,
+               "-f",
+               "lavfi",
+               "-i",
+               `testsrc2=size=${fixture.size ?? "320x180"}:duration=0.1`,
+               "-frames:v",
+               "1",
+               "-c:v",
+               "mjpeg",
+               picture,
+            ]);
+            const withCover = join(folder, `${fixture.name}-cover${fixture.extension}`);
+            await runMedia("ffmpeg", [
+               ...ffmpegBase,
+               "-i",
+               path,
+               "-i",
+               picture,
+               "-map",
+               "0",
+               "-map",
+               "1:v",
+               "-c",
+               "copy",
+               "-disposition:v:1",
+               "attached_pic",
+               withCover,
+            ]);
+            await rm(path);
+            await rename(withCover, path);
+         }
       }
       const source = await probeSource(path);
       if (fixture.name === "hevc-hdr10") {
@@ -261,6 +332,7 @@ for (const fixture of fixtures.filter((item) => !selected || selected.includes(i
          assert.equal(source.streams[0]!.maxCll, "1000,400");
          assert.ok(source.streams[0]!.masterDisplay);
       }
+      if (fixture.name === "h264-interlaced") assert.equal(source.streams[0]!.fieldOrder, "tt", "interlaced fixture field order");
       const original = await frames(path);
       let detail = "";
       for (const [start, end] of [
@@ -296,6 +368,21 @@ for (const fixture of fixtures.filter((item) => !selected || selected.includes(i
             }
          });
          assert.equal(output.streams.filter((stream) => stream.type === "audio").length, source.streams.filter((stream) => stream.type === "audio").length);
+         assert.equal(
+            output.streams.filter((stream) => stream.type === "subtitle").length,
+            source.streams.filter((stream) => stream.type === "subtitle").length,
+            "subtitle streams"
+         );
+         assert.equal(
+            output.streams.filter((stream) => stream.type === "data").length,
+            source.streams.filter((stream) => stream.type === "data").length,
+            "data streams"
+         );
+         assert.equal(
+            output.streams.filter((stream) => stream.attachedPicture).length,
+            source.streams.filter((stream) => stream.attachedPicture).length,
+            "cover art"
+         );
          assert.equal(output.streams[0]!.pixelFormat, source.streams[0]!.pixelFormat, "pixel format");
          for (const key of ["colorTransfer", "colorPrimaries", "colorSpace", "colorRange", "rotation", "masterDisplay", "maxCll"] as const) {
             const value = source.streams[0]![key];
