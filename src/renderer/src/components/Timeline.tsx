@@ -1,3 +1,4 @@
+import { visibleKeyframes, zoomLength } from "../editor/timelineView";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type { EditDocument } from "../editor/model";
@@ -13,22 +14,10 @@ import { IconButton } from "./Controls";
 import { pointerSmoothingMs, useSmoothValue } from "../lib/motion";
 import { faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
 
-const ZOOM_LEVELS = Array.from({ length: 10 }, (_, decade) => [100, 125, 150, 200, 250, 300, 400, 500, 600, 800].map((step) => step * 10 ** decade)).flat();
-
-function zoomLength(length: number, duration: number, direction: number): number {
-   if (direction === 0) return duration;
-   const percent = (100 * duration) / length;
-   const next = direction > 0 ? ZOOM_LEVELS.find((level) => level > percent + 0.001) : ZOOM_LEVELS.findLast((level) => level < percent - 0.001);
-   return clamp((100 * duration) / (next ?? (direction > 0 ? ZOOM_LEVELS.at(-1)! : 100)), Math.min(0.5, duration), duration);
-}
-
 // Stationary ruler ladder: tick times come from this scale, so their meaning survives zooming
 // and panning. Finer steps fade in between as space allows. Each major has a minor that
 // subdivides it using only ladder values.
 const RULER_STEPS = Array.from({ length: 25 }, (_, index) => 0.125 * 2 ** index);
-function minorStepFor(step: number): number {
-   return step / 2;
-}
 
 interface TimelineProps {
    document: EditDocument;
@@ -157,26 +146,7 @@ export function Timeline({
       return () => observer.disconnect();
    }, []);
    const pxPerSecond = viewportWidth > 0 && drawn.length > 0 ? viewportWidth / drawn.length : 0;
-   const keyframeView = useMemo(() => {
-      // Dense intraframe recordings can have hundreds of thousands of keyframes.
-      // Keep every point for snapping, but draw at most 500 distinct ticks, and report how
-      // tightly the points pack the drawn view so the ticks can fade out when too dense.
-      let last = -Infinity;
-      let count = 0;
-      let first = 0;
-      let lastPoint = 0;
-      const ticks = keyframes.filter((point) => {
-         if (point < drawn.start || point > drawn.start + drawn.length) return false;
-         if (count === 0) first = point;
-         lastPoint = point;
-         count++;
-         if (point - last < drawn.length / 500) return false;
-         last = point;
-         return true;
-      });
-      const gap = count > 1 && pxPerSecond > 0 ? ((lastPoint - first) / (count - 1)) * pxPerSecond : Infinity;
-      return { ticks, opacity: clamp((gap - 8) / 8, 0, 1) };
-   }, [keyframes, drawn.start, drawn.length, pxPerSecond]);
+   const keyframeView = useMemo(() => visibleKeyframes(keyframes, drawn.start, drawn.length, pxPerSecond), [keyframes, drawn.start, drawn.length, pxPerSecond]);
    latest.current = { view, duration };
    useEffect(() => onZoom((100 * duration) / view.length, viewportWidth), [duration, view.length, viewportWidth, onZoom]);
    useEffect(() => {
@@ -313,10 +283,8 @@ export function Timeline({
       if (next) onCommit(next);
       else onSeek(current.original.clips.find((clip) => clip.id === current.id)![current.side], true);
    };
-   // Stationary ruler ticks: fixed times from the ladder, so labels keep their meaning while
-   // zooming; the next-finer step fades in between as spacing allows.
    const rulerStep = RULER_STEPS.find((step) => step * pxPerSecond >= 100) ?? RULER_STEPS.at(-1)!;
-   const minorStep = minorStepFor(rulerStep);
+   const minorStep = rulerStep / 2;
    const minorSpacing = minorStep * pxPerSecond;
    const minorOpacity = clamp((minorSpacing - 50) / 50, 0, 1);
    // Labels near the centered time chip would be occluded by it, so they yield to the chip.

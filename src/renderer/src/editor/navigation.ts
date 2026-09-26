@@ -1,3 +1,4 @@
+import { lowerBound } from "../../../shared/sorted";
 import type { Clip } from "../../../shared/types";
 import type { EditDocument } from "./model";
 import { minClipLength, timeEpsilon } from "./model";
@@ -13,64 +14,18 @@ export interface SnapBounds {
    low?: number;
    high?: number;
 }
-/** Keys are sorted; binary search keeps snapping instant on all-intra multi-hour recordings. */
-function firstAfter(keys: number[], value: number): number | null {
-   let low = 0;
-   let high = keys.length;
-   while (low < high) {
-      const mid = (low + high) >> 1;
-      if (keys[mid]! > value) high = mid;
-      else low = mid + 1;
-   }
-   return low < keys.length ? keys[low]! : null;
-}
-function lastBefore(keys: number[], value: number): number | null {
-   let low = 0;
-   let high = keys.length;
-   while (low < high) {
-      const mid = (low + high) >> 1;
-      if (keys[mid]! < value) low = mid + 1;
-      else high = mid;
-   }
-   return low > 0 ? keys[low - 1]! : null;
-}
-/** Navigate source keyframes without scanning every entry in a long recording. */
 export function neighboringKeyframe(value: number, direction: -1 | 1, keys: number[]): number | null {
-   return direction < 0 ? lastBefore(keys, value - 0.0005) : firstAfter(keys, value + 0.0005);
+   const index = direction < 0 ? lowerBound(keys, value - 0.0005) - 1 : lowerBound(keys, value + 0.0005, true);
+   return keys[index] ?? null;
 }
 function nearestKey(keys: number[], value: number, min: number, max: number): number | null {
-   let lo = 0;
-   let hi = keys.length;
-   while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (keys[mid]! < min) lo = mid + 1;
-      else hi = mid;
-   }
-   let l2 = lo;
-   let h2 = keys.length;
-   while (l2 < h2) {
-      const mid = (l2 + h2) >> 1;
-      if (keys[mid]! <= max) l2 = mid + 1;
-      else h2 = mid;
-   }
-   const last = l2 - 1;
-   if (lo > last) return null;
-   const first = keys[lo]!;
-   const final = keys[last]!;
-   // The target can sit outside the in-range span, where the nearest key is an endpoint.
-   if (value <= first) return first;
-   if (value >= final) return final;
-   let low = lo;
-   let high = last + 1;
-   while (low < high) {
-      const mid = (low + high) >> 1;
-      if (keys[mid]! < value) low = mid + 1;
-      else high = mid;
-   }
-   let best = keys[low]!;
-   const before = keys[low - 1]!;
-   if (Math.abs(before - value) < Math.abs(best - value)) best = before;
-   return best;
+   const first = lowerBound(keys, min);
+   const last = lowerBound(keys, max, true) - 1;
+   if (first > last) return null;
+   const after = Math.max(first, Math.min(last, lowerBound(keys, value)));
+   const best = keys[after]!;
+   const before = after > first ? keys[after - 1]! : best;
+   return Math.abs(before - value) < Math.abs(best - value) ? before : best;
 }
 export function snapBoundary(
    document: EditDocument,
@@ -96,12 +51,12 @@ export function snapBoundary(
 export function adjacentKeyframe(value: number, direction: -1 | 1, keys: number[], duration: number, bounds?: SnapBounds): number {
    if (direction === 1) {
       const high = bounds?.high ?? Infinity;
-      const key = firstAfter(keys, value + timeEpsilon);
+      const key = keys[lowerBound(keys, value + timeEpsilon, true)] ?? null;
       if (key !== null && key <= high) return key;
       return duration > value + timeEpsilon && duration <= high ? duration : value;
    }
    const low = bounds?.low ?? -Infinity;
-   const key = lastBefore(keys, value - timeEpsilon);
+   const key = keys[lowerBound(keys, value - timeEpsilon) - 1] ?? null;
    if (key !== null && key >= low) return key;
    return 0 < value - timeEpsilon && 0 >= low ? 0 : value;
 }

@@ -1,6 +1,6 @@
 {
    "name": "attacut",
-   "version": "0.11.0",
+   "version": "0.11.1",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -104,6 +104,7 @@
    "devDependencies": {
       "@eslint/js": "^10.0.1",
       "@playwright/test": "^1.63.0",
+      "@swc/core": "^1.16.2",
       "@types/node": "^26.6.2",
       "@types/react": "^19.3.0",
       "@types/react-dom": "^19.3.0",

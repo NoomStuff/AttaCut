@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { serveMedia } from "./serve";
+import { serveMedia } from "./serve.ts";
 describe("local video byte ranges", () => {
    it("serves explicit and suffix ranges and refuses ranges outside the file", async () => {
       const folder = await mkdtemp(join(tmpdir(), "attacut-range-"));

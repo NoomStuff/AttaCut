@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SourceSession } from "./source-session";
-import { probeSource } from "./media/probe";
-import { preparePreview } from "./media/preview";
-import { extractScrubPcm } from "./media/scrub-audio";
-import type { ProbedSource } from "./media/probe";
+import { SourceSession } from "./source-session.ts";
+import { packetsAround, probeSource, sourceFrames } from "./media/probe.ts";
+import { preparePreview } from "./media/preview.ts";
+import { extractScrubPcm } from "./media/scrub-audio.ts";
+import type { ProbedSource } from "./media/probe.ts";
 vi.mock("./media/probe.ts", () => ({
    probeSource: vi.fn(async (path: string) => ({ id: path, path, duration: 36000 }) as ProbedSource),
    sourceKeyframes: vi.fn(async () => [0, 2]),
+   sourceFrames: vi.fn(async () => null),
    packetsAround: vi.fn(async () => []),
 }));
 vi.mock("./media/scrub-audio.ts", () => ({
@@ -16,6 +17,26 @@ vi.mock("./media/scrub-audio.ts", () => ({
 vi.mock("./media/preview.ts", () => ({ preparePreview: vi.fn() }));
 afterEach(() => vi.clearAllMocks());
 describe("source lifetime", () => {
+   it("keeps a replacement audio request when a cancelled request for the same chunk rejects", async () => {
+      const session = new SourceSession("unused-preview-directory");
+      await session.open("a");
+      let rejectOld!: (error: Error) => void;
+      vi.mocked(extractScrubPcm).mockImplementationOnce(
+         () =>
+            new Promise((_resolve, reject) => {
+               rejectOld = reject;
+            })
+      );
+      const old = session.scrubAudio("a", [1], 0);
+      const rejected = expect(old).rejects.toThrow("Cancelled");
+      session.cancelScrub();
+      const current = session.scrubAudio("a", [1], 0);
+      rejectOld(new Error("Cancelled"));
+      await rejected;
+      expect(session.scrubAudio("a", [1], 0)).toBe(current);
+      await current;
+      session.dispose();
+   });
    it("releases old sources and aborts their work while preserving a failed-open source", async () => {
       const session = new SourceSession("unused-preview-directory");
       await session.open("a");
@@ -42,6 +63,26 @@ describe("source lifetime", () => {
       expect(vi.mocked(extractScrubPcm).mock.calls[1]![3]).toBe(60);
       session.dispose();
    });
+});
+
+it("does not restart an old seek after the source changes", async () => {
+   const session = new SourceSession("unused-preview-directory");
+   await session.open("a");
+   let finishIndex!: (value: null) => void;
+   vi.mocked(sourceFrames).mockImplementationOnce(
+      () =>
+         new Promise((resolve) => {
+            finishIndex = resolve;
+         })
+   );
+   const pending = session.frameTime("a", 5, 1);
+   const rejected = expect(pending).rejects.toThrow();
+   await session.open("b");
+   vi.mocked(packetsAround).mockClear();
+   finishIndex(null);
+   await rejected;
+   expect(packetsAround).not.toHaveBeenCalled();
+   session.dispose();
 });
 
 it("does not write a preview cancelled while startup cache cleanup is pending", async () => {

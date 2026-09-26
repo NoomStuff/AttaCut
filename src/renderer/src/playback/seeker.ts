@@ -6,6 +6,7 @@ export class PlaybackSeeker {
    private video: HTMLVideoElement | null = null;
    private scheduled = 0;
    private revision = 0;
+   private lifetime = 0;
    private resolving = false;
    private resolveTime: ((time: number) => Promise<number>) | null = null;
    private waitingForFrame = false;
@@ -37,13 +38,17 @@ export class PlaybackSeeker {
       if (this.requested === null && !this.resolving && !this.scheduled && !this.video?.seeking) this.setWaiting(false);
    }
    configure(resolveTime: ((time: number) => Promise<number>) | null): void {
+      this.lifetime++;
       this.revision++;
       this.resolving = false;
       this.requested = null;
       this.resolveTime = resolveTime;
       this.setWaiting(false);
    }
-   constructor(private readonly clock: PlaybackClock) {}
+   private readonly clock: PlaybackClock;
+   constructor(clock: PlaybackClock) {
+      this.clock = clock;
+   }
    get pending(): boolean {
       return this.requested !== null || this.scheduled !== 0 || this.resolving;
    }
@@ -69,6 +74,7 @@ export class PlaybackSeeker {
          this.scheduled = 0;
          this.requested = null;
          this.video = null;
+         this.lifetime++;
          this.revision++;
          this.resolving = false;
          this.setWaiting(false);
@@ -89,6 +95,7 @@ export class PlaybackSeeker {
       const time = this.requested;
       this.requested = null;
       const revision = this.revision;
+      const lifetime = this.lifetime;
       if (!this.resolveTime) {
          if (Math.abs(video.currentTime - time) > 0.00001) video.currentTime = time;
          this.finishIfReady();
@@ -104,8 +111,8 @@ export class PlaybackSeeker {
             if (revision === this.revision && this.video === video) video.currentTime = time;
          })
          .finally(() => {
-            // Only one resolve runs at a time, so this always owns the flag; a seek that
-            // arrived mid-resolve is flushed here. configure() may have already reset it.
+            // A replaced source may already have its own resolve in flight.
+            if (lifetime !== this.lifetime) return;
             this.resolving = false;
             this.bumpProgress();
             this.flush();

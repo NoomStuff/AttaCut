@@ -7,14 +7,28 @@
       "jsx": "react-jsx",
       "noEmit": true,
       "strict": true,
+      "noImplicitAny": true,
+      "strictNullChecks": true,
+      "strictFunctionTypes": true,
+      "strictBindCallApply": true,
+      "strictPropertyInitialization": true,
+      "noImplicitThis": true,
+      "useUnknownInCatchVariables": true,
+
       "noUncheckedIndexedAccess": true,
+      "noPropertyAccessFromIndexSignature": true,
       "exactOptionalPropertyTypes": true,
-      "noUnusedLocals": true,
-      "noUnusedParameters": true,
+      "noImplicitOverride": true,
       "noFallthroughCasesInSwitch": true,
+
       "verbatimModuleSyntax": true,
       "allowImportingTsExtensions": true,
-      "skipLibCheck": true,
+      "allowSyntheticDefaultImports": true,
+      "esModuleInterop": true,
+
+      "noUnusedLocals": true,
+      "noUnusedParameters": true,
+      "erasableSyntaxOnly": true,
       "types": ["node", "vite/client"]
    },
    "include": ["src", "scripts/*.ts", "tests/**/*.ts", "*.ts"]

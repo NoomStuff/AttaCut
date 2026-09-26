@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { packetsAround } from "./probe";
-import { runMedia } from "./process";
-import type { ProbedSource } from "./probe";
+import { packetsAround } from "./probe.ts";
+import { runMedia } from "./process.ts";
+import type { ProbedSource } from "./probe.ts";
 vi.mock("./process.ts", () => ({ runMedia: vi.fn(async () => JSON.stringify({ packets: [{ pts_time: "0", dts_time: "0", flags: "K" }] })) }));
 describe("packet window reuse", () => {
    it("shares overlapping probes across 500 clips and their second planning pass", async () => {

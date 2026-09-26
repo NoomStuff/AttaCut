@@ -1,35 +1,18 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell } from "electron";
-import type { IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, session } from "electron";
 import { basename, dirname, join, resolve } from "node:path";
-import { spawn } from "node:child_process";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { z } from "zod";
-import {
-   preferencesSchema,
-   planRequestSchema,
-   savedSessionSchema,
-   frameRequestSchema,
-   frameTimeRequestSchema,
-   scrubRequestSchema,
-   previewRequestSchema,
-   exportApprovalSchema,
-   analyzeRequestSchema,
-} from "../shared/types.ts";
-import { packetsAround, sourceFrames } from "./media/probe.ts";
-import { exportFrame } from "./media/frame.ts";
-import type { ProbedSource } from "./media/probe.ts";
 import { SourceSession } from "./source-session.ts";
-import { resolveFrameTime } from "../shared/frames.ts";
 import { ExportService } from "./exports.ts";
 import { Storage } from "./storage.ts";
 import { serveMedia } from "./media/serve.ts";
 import { videoExtensions } from "./media/formats.ts";
 import { prunePreviews } from "./media/preview.ts";
-import type { IpcCalls } from "../shared/ipc.ts";
 import { IpcEvents } from "../shared/ipc.ts";
-import { fetchAvailableUpdate, updateInterval } from "./updates.ts";
+import { installMenu } from "./menu.ts";
+import { windowIcon, registerWindowsIdentity } from "./identity.ts";
+import { registerIpc } from "./ipc.ts";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 if (process.env["ATTACUT_USER_DATA"]) app.setPath("userData", process.env["ATTACUT_USER_DATA"]);
@@ -53,97 +36,14 @@ app.on("open-file", (event, path) => {
    event.preventDefault();
    receiveFile(path);
 });
-// Use the same assets for native windows and Windows shell entries in every build.
-function windowIcon(): string | undefined {
-   if (process.platform === "darwin") return undefined;
-   const name = process.platform === "win32" ? "icon.ico" : "icon.png";
-   const icon = app.isPackaged ? join(process.resourcesPath, "icons", name) : resolve(currentDirectory, "../../build", name);
-   return existsSync(icon) ? icon : undefined;
-}
 app.setName("AttaCut");
 if (process.platform === "win32") app.setAppUserModelId("dev.attacut.app");
-function registerWindowsIdentity(): void {
-   if (process.platform !== "win32") return;
-   // Taskbar and notification surfaces resolve a raw AUMID's label from this registry key;
-   // without it they fall back to the executable description, which reads "Electron" for
-   // dev runs and portable builds that install no Start Menu shortcut.
-   const modelId = "dev.attacut.app";
-   const reg = (path: string, value: string, data: string) =>
-      spawn("reg", ["add", path, "/v", value, "/t", "REG_SZ", "/d", data, "/f"], { windowsHide: true, stdio: "ignore" }).on("error", () => undefined);
-   reg(`HKCU\\Software\\Classes\\AppUserModelId\\${modelId}`, "DisplayName", "AttaCut");
-   const icon = windowIcon();
-   if (icon) reg(`HKCU\\Software\\Classes\\AppUserModelId\\${modelId}`, "IconUri", icon);
-   // A window with no shortcut carrying its AUMID is named after the executable's cached
-   // friendly name, which stays "Electron" for the dev electron.exe until relabeled here.
-   reg("HKCU\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\Shell\\MuiCache", `${process.execPath}.FriendlyAppName`, "AttaCut");
-}
 app.commandLine.appendSwitch("enable-blink-features", "AudioVideoTracks");
 protocol.registerSchemesAsPrivileged([
    { scheme: "media", privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
    { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 async function start(): Promise<void> {
-   const frameOutputs = new Set<string>();
-   const exportsService = new ExportService((job) => {
-      if (!window.isDestroyed()) window.webContents.send(IpcEvents.jobProgress, job);
-   });
-   function validSender(event: IpcMainInvokeEvent): void {
-      if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error("Invalid application request.");
-   }
-   function handle<K extends keyof IpcCalls>(channel: K, action: (value: unknown) => IpcCalls[K]["response"] | Promise<IpcCalls[K]["response"]>): void {
-      ipcMain.handle(channel, (event, value: unknown) => {
-         validSender(event);
-         return action(value);
-      });
-   }
-   function getSource(value: unknown): ProbedSource {
-      return sourceSession.get(z.string().parse(value));
-   }
-   function sendCommand(id: string): void {
-      window.webContents.send(IpcEvents.command, id);
-   }
-   function installMenu(): void {
-      const item = (label: string, id: string) => ({ label, click: () => sendCommand(id) });
-      const template: Electron.MenuItemConstructorOptions[] = [
-         {
-            label: "File",
-            submenu: [
-               item("Import video…", "open"),
-               item("Export current frame…", "frame"),
-               item("Export…", "export"),
-               { type: "separator" },
-               { role: "quit" },
-            ],
-         },
-         { label: "Edit", submenu: [item("Undo", "undo"), item("Redo", "redo"), { type: "separator" }, item("Settings…", "settings")] },
-         {
-            label: "Clips",
-            submenu: [
-               item("Merge clips", "merge"),
-               item("Split at playhead", "split"),
-               item("Trim left", "setStart"),
-               item("Trim right", "setEnd"),
-               item("Delete clip", "delete"),
-               item("Add clip in gap", "add"),
-               item("Preview clip", "preview"),
-            ],
-         },
-         {
-            label: "View",
-            submenu: [
-               item("Zoom in", "zoomIn"),
-               item("Zoom out", "zoomOut"),
-               item("Fit timeline", "fit"),
-               { role: "togglefullscreen" },
-               ...(!app.isPackaged ? [{ role: "toggleDevTools" as const }] : []),
-            ],
-         },
-         { label: "Help", submenu: [item("Help", "help"), item("Keyboard shortcuts", "shortcuts"), { type: "separator" }, item("About", "about")] },
-      ];
-      if (process.platform === "darwin") template.unshift({ role: "appMenu" });
-      Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-   }
-
    // The read is small, but starting it here overlaps it with app and window init; IPC
    // handlers that answer from storage go live only after it resolves below.
    const storage = new Storage(app.getPath("userData"));
@@ -168,6 +68,9 @@ async function start(): Promise<void> {
       },
    });
    appWindow = window;
+   const exportsService = new ExportService((job) => {
+      if (!window.isDestroyed()) window.webContents.send(IpcEvents.jobProgress, job);
+   });
    if (process.platform === "win32" && icon) {
       // Taskbar relaunches must show the splash too, so they go through the launcher
       // whenever it fronts the renamed Electron executable.
@@ -197,7 +100,9 @@ async function start(): Promise<void> {
       const splashSignal = process.env["ATTACUT_SPLASH_SIGNAL"];
       if (splashSignal) void writeFile(splashSignal, "1").catch(() => undefined);
    };
-   ipcMain.on(IpcEvents.rendererReady, () => presentWindow());
+   ipcMain.on(IpcEvents.rendererReady, (event) => {
+      if (event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame) presentWindow();
+   });
    setTimeout(() => {
       if (!window.isDestroyed()) presentWindow();
    }, 2500);
@@ -255,7 +160,7 @@ async function start(): Promise<void> {
                   clearTimeout(timer);
                   resolve();
                };
-               window.webContents.send("app:flush");
+               window.webContents.send(IpcEvents.flush);
             });
          }
          await storage.flush();
@@ -275,166 +180,25 @@ async function start(): Promise<void> {
       // temporary export folders are removed instead of stranded beside the user's output.
       void Promise.race([exportsService.waitForIdle(), new Promise((resolve) => setTimeout(resolve, 15_000))]).finally(() => app.quit());
    });
-   installMenu();
-   handle("app:bootstrap", () => {
-      rendererReady = true;
-      const initialFile = pendingFile;
-      pendingFile = null;
-      return {
-         warning: storage.warning,
-         preferences: storage.preferences,
-         session: storage.session,
-         platform: process.platform,
-         version: app.getVersion(),
-         initialFile,
-      };
-   });
-   handle("update:check", async () => {
-      if (!app.isPackaged || Date.now() - storage.updates.lastCheckedAt < updateInterval) return null;
-      try {
-         const update = await fetchAvailableUpdate(app.getVersion(), (url, init) => net.fetch(url, init));
-         // Only a completed check suppresses the next one; a failed network call retries next launch.
-         storage.updates = { ...storage.updates, lastCheckedAt: Date.now() };
-         await storage.save();
-         return update?.version === storage.updates.ignoredVersion ? null : update;
-      } catch {
-         return null;
-      }
-   });
-   handle("update:dismiss", async (value) => {
-      const choice = z.object({ version: z.string().min(1), ignore: z.boolean() }).parse(value);
-      if (choice.ignore) storage.updates = { ...storage.updates, ignoredVersion: choice.version };
-      await storage.save();
-   });
-   handle("source:choose", async () => {
-      const result = await dialog.showOpenDialog(window, {
-         title: "Import video",
-         properties: ["openFile"],
-         filters: [
-            { name: "Video", extensions: videoExtensions },
-            { name: "All files", extensions: ["*"] },
-         ],
-      });
-      return result.filePaths[0] ?? null;
-   });
-   handle("source:open", async (value) => {
-      const source = await sourceSession.open(z.string().min(1).parse(value));
-      exportsService.cancelPlanning();
-      frameOutputs.clear();
-      window.setTitle(`${source.name} — AttaCut`);
-      return source;
-   });
-   handle("directory:choose", async (value) => {
-      const current = z.string().parse(value);
-      const result = await dialog.showOpenDialog(window, {
-         properties: ["openDirectory", "createDirectory"],
-         ...(current ? { defaultPath: current } : {}),
-      });
-      return result.filePaths[0] ?? null;
-   });
-   handle("source:keyframes", async (value) => {
-      return sourceSession.keyframes(z.string().parse(value));
-   });
-   handle("source:frame-time", async (value) => {
-      const request = frameTimeRequestSchema.parse(value);
-      const source = getSource(request.sourceId);
-      // MP4-family sources resolve from their in-memory frame index; everything else reads a
-      // small packet window around the target.
-      const frames = await sourceFrames(source, sourceSession.signal).catch(() => null);
-      const points = frames ?? (await packetsAround(source, request.time, sourceSession.signal, "seek")).map((point) => point.time);
-      return resolveFrameTime(points, request.time, source.duration, request.direction);
-   });
-   handle("audio:scrub", async (value) => {
-      const request = scrubRequestSchema.parse(value);
-      const source = getSource(request.sourceId);
-      if (request.streamIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
-         throw new Error("Audio track not found.");
-      return sourceSession.scrubAudio(source.id, request.streamIndices, request.time);
-   });
-   handle("audio:cancel", () => sourceSession.cancelScrub());
-   handle("export:cancel-planning", () => exportsService.cancelPlanning());
-   handle("state:flush", async (value) => {
-      const snapshot = z.object({ preferences: preferencesSchema, session: savedSessionSchema.nullable() }).parse(value);
-      storage.preferences = snapshot.preferences;
-      storage.session = snapshot.session;
-      await storage.save();
-      resolveFlush?.();
-      resolveFlush = null;
-   });
-   handle("frame:export", async (value) => {
-      const request = frameRequestSchema.parse(value);
-      const path = await exportFrame(getSource(request.sourceId), request);
-      frameOutputs.add(path);
-      return path;
-   });
-   handle("preferences:save", async (value) => {
-      storage.preferences = preferencesSchema.parse(value);
-      await storage.save();
-   });
-   handle("session:save", async (value) => {
-      storage.session = savedSessionSchema.parse(value);
-      await storage.save();
-   });
-   handle("preview:prepare", async (value) => {
-      const request = previewRequestSchema.parse(value);
-      const source = getSource(request.sourceId);
-      if (request.audioIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
-         throw new Error("Audio track not found.");
-      return sourceSession.prepare(source.id, request.audioIndices, request.transcode);
-   });
-   handle("preview:cancel", () => {
-      sourceSession.cancelPreview();
-   });
-   handle("export:plan", (value) => {
-      const request = planRequestSchema.parse(value);
-      return exportsService.plan(getSource(request.sourceId), request);
-   });
-   handle("export:check-destinations", (value) => {
-      const request = planRequestSchema.parse(value);
-      return exportsService.checkDestinations(getSource(request.sourceId), request);
-   });
-   handle("export:analyze", (value) => {
-      const request = analyzeRequestSchema.parse(value);
-      return exportsService.inspect(getSource(request.sourceId), request);
-   });
-   handle("export:start", (value) => {
-      const request = z.object({ id: z.string(), approval: exportApprovalSchema.optional() }).parse(value);
-      return exportsService.start(request.id, request.approval);
-   });
-   handle("export:cancel", () => exportsService.cancel());
-   handle("export:retry", (value) => exportsService.retry(z.string().parse(value)));
-   handle("output:open", async (value) => {
-      const path = z.string().parse(value);
-      if (!exportsService.current?.items.some((item) => item.outputPath === path && item.status === "completed")) throw new Error("Exported file not found.");
-      const failure = await shell.openPath(path);
-      if (failure) throw new Error(failure);
-   });
-   handle("output:reveal", async (value) => {
-      const path = z.string().parse(value);
-      if (frameOutputs.has(path)) {
-         shell.showItemInFolder(path);
-         return;
-      }
-      const job = exportsService.current;
-      if (!job || !job.items.some((item) => item.outputPath === path && item.status === "completed")) throw new Error("Output not found.");
-      shell.showItemInFolder(path);
-   });
-   // The renderer only ever opens links to project-owned sites; the allowlist keeps a
-   // compromised page from reaching shell.openExternal with arbitrary targets.
-   const externalHosts = new Set(["github.com", "noomstuff.com"]);
-   handle("open:external", (value) => {
-      const url = new URL(z.string().parse(value));
-      if (url.protocol !== "https:" || !externalHosts.has(url.hostname)) throw new Error("That link cannot be opened.");
-      return shell.openExternal(url.href);
-   });
-   handle("notices:open", async () => {
-      const path = app.isPackaged ? join(process.resourcesPath, "THIRD_PARTY_NOTICES.md") : resolve(currentDirectory, "../../THIRD_PARTY_NOTICES.md");
-      if (!existsSync(path)) throw new Error("The third-party notices file is missing from this installation.");
-      const failure = await shell.openPath(path);
-      if (failure) throw new Error(failure);
+   installMenu(window);
+   registerIpc({
+      window,
+      storage,
+      sourceSession,
+      exportsService,
+      takeInitialFile: () => {
+         rendererReady = true;
+         const file = pendingFile;
+         pendingFile = null;
+         return file;
+      },
+      onFlushed: () => {
+         resolveFlush?.();
+         resolveFlush = null;
+      },
    });
    ipcMain.on(IpcEvents.windowAction, (event, value: unknown) => {
-      if (event.sender !== window.webContents) return;
+      if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return;
       if (value === "minimize") window.minimize();
       if (value === "maximize") {
          if (window.isMaximized()) window.unmaximize();

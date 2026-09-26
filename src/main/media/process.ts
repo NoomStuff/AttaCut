@@ -28,7 +28,11 @@ const defaultIdleTimeoutMs = 120_000;
 const killGraceMs = 5_000;
 export function runMedia(name: "ffmpeg" | "ffprobe", args: string[], options: RunOptions = {}): Promise<string> {
    return new Promise((resolve, reject) => {
-      const child = spawn(binaryPath(name), args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"], signal: options.signal });
+      if (options.signal?.aborted) {
+         reject(new Error("Cancelled"));
+         return;
+      }
+      const child = spawn(binaryPath(name), args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       const idleLimit = options.idleTimeoutMs ?? defaultIdleTimeoutMs;
       let stdout = "";
       let stderr = "";
@@ -40,16 +44,23 @@ export function runMedia(name: "ffmpeg" | "ffprobe", args: string[], options: Ru
       const disarm = () => {
          if (idleTimer) clearTimeout(idleTimer);
          if (killTimer) clearTimeout(killTimer);
+         options.signal?.removeEventListener("abort", stop);
       };
-      // Rearmed on every byte of output. When it fires, SIGTERM first so ffmpeg can flush,
-      // then escalate if it ignores the signal.
+      const stop = () => {
+         if (settled || killTimer) return;
+         if (idleTimer) clearTimeout(idleTimer);
+         child.kill();
+         killTimer = setTimeout(() => child.kill("SIGKILL"), killGraceMs);
+      };
+      // Handle abort ourselves: spawn's signal rejects on "error" before stdio closes.
+      // Callers must not remove export files until the child has released them.
+      options.signal?.addEventListener("abort", stop, { once: true });
       const armIdle = () => {
-         if (idleLimit <= 0) return;
+         if (idleLimit <= 0 || killTimer || settled) return;
          if (idleTimer) clearTimeout(idleTimer);
          idleTimer = setTimeout(() => {
             processError ??= new Error(`${name} stopped responding and was stopped.`);
-            child.kill();
-            killTimer = setTimeout(() => child.kill("SIGKILL"), killGraceMs);
+            stop();
          }, idleLimit);
       };
       armIdle();
@@ -70,23 +81,25 @@ export function runMedia(name: "ffmpeg" | "ffprobe", args: string[], options: Ru
          }
          stdout += data;
          if (stdout.length > 64 * 1024 * 1024) {
-            child.kill();
             processError ??= new Error("Media analysis returned too much data.");
+            stop();
          }
       });
       child.stderr.on("data", (data: string) => {
          armIdle();
          stderr = (stderr + data).slice(-12000);
       });
-      // Wait for stdio to close before callers remove temporary files, including on abort.
       child.on("error", (error) => {
          if (settled) return;
-         // A failed spawn emits "error"; on some platforms "close" never follows.
-         settled = true;
-         disarm();
          processError ??= error.message.includes("ENOENT")
             ? new Error(`${name} was not found. Install FFmpeg or set ${name === "ffmpeg" ? "FFMPEG_PATH" : "FFPROBE_PATH"}.`)
             : error;
+         if (child.pid) {
+            stop();
+            return;
+         }
+         settled = true;
+         disarm();
          reject(options.signal?.aborted ? new Error("Cancelled") : processError);
       });
       child.on("close", (code) => {

@@ -19,7 +19,10 @@ export class Storage {
    private pending: Snapshot | null = null;
    private writes: Promise<void> | null = null;
    private primaryValid = false;
-   constructor(private directory: string) {}
+   private directory: string;
+   constructor(directory: string) {
+      this.directory = directory;
+   }
    async load(): Promise<void> {
       const read = async (name: string) => {
          try {

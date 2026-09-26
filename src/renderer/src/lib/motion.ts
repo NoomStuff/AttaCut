@@ -138,10 +138,10 @@ export function usePressFeedback(): void {
          return button;
       };
       const navigation = (event: KeyboardEvent) => {
-         if (event.key === "Tab") document.documentElement.dataset.keyboard = "true";
+         if (event.key === "Tab") document.documentElement.dataset["keyboard"] = "true";
       };
       const pointerMode = () => {
-         delete document.documentElement.dataset.keyboard;
+         delete document.documentElement.dataset["keyboard"];
       };
       let pressed: { button: HTMLButtonElement; pointerId: number } | null = null;
       const finishPress = () => {

@@ -113,6 +113,8 @@ test("timeline", async ({ launchApp, profile }) => {
    await end.press("Tab");
    await expect(end).toHaveValue("00:17.00");
    await expect(page.getByRole("slider", { name: "Clip 2 end", exact: true })).toHaveAttribute("aria-valuenow", "17");
+   // The moving handle crosses 17.5 during the trim animation and would intercept this click.
+   await expect(page.locator(".editor-dock")).not.toHaveClass(/trim-animating/);
    await seek(17.5);
    await expect(page.locator(".player-excluded")).not.toHaveClass(/hidden/);
    await page.getByRole("button", { name: "Playback settings", exact: true }).click();

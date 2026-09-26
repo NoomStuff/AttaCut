@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { isDynamicHdrMetadata } from "./probe";
-import { trimAss } from "./metadata";
+import { isDynamicHdrMetadata } from "./probe.ts";
+import { trimAss } from "./metadata.ts";
 
 describe("metadata preservation", () => {
    it("recognizes FFmpeg's dynamic HDR frame and packet names", () => {

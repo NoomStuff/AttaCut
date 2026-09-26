@@ -6,7 +6,7 @@ export default defineConfig({
    workers: 1,
    // A single fresh Electron process absorbs occasional cold-runner timing failures.
    // Repeatable failures still block checks and releases.
-   retries: process.env.CI ? 1 : 0,
+   retries: process.env["CI"] ? 1 : 0,
    timeout: 120_000,
    expect: { timeout: 15_000 },
    reporter: "list",

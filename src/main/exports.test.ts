@@ -2,14 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { link, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { ExportService } from "./exports";
-import { publishOutput } from "./media/publish";
-import { sanitizeName } from "./media/filename";
-import type { ProbedSource } from "./media/probe";
-import type { Clip } from "../shared/types";
+import { ExportService } from "./exports.ts";
+import { publishOutput } from "./media/publish.ts";
+import { sanitizeName } from "./media/filename.ts";
+import { analyzeCut } from "./media/cut.ts";
+import type { ProbedSource } from "./media/probe.ts";
+import type { Clip } from "../shared/types.ts";
 
 vi.mock("./media/cut.ts", () => ({
-   analyzeCut: async (_source: unknown, clip: Clip) => ({ clip, method: "copy", encodedSeconds: 0, message: "", spans: [] }),
+   analyzeCut: vi.fn(async (_source: unknown, clip: Clip) => ({ clip, method: "copy", encodedSeconds: 0, message: "", spans: [] })),
    exportCut: async (source: ProbedSource, _analysis: unknown, destination: string, options: { overwrite: boolean; replaceSource: boolean }) => {
       const temporary = `${destination}.tmp`;
       await writeFile(temporary, "new export");
@@ -19,6 +20,7 @@ vi.mock("./media/cut.ts", () => ({
 
 const folders: string[] = [];
 afterEach(async () => {
+   vi.clearAllMocks();
    for (const folder of folders.splice(0)) {
       if (dirname(folder) !== resolve(tmpdir())) throw new Error("Unexpected test folder.");
       await rm(folder, { recursive: true, force: true });
@@ -35,6 +37,13 @@ async function fixture() {
 }
 
 describe("export destination confirmation", () => {
+   it("does not start analysis if planning was cancelled during destination checks", async () => {
+      const { source, request, service } = await fixture();
+      const pending = service.plan(source, request);
+      service.cancelPlanning();
+      await expect(pending).rejects.toThrow();
+      expect(analyzeCut).not.toHaveBeenCalled();
+   });
    it("plans a missing folder without creating it and requires approval", async () => {
       const { directory, source, request, service } = await fixture();
       request.directory = join(directory, "missing", "nested");

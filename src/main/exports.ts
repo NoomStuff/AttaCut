@@ -59,12 +59,11 @@ export class ExportService {
       mode: "separate" | "combined",
       signal: AbortSignal
    ): Promise<CutAnalysis> {
-      const settings = { mode };
       signal.throwIfAborted();
-      const key = JSON.stringify([source.id, source.size, source.modified, clip.start, clip.end, audioTracks, extension, settings.mode]);
+      const key = JSON.stringify([source.id, source.size, source.modified, clip.start, clip.end, audioTracks, extension, mode]);
       let pending = this.analyses.get(key);
       if (!pending) {
-         pending = analyzeCut(source, clip, signal, { audioTracks, extension, combined: settings.mode === "combined" }).catch((error: unknown) => {
+         pending = analyzeCut(source, clip, signal, { audioTracks, extension, combined: mode === "combined" }).catch((error: unknown) => {
             if (this.analyses.get(key) === pending) this.analyses.delete(key);
             throw error;
          });
@@ -72,16 +71,12 @@ export class ExportService {
          this.analyses.set(key, pending);
       }
       const cached = await pending;
-      const analysis = { ...cached, clip: { ...cached.clip, id: clip.id, color: clip.color } };
-      return analysis;
+      return { ...cached, clip: { ...cached.clip, id: clip.id, color: clip.color } };
    }
-   private async analyze(source: ProbedSource, request: AnalyzeRequest): Promise<CutAnalysis[]> {
+   private async analyze(source: ProbedSource, request: AnalyzeRequest, signal = this.analysisController.signal): Promise<CutAnalysis[]> {
       const settings = analyzeRequestSchema.parse(request);
-      const signal = this.analysisController.signal;
       const audio = source.streams.filter((stream) => stream.type === "audio");
-      const tracks = settings.audioTracks ?? audio.map((stream) => stream.index);
-      if (new Set(tracks).size !== tracks.length || tracks.some((index) => !audio.some((stream) => stream.index === index)))
-         throw new Error("One or more selected audio tracks were not found.");
+      const tracks = exportAudioTracks(source, settings.audioTracks);
       const items = [...settings.items].sort((a, b) => a.clip.start - b.clip.start);
       const results: CutAnalysis[] = new Array(items.length);
       let next = 0;
@@ -119,11 +114,8 @@ export class ExportService {
    async plan(source: ProbedSource, request: PlanRequest): Promise<ExportPlan> {
       const settings = planRequestSchema.parse(request);
       const signal = this.analysisController.signal;
-      const sourceAudio = source.streams.filter((stream) => stream.type === "audio");
-      const audioTracks = settings.audioTracks ?? sourceAudio.map((stream) => stream.index);
-      if (new Set(audioTracks).size !== audioTracks.length || audioTracks.some((index) => !sourceAudio.some((stream) => stream.index === index)))
-         throw new Error("One or more selected audio tracks were not found.");
-      const directoryPath = resolve(request.directory);
+      const audioTracks = exportAudioTracks(source, settings.audioTracks);
+      const directoryPath = resolve(settings.directory);
       const directory = await stat(directoryPath).catch((error: NodeJS.ErrnoException) => {
          if (error.code === "ENOENT") return null;
          throw new Error(`Cannot access the output folder: ${error.message}`);
@@ -132,13 +124,11 @@ export class ExportService {
       if (directory) await access(directoryPath, constants.W_OK);
       const names = outputNames(source, settings);
       const itemNames = settings.mode === "combined" ? outputNames(source, { ...settings, mode: "separate" }) : names;
-      const cuts = await this.analyze(source, request);
-      let cutIndex = 0;
+      const cuts = await this.analyze(source, settings, signal);
       const analyses = new Map<string, CutAnalysis[]>();
       const items = [];
-      for (const [index] of [...settings.items].sort((a, b) => a.clip.start - b.clip.start).entries()) {
+      for (const [index, analysis] of cuts.entries()) {
          const name = itemNames[index]!;
-         const analysis = cuts[cutIndex++]!;
          const id = randomUUID();
          analyses.set(id, [analysis]);
          items.push({
@@ -152,7 +142,6 @@ export class ExportService {
          });
       }
       if (settings.mode === "combined") {
-         const cuts = items.flatMap((item) => analyses.get(item.id)!);
          const name = names[0]!;
          const first = items[0]!;
          const unsupported = cuts.filter((cut) => cut.method === "unsupported");
@@ -164,6 +153,7 @@ export class ExportService {
             message: [...new Set(unsupported.map((cut) => cut.message))].join(" "),
             encodedSeconds: cuts.reduce((sum, cut) => sum + cut.encodedSeconds, 0),
          };
+         analyses.clear();
          analyses.set(first.id, cuts);
          items.splice(0, items.length, combined);
       }
@@ -275,6 +265,13 @@ export class ExportService {
       job.running = false;
       this.emit(structuredClone(job));
    }
+}
+function exportAudioTracks(source: ProbedSource, selected: number[] | null): number[] {
+   const available = source.streams.filter((stream) => stream.type === "audio").map((stream) => stream.index);
+   const tracks = selected ?? available;
+   if (new Set(tracks).size !== tracks.length || tracks.some((index) => !available.includes(index)))
+      throw new Error("One or more selected audio tracks were not found.");
+   return tracks;
 }
 function outputNames(source: ProbedSource, request: ReturnType<typeof planRequestSchema.parse>): string[] {
    if (request.mode === "combined") {

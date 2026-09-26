@@ -1,14 +1,15 @@
+import { usePlayback } from "./playback/usePlayback";
+import { NavDropdown } from "./components/NavDropdown";
+import { sessionFor } from "./editor/session";
+import { usePersistence } from "./editor/persistence";
+import { useAppearance } from "./lib/appearance";
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import type { AvailableUpdate, MediaSource, ExportJob, SavedSession, Preferences } from "../../shared/types";
-import { clipColorCount, defaultPreferences } from "../../shared/defaults";
+import type { AvailableUpdate, MediaSource, ExportJob, SavedSession } from "../../shared/types";
+import { defaultPreferences } from "../../shared/defaults";
 import { clamp } from "../../shared/time";
 import { adjacentBoundary, neighboringKeyframe, resolveBoundary, splitTargetAt } from "./editor/navigation";
-import { selectNativeAudio } from "./playback/audio";
-import { rememberAudioSelection, resolveAudioSelection } from "./playback/audioSelection";
+import { resolveAudioSelection } from "./playback/audioSelection";
 import { nativeAudioCodecs } from "./playback/codecs";
-import { PlaybackSeeker } from "./playback/seeker";
-import { AudioScrubber } from "./playback/scrubber";
-import { PlaybackController } from "./playback/controller";
 import { nextKeptTime } from "./playback/ranges";
 import {
    ClipPriority,
@@ -26,10 +27,9 @@ import {
    splitClip,
    trimClip,
 } from "./editor/model";
-import type { EditDocument, EditorState } from "./editor/model";
-import { CommandContext, resolvedCommand, bindingsFor, commandDefinitions, displayBindings, useCommands } from "./editor/commands";
+import type { EditDocument } from "./editor/model";
+import { CommandContext, resolvedCommand, useCommands } from "./editor/commands";
 import type { CommandId, Commands } from "./editor/commands";
-import { PlaybackClock, useClock } from "./playback/clock";
 import { Button } from "./components/Controls";
 import { Player } from "./components/Player";
 import { Timeline } from "./components/Timeline";
@@ -38,11 +38,11 @@ import { LoadingEditor } from "./components/LoadingEditor";
 import { TopActions } from "./components/TopActions";
 import { JobProgress } from "./components/JobProgress";
 import { EmptyState } from "./components/EmptyState";
-import type { ExportDraft } from "./components/ExportPanel";
+import type { ExportDraft } from "./export/useExport";
 import type { HelpTab } from "./components/HelpPanel";
 import { prefetchModules } from "./lib/prefetch";
 import { useKeyframes } from "./lib/keyframes";
-import { errorText, isCancellation } from "./lib/errors";
+import { errorText } from "./lib/errors";
 import { useExitValue, usePressFeedback } from "./lib/motion";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faScissors, faFolderOpen, faMinus, faSquare, faXmark, faCircleExclamation } from "@fortawesome/free-solid-svg-icons";
@@ -62,81 +62,6 @@ const UpdatePanel = lazy(loadUpdatePanel);
 
 type Panel = "export" | "frame" | "settings" | "shortcuts" | "help" | "about" | null;
 
-/** One construction of the persisted session; adding a field to SavedSession edits this once. */
-function sessionFor(source: MediaSource | null, editor: EditorState, restore: SavedSession | null): SavedSession | null {
-   if (!source) return restore;
-   return {
-      path: source.path,
-      size: source.size,
-      modified: source.modified,
-      clips: editor.document.clips,
-      selectedId: editor.document.selectedId,
-      past: editor.past,
-      future: editor.future,
-   };
-}
-
-function NavDropdown({
-   clock,
-   open,
-   ids,
-   commands,
-   shortcuts,
-   mac,
-   close,
-}: {
-   clock: PlaybackClock;
-   open: boolean;
-   ids: CommandId[];
-   commands: Commands;
-   shortcuts: Preferences["shortcuts"];
-   mac: boolean;
-   close: () => void;
-}) {
-   const presence = useExitValue(open ? true : null, 120);
-   if (!presence.mounted) return null;
-   return <NavDropdownItems clock={clock} closing={presence.closing} ids={ids} commands={commands} shortcuts={shortcuts} mac={mac} close={close} />;
-}
-
-function NavDropdownItems({
-   clock,
-   closing,
-   ids,
-   commands,
-   shortcuts,
-   mac,
-   close,
-}: {
-   clock: PlaybackClock;
-   closing: boolean;
-   ids: CommandId[];
-   commands: Commands;
-   shortcuts: Preferences["shortcuts"];
-   mac: boolean;
-   close: () => void;
-}) {
-   // Subscribed only while mounted, so closed menus never tick with the clock.
-   useClock(clock);
-   return (
-      <div className={`dropdown${closing ? " closing" : ""}`} role="menu">
-         {ids.map((id) => (
-            <button
-               role="menuitem"
-               key={id}
-               disabled={!commands[id].enabled()}
-               onClick={() => {
-                  close();
-                  commands[id].run();
-               }}
-            >
-               <span>{commandDefinitions[id].label}</span>
-               <kbd>{displayBindings(bindingsFor(id, shortcuts), mac)}</kbd>
-            </button>
-         ))}
-      </div>
-   );
-}
-
 export default function App() {
    usePressFeedback();
    const [source, setSource] = useState<MediaSource | null>(null);
@@ -153,15 +78,26 @@ export default function App() {
    const [loading, setLoading] = useState(false);
    const [error, setError] = useState<string | null>(null);
    const [restore, setRestore] = useState<SavedSession | null>(null);
-   const [playing, setPlaying] = useState(false);
-   const [muted, setMuted] = useState(false);
-   const [playback] = useState(() => new PlaybackController());
-   const playbackState = useSyncExternalStore(playback.subscribe, playback.get);
-   const { url } = playbackState;
-   const preparing = playbackState.phase === "preparing";
-   const playWhenReady = playbackState.intent === "requested";
-   const waitForPlay = playbackState.showWait;
-   const [audioIndices, setAudioIndices] = useState<number[]>([]);
+   const {
+      playing,
+      setPlaying,
+      muted,
+      setMuted,
+      playback,
+      playbackState,
+      url,
+      preparing,
+      playWhenReady,
+      waitForPlay,
+      audioIndices,
+      setAudioIndices,
+      videoRef,
+      clock,
+      seeker,
+      scrubber,
+      preparePreview,
+      changeAudio,
+   } = usePlayback({ source, preferences, setPreferences, setError });
    const [job, setJob] = useState<ExportJob | null>(null);
    const [fitToken, setFitToken] = useState(0);
    const [zoomRequest, setZoomRequest] = useState({ id: 0, direction: 0 });
@@ -185,49 +121,15 @@ export default function App() {
       window.clearTimeout(trimTimer.current);
       trimTimer.current = window.setTimeout(() => setTrimAnimating(false), 180);
    };
-   const videoRef = useRef<HTMLVideoElement>(null);
    const trimmingRef = useRef(false);
    const setTrimming = (active: boolean) => {
       trimmingRef.current = active;
       setTrimmingState(active);
    };
-   const [clock] = useState(() => new PlaybackClock());
-   const [seeker] = useState(() => new PlaybackSeeker(clock));
-   const [scrubber] = useState(() => new AudioScrubber());
-   // Each source/selection owns a small PCM working set. Old identities are cleared immediately.
-   useEffect(() => {
-      scrubber.configure(
-         source && preferences.audioScrub && audioIndices.length > 0 ? (time) => window.desktop.scrubAudio(source.id, audioIndices, time) : null
-      );
-      return () => {
-         scrubber.reset();
-         void window.desktop.cancelScrub();
-      };
-   }, [source, audioIndices, preferences.audioScrub, scrubber]);
-   useEffect(() => () => scrubber.dispose(), [scrubber]);
    const openSequence = useRef(0);
    const replacingSourceId = useRef<string | null>(null);
    const sourceRef = useRef(source);
    sourceRef.current = source;
-   const requestPlayback = (showWait: boolean) => playback.request(showWait);
-   const clearPlaybackRequest = () => playback.pause();
-   const preparePreview = async (target: MediaSource, tracks: number[], transcode = false, resume = false) => {
-      const video = videoRef.current;
-      if (resume || (video && !video.paused)) requestPlayback(false);
-      video?.pause();
-      setError(null);
-      try {
-         await playback.prepare(
-            target.id,
-            transcode,
-            () => window.desktop.preparePreview(target.id, tracks, transcode),
-            () => playback.holdPreviewFrame()
-         );
-      } catch (value) {
-         const message = errorText(value);
-         if (!isCancellation(message)) setError(message);
-      }
-   };
    const mac = platform === "darwin";
    const [priority] = useState(() => new ClipPriority());
    // Time displays subscribe separately. The root only updates when the active clip changes.
@@ -265,8 +167,9 @@ export default function App() {
       const action = document.fullscreenElement ? document.exitFullscreen() : videoRef.current?.requestFullscreen();
       void action?.catch((value) => setError(errorText(value)));
    };
-   // Saved eagerly here, and again by the effect below on every change: this call flushes the
-   // outgoing source's session before another one loads, so restoring always sees the latest edit.
+   // Saved eagerly here, and again on every change by the effect in usePersistence: this
+   // call flushes the outgoing source's session before another one loads, so restoring
+   // always sees the latest edit.
    const saveCurrent = async () => {
       const snapshot = sessionFor(source, editor, null);
       if (snapshot) await window.desktop.saveSession(snapshot);
@@ -375,52 +278,17 @@ export default function App() {
       };
       // Desktop initialization runs once. Later source changes use explicit open commands.
    }, []);
-   const latestSnapshot = useRef({ preferences, session: null as SavedSession | null });
-   latestSnapshot.current = { preferences, session: sessionFor(source, editor, restore) };
    const openLatest = useRef(openPath);
    openLatest.current = openPath;
-   useEffect(() => {
-      const flush = window.desktop.onFlush(() => {
-         void window.desktop.flushState(latestSnapshot.current).catch((value: unknown) => setError(errorText(value)));
-      });
-      const open = window.desktop.onOpenFile((path) => {
-         void openLatest.current(path);
-      });
-      return () => {
-         flush();
-         open();
-      };
-   }, []);
-   useEffect(() => {
-      if (!ready) return;
-      const timer = window.setTimeout(() => {
-         void window.desktop.savePreferences(preferences).catch((value: unknown) => setError(errorText(value)));
-      }, 100);
-      return () => window.clearTimeout(timer);
-   }, [preferences, ready]);
-   useEffect(() => {
-      const system = window.matchMedia("(prefers-color-scheme: dark)");
-      const applyTheme = () => {
-         document.documentElement.dataset["theme"] = preferences.theme === "system" ? (system.matches ? "dark" : "light") : preferences.theme;
-      };
-      applyTheme();
-      system.addEventListener("change", applyTheme);
-      return () => system.removeEventListener("change", applyTheme);
-   }, [preferences.theme]);
-   useEffect(() => {
-      document.documentElement.style.setProperty("--accent", `var(--clip-${preferences.accent})`);
-      for (let index = 0; index < clipColorCount; index++) {
-         document.documentElement.style.setProperty(`--clip-sequence-${index}`, `var(--clip-${(index + preferences.accent) % clipColorCount})`);
-      }
-   }, [preferences.accent]);
-   useEffect(() => {
-      if (!source) return;
-      const timer = window.setTimeout(() => {
-         const snapshot = sessionFor(source, editor, null);
-         if (snapshot) void window.desktop.saveSession(snapshot).catch((value: unknown) => setError(errorText(value)));
-      }, 100);
-      return () => window.clearTimeout(timer);
-   }, [source, editor]);
+   useEffect(
+      () =>
+         window.desktop.onOpenFile((path) => {
+            void openLatest.current(path);
+         }),
+      []
+   );
+   usePersistence({ source, editor, restore, preferences, ready, setError });
+   useAppearance(preferences);
    useEffect(() => {
       if (!menu) return;
       const close = (event: PointerEvent) => {
@@ -442,7 +310,7 @@ export default function App() {
       playback.previewEnd = null;
       if (playback.get().intent === "requested") {
          video.pause();
-         clearPlaybackRequest();
+         playback.pause();
          return;
       }
       if (!video.paused) {
@@ -454,7 +322,7 @@ export default function App() {
       if (preferences.keptOnly && editor.document.clips.length) {
          seeker.seek(nextKeptTime(editor.document.clips, time) ?? editor.document.clips[0]!.start, true);
       } else if (source && time >= source.duration - 0.02) seeker.seek(0, true);
-      requestPlayback(true);
+      playback.request(true);
       if (preparing) return;
       void video.play().catch(() => undefined);
    };
@@ -578,7 +446,7 @@ export default function App() {
             if (!clip || !videoRef.current) return;
             seeker.seek(clip.start, true);
             playback.previewEnd = clip.end;
-            requestPlayback(true);
+            playback.request(true);
             if (!preparing) void videoRef.current.play().catch(() => undefined);
          },
       },
@@ -686,17 +554,6 @@ export default function App() {
    };
    const errorPresence = useExitValue(error, 190);
    const jobPresence = useExitValue(job, 160);
-   const changeAudio = (indices: number[]) => {
-      scrubber.reset();
-      setAudioIndices(indices);
-      if (source) {
-         const tracks = source.streams.filter((stream) => stream.type === "audio");
-         setPreferences((current) => ({ ...current, playbackAudio: rememberAudioSelection(tracks, indices) }));
-         const video = videoRef.current;
-         if (video && (indices.length !== 1 || !selectNativeAudio(video, source, indices)))
-            void preparePreview(source, indices, playback.get().transcode, !video.paused);
-      }
-   };
    return (
       <CommandContext.Provider value={{ commands, overrides: preferences.shortcuts, mac }}>
          <div
@@ -814,7 +671,7 @@ export default function App() {
                         onFailure={() => {
                            if (!source) return;
                            const requested = playback.get().intent !== "paused";
-                           if (requested) requestPlayback(true);
+                           if (requested) playback.request(true);
                            if (playback.get().transcode) {
                               playback.fail();
                               setError("This video could not be played, but it can still be exported.");

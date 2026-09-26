@@ -1,6 +1,7 @@
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import type { ScrubAudio } from "../shared/types.ts";
+import { resolveFrameTime } from "../shared/frames.ts";
 import { packetsAround, probeSource, sourceFrames, sourceKeyframes } from "./media/probe.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import { preparePreview } from "./media/preview.ts";
@@ -30,10 +31,12 @@ export class SourceSession {
    private pcm: { key: string; value: Promise<ScrubAudio | null> } | null = null;
    private previewFiles: string[] = [];
    readonly mediaPaths = new Map<string, string>();
-   constructor(
-      private previewFolder: string,
-      private previewReady: Promise<void> = Promise.resolve()
-   ) {}
+   private previewFolder: string;
+   private previewReady: Promise<void>;
+   constructor(previewFolder: string, previewReady: Promise<void> = Promise.resolve()) {
+      this.previewFolder = previewFolder;
+      this.previewReady = previewReady;
+   }
    get signal(): AbortSignal {
       return this.lifetime.signal;
    }
@@ -64,6 +67,16 @@ export class SourceSession {
             throw error;
          });
       return this.keys;
+   }
+   async frameTime(id: string, time: number, direction: -1 | 0 | 1): Promise<number> {
+      const source = this.get(id);
+      const signal = this.signal;
+      const frames = await sourceFrames(source, signal).catch(() => null);
+      // A source change must not restart an old seek under the new source's lifetime.
+      signal.throwIfAborted();
+      const points = frames ?? (await packetsAround(source, time, signal, "seek")).map((point) => point.time);
+      signal.throwIfAborted();
+      return resolveFrameTime(points, time, source.duration, direction);
    }
    cancelPreview(): void {
       this.preview.abort();
@@ -98,7 +111,7 @@ export class SourceSession {
       this.cancelScrub();
       this.scrub = new AbortController();
       const value = extractScrubPcm(source, tracks, this.scrub.signal, start).catch((error: unknown) => {
-         if (this.pcm?.key === key) this.pcm = null;
+         if (this.pcm?.value === value) this.pcm = null;
          throw error;
       });
       this.pcm = { key, value };

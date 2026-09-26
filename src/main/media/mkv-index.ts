@@ -82,11 +82,13 @@ function uint(data: Buffer, element: EbmlElement): number | null {
 }
 
 class Scanner {
-   constructor(
-      private handle: FileHandle,
-      private budget: { remaining: number }
-   ) {}
+   private handle: FileHandle;
+   private budget: { remaining: number };
    position = 0;
+   constructor(handle: FileHandle, budget: { remaining: number }) {
+      this.handle = handle;
+      this.budget = budget;
+   }
    /** Read up to the length from the current position without advancing it; null ends the walk. */
    async data(length: number): Promise<Buffer | null> {
       if (length > this.budget.remaining) return null;
