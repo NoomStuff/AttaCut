@@ -54,8 +54,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    shortcut?: string;
    active?: boolean;
    variant?: "primary" | "secondary" | "quiet" | "danger";
+   /** Buttons whose label already says everything the tooltip would. */
+   tooltip?: boolean;
 }
-export function Button({ command, icon, shortcut, active, variant = "quiet", children, className = "", ...props }: ButtonProps) {
+export function Button({ command, icon, shortcut, active, variant = "quiet", tooltip = true, children, className = "", ...props }: ButtonProps) {
    const context = useContext(CommandContext);
    const tooltipId = useId();
    const action = command && context ? context.commands[command] : null;
@@ -63,7 +65,7 @@ export function Button({ command, icon, shortcut, active, variant = "quiet", chi
    const button = (
       <button
          aria-label={typeof children === "string" ? children : undefined}
-         aria-describedby={command && children !== undefined ? tooltipId : undefined}
+         aria-describedby={command && tooltip && children !== undefined ? tooltipId : undefined}
          data-command={command}
          disabled={action ? !action.enabled() : undefined}
          onClick={action?.run}
@@ -75,7 +77,7 @@ export function Button({ command, icon, shortcut, active, variant = "quiet", chi
          {shortcut && <kbd>{shortcut}</kbd>}
       </button>
    );
-   if (!command || !context || children === undefined) return button;
+   if (!command || !context || children === undefined || !tooltip) return button;
    const binding = displayBindings(bindingsFor(command, context.overrides), context.mac);
    return (
       <TooltipHost>

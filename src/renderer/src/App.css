@@ -87,12 +87,17 @@
    color: var(--muted);
    transition:
       background-color 170ms ease-out,
-      color 170ms ease-out;
+      color 170ms ease-out,
+      transform 60ms ease-out;
 }
 .app-menu > button:is(:hover, .active) {
    background: var(--surface-hover);
    color: var(--text);
    transition-duration: 0ms;
+   transition-property: background-color, color;
+}
+.app-menu > button:active {
+   transform: translateY(1px);
 }
 .dropdown {
    position: absolute;
@@ -193,6 +198,11 @@
    font-size: 12px;
    animation: banner-in 190ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
+/* Recoverable situations explain themselves in yellow instead of alarming red. */
+.error-banner.warning {
+   background: color-mix(in srgb, var(--warning) 10%, var(--background));
+   color: var(--warning);
+}
 @keyframes banner-in {
    from {
       opacity: 0;
@@ -211,6 +221,10 @@
 }
 .error-banner > button {
    padding: 5px;
+   transition: transform 60ms ease-out;
+}
+.error-banner > button:active {
+   transform: translateY(1px);
 }
 .loading-overlay {
    position: absolute;

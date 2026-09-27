@@ -5,7 +5,6 @@ import { audioTrackLabel } from "../playback/audioSelection";
 import { DropdownSelect } from "./DropdownSelect";
 
 export function AudioPicker({ tracks, selected, onSelect }: { tracks: MediaStream[]; selected: number[]; onSelect: (indices: number[]) => void }) {
-   if (tracks.length <= 1) return null;
    const all = selected.length === tracks.length;
    return (
       <DropdownSelect
@@ -15,6 +14,7 @@ export function AudioPicker({ tracks, selected, onSelect }: { tracks: MediaStrea
          multiple
          required
          placement="up"
+         disabled={tracks.length <= 1}
          className="audio-picker"
          tooltip="Preview audio tracks"
          onChange={(values) => onSelect(values.map(Number))}

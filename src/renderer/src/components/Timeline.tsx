@@ -60,6 +60,7 @@ export function Timeline({
    onTrimming,
 }: TimelineProps) {
    const time = useClock(clock);
+   const section = useRef<HTMLElement>(null);
    const viewport = useRef<HTMLDivElement>(null);
    const [view, setView] = useState({ start: 0, length: duration });
    const [draft, setDraft] = useState<EditDocument | null>(null);
@@ -182,9 +183,12 @@ export function Timeline({
       setView({ start, length: view.length });
    }, [time, view, duration, pointerDriven]);
    useEffect(() => {
-      const element = viewport.current!;
+      // Listened on the whole section: the pan arrows overlay the viewport edges and would
+      // otherwise swallow the wheel events aimed at the timeline underneath them.
+      const sectionElement = section.current!;
       const wheel = (event: WheelEvent) => {
          event.preventDefault();
+         const element = viewport.current!;
          const { view: current, duration: total } = latest.current;
          if (event.altKey || event.shiftKey) {
             setView({
@@ -196,14 +200,19 @@ export function Timeline({
             const fraction = clamp((event.clientX - rect.left) / rect.width, 0, 1);
             if (event.deltaY === 0) return;
             const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1);
-            // Trackpads emit many small pixel deltas; the coefficient keeps a two-finger
-            // gesture responsive while a mouse notch stays around a third of the view.
-            const length = clamp(current.length * Math.exp(delta * 0.003), Math.min(0.5, total), total);
+            // Mice deliver one large delta per detent while trackpads and pinch gestures
+            // stream many small ones on a device-dependent scale. Detents zoom a fixed step
+            // per notch so speed follows the wheel rather than the OS scroll setting; small
+            // deltas zoom per pixel with a boost so light gestures stay responsive, capped
+            // so a single event can never lurch the view.
+            const magnitude = Math.abs(delta);
+            const exponent = magnitude >= 60 ? Math.sign(delta) * 0.15 * Math.min(magnitude / 100, 3) : Math.sign(delta) * Math.min(magnitude * 0.008, 0.1);
+            const length = clamp(current.length * Math.exp(exponent), Math.min(0.5, total), total);
             setView({ length, start: clamp(current.start + fraction * (current.length - length), 0, total - length) });
          }
       };
-      element.addEventListener("wheel", wheel, { passive: false });
-      return () => element.removeEventListener("wheel", wheel);
+      sectionElement.addEventListener("wheel", wheel, { passive: false });
+      return () => sectionElement.removeEventListener("wheel", wheel);
    }, []);
    const cancel = () => {
       const current = drag.current;
@@ -505,7 +514,7 @@ export function Timeline({
       ]
    );
    return (
-      <section className="timeline-section" aria-label="Clip timeline">
+      <section className="timeline-section" aria-label="Clip timeline" ref={section}>
          <div
             className={`timeline-viewport${panActive ? " panning" : ""}`}
             ref={viewport}

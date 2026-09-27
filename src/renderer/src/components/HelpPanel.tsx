@@ -98,8 +98,9 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
             </p>
             <h3>When a cut gets refused</h3>
             <p>
-               If a cut would need more than a small section re-encoded, it gets refused instead of quietly degrading your file. Dynamic HDR, interlaced video,
-               and bitmap subtitles can't be re-encoded without losing something yet. Nudging a cut point slightly usually fixes it.
+               Cuts that would need more than a small section re-encoded are refused instead of quietly degrading your file, and so are cuts in formats whose
+               edges can't be re-encoded faithfully yet. The export dialog names the exact cause when it happens, and Keyframe Snapping avoids the re-encoding
+               refusals entirely.
             </p>
             <h3>If you want lossless cuts</h3>
             <p>

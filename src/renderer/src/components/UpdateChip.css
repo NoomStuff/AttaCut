@@ -17,7 +17,15 @@
    white-space: nowrap;
    transition:
       width 340ms cubic-bezier(0.25, 1.22, 0.42, 1),
-      background-color 160ms ease;
+      background-color 160ms ease,
+      /* The release overshoots back past rest, so letting go reads as a small spring. */ transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.update-chip-trigger:active:not([aria-disabled="true"]) {
+   transform: scale(0.92);
+   transition:
+      width 340ms cubic-bezier(0.25, 1.22, 0.42, 1),
+      background-color 160ms ease,
+      transform 90ms ease-out;
 }
 .update-chip-wrap:is(.announce, :hover, :focus-within) .update-chip-trigger {
    width: var(--update-expanded-width);
@@ -100,6 +108,9 @@
    .update-chip-label,
    .update-chip-ring-fill {
       transition: none;
+   }
+   .update-chip-trigger:active:not([aria-disabled="true"]) {
+      transform: none;
    }
    .update-chip-ring.indeterminate {
       animation: none;

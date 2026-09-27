@@ -138,7 +138,9 @@ test("timeline", async ({ launchApp, profile }) => {
       );
       await expect(page.locator(".title-filename")).toHaveText(audio ? "single.mp4" : "silent.mp4");
       const selector = page.getByRole("button", { name: "Preview audio tracks", exact: true });
-      await expect(selector).toHaveCount(0);
+      // The picker stays mounted but disabled when there is nothing to choose between.
+      await expect(selector).toHaveCount(1);
+      await expect(selector).toBeDisabled();
       await page.getByRole("button", { name: "Export", exact: true }).click();
       const exportAudio = page.getByRole("switch", { name: "Export audio", exact: true });
       if (audio) await expect(exportAudio).toBeChecked();

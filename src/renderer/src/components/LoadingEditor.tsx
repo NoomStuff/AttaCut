@@ -3,6 +3,7 @@ import {
    faBackwardStep,
    faExpand,
    faForwardStep,
+   faHeadphones,
    faMagnet,
    faMagnifyingGlassMinus,
    faMagnifyingGlassPlus,
@@ -54,6 +55,8 @@ export function LoadingEditor({ label }: { label?: string }) {
                   </div>
                </div>
                <div className="volume-controls">
+                  {/* Slot for the audio picker, which stays mounted but disabled for single-track sources. */}
+                  <Control icon={faHeadphones} label="Preview audio tracks" />
                   <Control icon={faVolumeHigh} label="Preview volume" />
                   <span className="loading-editor-volume-slider" />
                   <span className="control-divider" />

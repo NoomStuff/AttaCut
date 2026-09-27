@@ -46,7 +46,7 @@ import { useKeyframes } from "./lib/keyframes";
 import { errorText } from "./lib/errors";
 import { useExitValue, usePressFeedback } from "./lib/motion";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faScissors, faFolderOpen, faMinus, faSquare, faXmark, faCircleExclamation } from "@fortawesome/free-solid-svg-icons";
+import { faScissors, faFolderOpen, faMinus, faSquare, faXmark, faCircleExclamation, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
 
 const loadFramePanel = () => import("./components/FramePanel").then((module) => ({ default: module.FramePanel }));
 const FramePanel = lazy(loadFramePanel);
@@ -76,7 +76,9 @@ export default function App() {
    const [helpTab, setHelpTab] = useState<HelpTab>("intro");
    const [menu, setMenu] = useState<string | null>(null);
    const [loading, setLoading] = useState(false);
-   const [error, setError] = useState<string | null>(null);
+   const [error, setError] = useState<{ text: string; tone: "error" | "warning" } | null>(null);
+   /** Errors interrupt work and deserve the red banner; warnings only explain a recoverable state. */
+   const showError = (message: string | null) => setError(message === null ? null : { text: message, tone: "error" });
    const [restore, setRestore] = useState<SavedSession | null>(null);
    const {
       playing,
@@ -97,7 +99,7 @@ export default function App() {
       scrubber,
       preparePreview,
       changeAudio,
-   } = usePlayback({ source, preferences, setPreferences, setError });
+   } = usePlayback({ source, preferences, setPreferences, setError: showError });
    const [job, setJob] = useState<ExportJob | null>(null);
    const [fitToken, setFitToken] = useState(0);
    const [zoomRequest, setZoomRequest] = useState({ id: 0, direction: 0 });
@@ -165,7 +167,7 @@ export default function App() {
    };
    const fullscreen = () => {
       const action = document.fullscreenElement ? document.exitFullscreen() : videoRef.current?.requestFullscreen();
-      void action?.catch((value) => setError(errorText(value)));
+      void action?.catch((value) => showError(errorText(value)));
    };
    // Saved eagerly here, and again on every change by the effect in usePersistence: this
    // call flushes the outgoing source's session before another one loads, so restoring
@@ -188,7 +190,7 @@ export default function App() {
          const media = await window.desktop.openSource(path);
          if (sequence !== openSequence.current) return;
          const validSaved = saved && saved.size === media.size && saved.modified === media.modified && saved.clips.every((item) => item.end <= media.duration);
-         if (saved && !validSaved) setError("The original file was changed. Your timeline was reset.");
+         if (saved && !validSaved) setError({ text: "The original file was changed. Your timeline was reset.", tone: "warning" });
          videoRef.current?.pause();
          scrubber.reset();
          setSource(media);
@@ -216,7 +218,18 @@ export default function App() {
          setRestore(null);
       } catch (value) {
          if (sequence === openSequence.current) {
-            setError(errorText(value));
+            const message = errorText(value);
+            const name = path.replaceAll("\\", "/").split("/").at(-1);
+            // Expected, recoverable open failures explain themselves with the file's name
+            // instead of echoing stat, errno, or ffprobe strings.
+            if (/no such file or directory/i.test(message)) {
+               setError({ text: `"${name}" was moved or changed and can't be found.`, tone: "warning" });
+            } else if (/invalid data found when processing input|moov atom not found|does not contain a video track|no usable video duration/i.test(message)) {
+               setError({
+                  text: `"${name}" doesn't look like a working video. It may be damaged, incomplete, or in a format AttaCut can't read.`,
+                  tone: "warning",
+               });
+            } else showError(message);
             if (saved) setRestore(saved);
          }
       } finally {
@@ -228,14 +241,14 @@ export default function App() {
          const path = await window.desktop.chooseSource();
          if (path) await openPath(path, saved);
       } catch (value) {
-         setError(errorText(value));
+         showError(errorText(value));
       }
    };
    useEffect(() => {
       if (!ready || loading || preparing) return;
       return prefetchModules([loadExportPanel, loadSettingsPanel, loadFramePanel, loadHelpPanel, loadAboutPanel]);
    }, [ready, loading, preparing]);
-   const { keyframes, reading: readingKeys } = useKeyframes({ source, snapping, loading, preparing, videoRef, onError: setError });
+   const { keyframes, reading: readingKeys } = useKeyframes({ source, snapping, loading, preparing, videoRef, onError: showError });
    useEffect(() => {
       let cancelled = false;
       void window.desktop
@@ -257,11 +270,14 @@ export default function App() {
                .catch(() => {});
             if (data.initialFile) await openPath(data.initialFile, undefined, data.preferences.playbackAudio);
             else if (data.session) await openPath(data.session.path, data.session, data.preferences.playbackAudio);
-            if (!cancelled && data.warning) setError((current) => current ?? data.warning);
+            if (!cancelled && data.warning) {
+               const warning = data.warning;
+               setError((current) => current ?? { text: warning, tone: "error" });
+            }
          })
          .catch((value: unknown) => {
             setReady(true);
-            setError(errorText(value));
+            showError(errorText(value));
          });
       const unsubscribeUpdate = window.desktop.onUpdateStatus((status) => setUpdateStatus(status));
       const unsubscribe = window.desktop.onJob((updated) => {
@@ -291,7 +307,7 @@ export default function App() {
          }),
       []
    );
-   usePersistence({ source, editor, restore, preferences, ready, setError });
+   usePersistence({ source, editor, restore, preferences, ready, setError: showError });
    useAppearance(preferences);
    useEffect(() => {
       if (!menu) return;
@@ -379,7 +395,7 @@ export default function App() {
             if (sequence === frameSequence.current && sourceRef.current?.id === id) seek(target);
          })
          .catch((value: unknown) => {
-            if (sourceRef.current?.id === id) setError(errorText(value));
+            if (sourceRef.current?.id === id) showError(errorText(value));
          });
    };
    const joinAtPlayhead = () =>
@@ -601,9 +617,9 @@ export default function App() {
                            .restartToUpdate()
                            .catch((value) => setUpdateStatus({ phase: "error", version: availableUpdate.version, percent: null, message: errorText(value) }))
                      }
-                     onRelease={() => void window.desktop.openExternal(availableUpdate.url).catch((value) => setError(errorText(value)))}
+                     onRelease={() => void window.desktop.openExternal(availableUpdate.url).catch((value) => showError(errorText(value)))}
                      onReveal={() => {
-                        if (updateStatus?.path) void window.desktop.revealOutput(updateStatus.path).catch((value) => setError(errorText(value)));
+                        if (updateStatus?.path) void window.desktop.revealOutput(updateStatus.path).catch((value) => showError(errorText(value)));
                      }}
                   />
                )}
@@ -649,9 +665,12 @@ export default function App() {
             </header>
             {errorPresence.mounted && errorPresence.value && (
                <div className={`error-wrap${errorPresence.closing ? " closing" : ""}`}>
-                  <div className="error-banner" role="alert">
-                     <FontAwesomeIcon icon={faCircleExclamation} />
-                     <span>{errorPresence.value}</span>
+                  <div
+                     className={`error-banner${errorPresence.value.tone === "warning" ? " warning" : ""}`}
+                     role={errorPresence.value.tone === "warning" ? "status" : "alert"}
+                  >
+                     <FontAwesomeIcon icon={errorPresence.value.tone === "warning" ? faTriangleExclamation : faCircleExclamation} />
+                     <span>{errorPresence.value.text}</span>
                      {restore && (
                         <Button
                            onClick={() => {
@@ -699,7 +718,7 @@ export default function App() {
                            if (requested) playback.request(true);
                            if (playback.get().transcode) {
                               playback.fail();
-                              setError("This video could not be played, but it can still be exported.");
+                              showError("This video could not be played, but it can still be exported.");
                               return;
                            }
                            void preparePreview(source, audioIndices, true, requested);
@@ -764,7 +783,7 @@ export default function App() {
                   job={jobPresence.value}
                   closing={jobPresence.closing}
                   onDismiss={() => setJob(null)}
-                  onError={(value) => setError(value)}
+                  onError={(value) => showError(value)}
                   onRetry={setJob}
                />
             )}

@@ -27,6 +27,6 @@ it("does not recolour existing clips when an edit makes equal base colours adjac
 
 it("hue-shifts each pass through the five base colours", () => {
    expect(clipColor(0)).toBe("var(--clip-sequence-0, var(--clip-0))");
-   expect(clipColor(5)).toContain("h + 7");
-   expect(clipColor(10)).toContain("h + 14");
+   expect(clipColor(5)).toContain("h + 20");
+   expect(clipColor(10)).toContain("h + 40");
 });

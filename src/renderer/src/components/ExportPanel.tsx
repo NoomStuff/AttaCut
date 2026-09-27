@@ -107,7 +107,22 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
    const problem = checked.find((item) => item.method === "unsupported");
    const encoded = checked.reduce((sum, item) => sum + item.encodedSeconds, 0);
    const encodedLabel = (seconds: number) => (seconds < 0.1 ? "~0.1 seconds" : `~${seconds.toFixed(1)} seconds`);
-   const note = problem ? problem.message : encoded > 0 ? `${encodedLabel(encoded)} may be re-encoded.` : "Exporting losslessly.";
+   // One clip spanning the whole source with every audio track kept is the original video,
+   // so say that instead of the generic lossless note.
+   const unchangedVideo =
+      !problem &&
+      checked.length === 1 &&
+      checked[0]?.method === "copy" &&
+      Math.abs(checked[0].clip.start) < 0.001 &&
+      Math.abs(checked[0].clip.end - source.duration) < 0.001 &&
+      sourceAudio.every((stream) => audioTracks.includes(stream.index));
+   const note = problem
+      ? problem.message
+      : unchangedVideo
+        ? "Exporting the video unchanged."
+        : encoded > 0
+          ? `${encodedLabel(encoded)} may be re-encoded.`
+          : "Exporting losslessly.";
    return (
       <>
          <Modal
