@@ -1,0 +1,9 @@
+version: 0.13.3
+files:
+  - url: https://github.com/NoomStuff/AttaCut/releases/download/v0.13.3/AttaCut-0.13.3-linux-x86_64.AppImage
+    sha512: cSEVSFQUjHRJoE0cKv88HWEdTQUJkzAb7qbTCx8jCnMahWj8kbJLyifm5+7IUUUbbLrVRaSMSlBqTw+lyWRleA==
+    size: 265170332
+    blockMapSize: 277936
+path: https://github.com/NoomStuff/AttaCut/releases/download/v0.13.3/AttaCut-0.13.3-linux-x86_64.AppImage
+sha512: cSEVSFQUjHRJoE0cKv88HWEdTQUJkzAb7qbTCx8jCnMahWj8kbJLyifm5+7IUUUbbLrVRaSMSlBqTw+lyWRleA==
+releaseDate: '2026-09-27T05:31:57.345Z'
