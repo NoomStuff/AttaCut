@@ -69,4 +69,12 @@ export class Storage {
    async flush(): Promise<void> {
       await this.writes;
    }
+   /** Factory state on disk too: save() mirrors the healthy primary into the backup, so
+       stale preferences cannot resurface through the recovery path after a reset. */
+   async reset(): Promise<void> {
+      this.preferences = structuredClone(defaultPreferences);
+      this.session = null;
+      this.warning = null;
+      await this.save();
+   }
 }

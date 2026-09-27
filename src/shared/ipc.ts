@@ -25,6 +25,8 @@ export interface IpcCalls {
    "preferences:save": Call<Preferences, void>;
    "session:save": Call<SavedSession, void>;
    "state:flush": Call<{ preferences: Preferences; session: SavedSession | null }, void>;
+   "app:factory-reset": Call<void, void>;
+   "window:title": Call<string, void>;
    "preview:prepare": Call<PreviewRequest, string>;
    "preview:cancel": Call<void, void>;
    "audio:scrub": Call<ScrubRequest, Result<"scrubAudio">>;

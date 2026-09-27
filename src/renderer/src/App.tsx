@@ -30,7 +30,7 @@ import {
 import type { EditDocument } from "./editor/model";
 import { CommandContext, resolvedCommand, useCommands } from "./editor/commands";
 import type { CommandId, Commands } from "./editor/commands";
-import { Button } from "./components/Controls";
+import { Button, Modal } from "./components/Controls";
 import { Player } from "./components/Player";
 import { Timeline } from "./components/Timeline";
 import { Transport } from "./components/Transport";
@@ -61,6 +61,8 @@ const AboutPanel = lazy(loadAboutPanel);
 
 type Panel = "export" | "frame" | "settings" | "shortcuts" | "help" | "about" | null;
 
+const releasesUrl = "https://github.com/NoomStuff/AttaCut/releases";
+
 export default function App() {
    usePressFeedback();
    const [source, setSource] = useState<MediaSource | null>(null);
@@ -75,6 +77,7 @@ export default function App() {
    const [panel, setPanel] = useState<Panel>(null);
    const [helpTab, setHelpTab] = useState<HelpTab>("intro");
    const [menu, setMenu] = useState<string | null>(null);
+   const [confirmReset, setConfirmReset] = useState(false);
    const [loading, setLoading] = useState(false);
    const [error, setError] = useState<{ text: string; tone: "error" | "warning" } | null>(null);
    /** Errors interrupt work and deserve the red banner; warnings only explain a recoverable state. */
@@ -243,6 +246,42 @@ export default function App() {
       } catch (value) {
          showError(errorText(value));
       }
+   };
+   // Back to the start screen. The saved session stays on disk, so the next launch restores
+   // the project like any other quit; closing only clears the workspace.
+   const closeProject = () => {
+      if (!source) return;
+      // Invalidate any in-flight open so it cannot repopulate the workspace after the close.
+      openSequence.current++;
+      playback.invalidate();
+      setMenu(null);
+      setPanel(null);
+      setError(null);
+      setRestore(null);
+      setLoading(false);
+      videoRef.current?.pause();
+      scrubber.stop();
+      scrubber.reset();
+      setSource(null);
+      sourceRef.current = null;
+      remember(undefined);
+      clock.set(0);
+      setPlaying(false);
+      dispatch({ type: "load", document: { clips: [], selectedId: null } });
+      void window.desktop.setWindowTitle("AttaCut").catch(() => {});
+   };
+   // The reset IPC runs before any teardown: if it failed midway, the workspace must not
+   // already be cleared, or the start screen would claim a reset that never happened.
+   const factoryReset = async () => {
+      setConfirmReset(false);
+      try {
+         await window.desktop.factoryReset();
+      } catch (value) {
+         showError(errorText(value));
+         return;
+      }
+      closeProject();
+      setPreferences(defaultPreferences);
    };
    useEffect(() => {
       if (!ready || loading || preparing) return;
@@ -553,6 +592,15 @@ export default function App() {
       zoomOut: { enabled: available, run: () => setZoomRequest((value) => ({ id: value.id + 1, direction: -1 })) },
       settings: { enabled: () => ready, run: () => setPanel("settings") },
       shortcuts: { enabled: () => ready, run: () => setPanel("shortcuts") },
+      closeProject: { enabled: () => !!source, run: closeProject },
+      quit: { enabled: () => true, run: () => window.desktop.windowAction("close") },
+      releases: {
+         enabled: () => ready,
+         run: () => {
+            void window.desktop.openExternal(releasesUrl).catch((value) => showError(errorText(value)));
+         },
+      },
+      reset: { enabled: () => ready, run: () => setConfirmReset(true) },
       help: {
          enabled: () => ready,
          run: () => {
@@ -565,12 +613,11 @@ export default function App() {
    // Panel dialogs guard themselves: the command handler checks the live dialog state, so the
    // panel's exit fade never blocks shortcuts. Only the menu needs the React-side flag.
    useCommands(commands, preferences.shortcuts, mac, !!menu);
-   const menuItems: Record<string, CommandId[]> = {
-      File: ["open", "frame", "export"],
-      Edit: ["undo", "redo", "settings"],
-      Clips: ["merge", "split", "setStart", "setEnd", "add", "delete", "preview"],
-      View: ["zoomIn", "zoomOut", "fit", "settings"],
-      Help: ["help", "shortcuts", "about"],
+   const menuSections: Record<string, CommandId[][]> = {
+      File: [["open", "frame", "export"], ["closeProject"], ["quit"]],
+      Edit: [["undo", "redo"], ["split", "merge"], ["setStart", "setEnd", "add", "delete"], ["preview"], ["settings"]],
+      View: [["zoomIn", "zoomOut", "fit"]],
+      Help: [["help", "shortcuts"], ["releases", "about"], ["reset"]],
    };
    const errorPresence = useExitValue(error, 190);
    const jobPresence = useExitValue(job, 160);
@@ -639,20 +686,15 @@ export default function App() {
             </div>
             <header className="toolbar">
                <nav aria-label="Application menu">
-                  {Object.entries(menuItems).map(([name, ids]) => (
+                  {Object.entries(menuSections).map(([name, sections]) => (
                      <div className="app-menu" key={name} data-menu>
-                        <button
-                           className={menu === name ? "active" : ""}
-                           aria-haspopup="menu"
-                           aria-expanded={menu === name}
-                           onClick={() => setMenu(menu === name ? null : name)}
-                        >
+                        <button aria-haspopup="menu" aria-expanded={menu === name} onClick={() => setMenu(menu === name ? null : name)}>
                            {name}
                         </button>
                         <NavDropdown
                            clock={clock}
                            open={menu === name}
-                           ids={ids}
+                           sections={sections}
                            commands={commands}
                            shortcuts={preferences.shortcuts}
                            mac={mac}
@@ -847,6 +889,22 @@ export default function App() {
                {panel === "help" && <HelpPanel initialTab={helpTab} onClose={() => setPanel((current) => (current === panel ? null : current))} />}
                {panel === "about" && <AboutPanel version={version} onClose={() => setPanel((current) => (current === panel ? null : current))} />}
             </Suspense>
+            {confirmReset && (
+               <Modal title="Reset AttaCut?" onClose={() => setConfirmReset(false)} className="reset-confirm">
+                  <div className="modal-body">Preferences and the saved editing session return to factory defaults. Your video files are not touched.</div>
+                  <div className="modal-footer">
+                     <Button onClick={() => setConfirmReset(false)}>Cancel</Button>
+                     <Button
+                        variant="danger"
+                        onClick={() => {
+                           void factoryReset();
+                        }}
+                     >
+                        Reset
+                     </Button>
+                  </div>
+               </Modal>
+            )}
             {draggingFile && (
                <div className="drop-overlay">
                   <FontAwesomeIcon icon={faFolderOpen} />

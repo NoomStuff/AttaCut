@@ -23,7 +23,7 @@ export function AboutPanel({ version, onClose }: { version: string; onClose: () 
             <p className="about-tagline">Cut your clips, move on.</p>
             <p>A trimmer for getting clips out of a recording with as little effort as possible. Mark the ranges you want to keep, then export them.</p>
             <p>
-               The name comes from <strong>Atta</strong>, a genus of leafcutter ants known for cutting leaves with remarkable precision.
+               The name is based on genera Atta, commonly known as leafcutter ants. Famous for their ability to cut leaves into pieces with remarkable precision.
             </p>
             <div className="about-links">
                <Button

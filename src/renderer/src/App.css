@@ -90,7 +90,9 @@
       color 170ms ease-out,
       transform 60ms ease-out;
 }
-.app-menu > button:is(:hover, .active) {
+/* The open state rides aria-expanded, never a className: the press ripple's classes are
+   added outside React, and rewriting className on click would wipe them before the fade. */
+.app-menu > button:is(:hover, [aria-expanded="true"]) {
    background: var(--surface-hover);
    color: var(--text);
    transition-duration: 0ms;
@@ -152,6 +154,14 @@
 .dropdown button:hover:not(:disabled) {
    background: var(--surface-hover);
    transition-duration: 0ms;
+}
+.dropdown-divider {
+   height: 1px;
+   margin: 5px 6px;
+   background: var(--line);
+}
+.reset-confirm {
+   width: min(460px, calc(100vw - 60px));
 }
 .editor-dock {
    margin-top: 8px;

@@ -138,6 +138,12 @@ export function registerIpc({
       storage.session = savedSessionSchema.parse(value);
       await storage.save();
    });
+   handle("app:factory-reset", async () => {
+      await storage.reset();
+   });
+   handle("window:title", (value) => {
+      window.setTitle(z.string().parse(value));
+   });
    handle("preview:prepare", async (value) => {
       const request = previewRequestSchema.parse(value);
       const source = getSource(request.sourceId);

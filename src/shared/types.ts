@@ -244,6 +244,8 @@ export interface DesktopApi {
    chooseDirectory(current: string): Promise<string | null>;
    savePreferences(value: Preferences): Promise<void>;
    saveSession(value: SavedSession): Promise<void>;
+   factoryReset(): Promise<void>;
+   setWindowTitle(title: string): Promise<void>;
    preparePreview(sourceId: string, audioIndices: number[], transcode: boolean): Promise<string>;
    cancelPreview(): Promise<void>;
    keyframes(sourceId: string): Promise<number[]>;

@@ -3,6 +3,8 @@ export const commandDefinitions = {
    open: { label: "Import video", bindings: ["Mod+O"], group: "File" },
    export: { label: "Export", bindings: ["Mod+E"], group: "File" },
    frame: { label: "Export current frame", bindings: ["Mod+Shift+E"], group: "File" },
+   closeProject: { label: "Close project", bindings: [], group: "File" },
+   quit: { label: "Quit AttaCut", bindings: [], group: "File" },
    play: { label: "Play / pause", bindings: ["Space"], group: "Playback" },
    frameBack: { label: "Previous frame", bindings: [","], group: "Playback", repeat: true },
    frameForward: { label: "Next frame", bindings: ["."], group: "Playback", repeat: true },
@@ -32,7 +34,9 @@ export const commandDefinitions = {
    settings: { label: "Settings", bindings: ["Mod+,"], group: "View" },
    help: { label: "Help", bindings: ["F1"], group: "Help" },
    shortcuts: { label: "Keyboard shortcuts", bindings: ["/"], group: "Help" },
+   releases: { label: "Releases page", bindings: [], group: "Help" },
    about: { label: "About", bindings: [], group: "Help" },
+   reset: { label: "Factory reset", bindings: [], group: "Help" },
 } as const;
 export type CommandId = keyof typeof commandDefinitions;
 export interface Command {

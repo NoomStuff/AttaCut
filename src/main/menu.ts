@@ -6,19 +6,33 @@ export function installMenu(window: BrowserWindow): void {
    const template: Electron.MenuItemConstructorOptions[] = [
       {
          label: "File",
-         submenu: [item("Import video…", "open"), item("Export current frame…", "frame"), item("Export…", "export"), { type: "separator" }, { role: "quit" }],
-      },
-      { label: "Edit", submenu: [item("Undo", "undo"), item("Redo", "redo"), { type: "separator" }, item("Settings…", "settings")] },
-      {
-         label: "Clips",
          submenu: [
-            item("Merge clips", "merge"),
+            item("Import video…", "open"),
+            item("Export current frame…", "frame"),
+            item("Export…", "export"),
+            { type: "separator" },
+            item("Close project", "closeProject"),
+            { type: "separator" },
+            item("Quit AttaCut", "quit"),
+         ],
+      },
+      {
+         label: "Edit",
+         submenu: [
+            item("Undo", "undo"),
+            item("Redo", "redo"),
+            { type: "separator" },
             item("Split at playhead", "split"),
+            item("Merge clips", "merge"),
+            { type: "separator" },
             item("Trim left", "setStart"),
             item("Trim right", "setEnd"),
-            item("Delete clip", "delete"),
             item("Add clip in gap", "add"),
+            item("Delete clip", "delete"),
+            { type: "separator" },
             item("Preview clip", "preview"),
+            { type: "separator" },
+            item("Settings…", "settings"),
          ],
       },
       {
@@ -31,7 +45,18 @@ export function installMenu(window: BrowserWindow): void {
             ...(!app.isPackaged ? [{ role: "toggleDevTools" as const }] : []),
          ],
       },
-      { label: "Help", submenu: [item("Help", "help"), item("Keyboard shortcuts", "shortcuts"), { type: "separator" }, item("About", "about")] },
+      {
+         label: "Help",
+         submenu: [
+            item("Help", "help"),
+            item("Keyboard shortcuts", "shortcuts"),
+            { type: "separator" },
+            item("Releases page", "releases"),
+            item("About", "about"),
+            { type: "separator" },
+            item("Factory reset", "reset"),
+         ],
+      },
    ];
    if (process.platform === "darwin") template.unshift({ role: "appMenu" });
    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
