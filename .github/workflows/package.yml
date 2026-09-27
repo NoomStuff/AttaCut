@@ -54,7 +54,10 @@ jobs:
            with:
               name: dist-${{ matrix.target }}
               path: |
-                 release/AttaCut-*
+                 release/AttaCut-*.AppImage
+                 release/AttaCut-*.dmg
+                 release/AttaCut-*.zip
+                 release/AttaCut-*.exe
                  release/latest*.yml
                  !release/latest-mac.yml
               if-no-files-found: error

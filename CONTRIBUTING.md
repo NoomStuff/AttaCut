@@ -26,7 +26,7 @@ Run `bun run dist` on the operating system and CPU architecture you want to buil
 | Host    | Command                      | Output                                |
 | ------- | ---------------------------- | ------------------------------------- |
 | Windows | `bun run dist:win`           | Portable `.exe`                       |
-| Windows | `bun run dist:win:installer` | Setup `.exe`                          |
+| Windows | `bun run dist:win:installer` | Installer `.exe`                      |
 | Windows | `bun run dist:win:all`       | Both `.exe` builds for release checks |
 | macOS   | `bun run dist:mac`           | `.zip` app bundle                     |
 | macOS   | `bun run dist:mac:dmg`       | `.dmg`                                |
@@ -49,7 +49,7 @@ bun run dist
 
 macOS distribution signing and notarization use electron-builder's certificate and Apple credentials configuration. The build includes both media executables in signing. Without credentials, builds are for local testing and are not notarized. See [electron-builder's macOS signing guide](https://www.electron.build/v26/docs/features/code-signing/code-signing-mac/) before distributing to other users. Build commands never publish artifacts automatically.
 
-The release workflow publishes `latest*.yml` beside the installers. The Windows Setup build uses that feed for in-app updates. The portable build downloads the matching Portable EXE to Downloads. Keep their artifact names distinct, and keep the Setup target pointing at the splash launcher when changing the Windows package layout.
+The release workflow publishes only app packages on GitHub Releases. It writes Windows and Linux update feeds to the `updates` branch, with links back to those packages. The Windows Installer and Linux AppImage builds use those feeds for in-app updates. Windows Installer downloads the whole installer because its separate blockmap is not published. The portable build downloads the plain Windows EXE to Downloads and verifies GitHub's SHA-256 asset digest. Keep the Installer and plain EXE artifact names distinct, and keep the Installer target pointing at the splash launcher when changing the Windows package layout. Builds through 0.13.2 still look for update feeds on the release itself, so moving to 0.13.3 requires one manual update.
 
 ---
 

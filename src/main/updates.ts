@@ -9,6 +9,8 @@ import type { UpdateStatus } from "../shared/types.ts";
 import { IpcEvents } from "../shared/ipc.ts";
 import type { AppUpdater } from "electron-updater";
 
+const updateFeedUrl = "https://raw.githubusercontent.com/NoomStuff/AttaCut/updates/";
+
 const releaseSchema = z.object({
    tag_name: z.string(),
    name: z.string().nullable(),
@@ -81,8 +83,12 @@ export class UpdateManager {
          const module = await import("electron-updater");
          const updater = module.autoUpdater ?? module.default.autoUpdater;
          this.updater = updater;
+         updater.setFeedURL({ provider: "generic", url: updateFeedUrl });
          updater.autoDownload = true;
          updater.autoInstallOnAppQuit = false;
+         // Only app packages appear on GitHub Releases; NSIS must download the
+         // full installer because its separate blockmap is not published.
+         if (process.platform === "win32") updater.disableDifferentialDownload = true;
          updater.on("download-progress", (progress) => this.emit({ phase: "downloading", version: update.version, percent: Math.round(progress.percent) }));
          updater.on("update-downloaded", () => {
             this.ready = true;
@@ -124,7 +130,7 @@ export class UpdateManager {
       this.busy = true;
       let temporary: string | null = null;
       try {
-         const name = `AttaCut-${version}-win-${process.arch}-Portable.exe`;
+         const name = `AttaCut-${version}-win-${process.arch}.exe`;
          const releaseResponse = await net.fetch(`https://api.github.com/repos/NoomStuff/AttaCut/releases/tags/v${version}`, {
             headers: { Accept: "application/vnd.github+json", "User-Agent": `AttaCut/${app.getVersion()}` },
          });
@@ -134,15 +140,7 @@ export class UpdateManager {
             .parse(await releaseResponse.json());
          const asset = release.assets.find((entry) => entry.name === name);
          if (!asset) throw new Error("The matching download is missing from this release.");
-         let expectedHash = asset.digest?.startsWith("sha256:") ? asset.digest.slice(7) : null;
-         if (!expectedHash) {
-            const sums = release.assets.find((entry) => entry.name === "SHA256SUMS.txt");
-            if (!sums) throw new Error("The download could not be verified.");
-            const sumsResponse = await net.fetch(sums.browser_download_url);
-            if (!sumsResponse.ok) throw new Error("The download could not be verified.");
-            const line = (await sumsResponse.text()).split(/\r?\n/).find((entry) => entry.endsWith(`  ${name}`));
-            expectedHash = line?.slice(0, 64) ?? null;
-         }
+         const expectedHash = asset.digest?.startsWith("sha256:") ? asset.digest.slice(7) : null;
          if (!expectedHash || !/^[0-9a-f]{64}$/i.test(expectedHash)) throw new Error("The download could not be verified.");
          const directory = app.getPath("downloads");
          const stem = name.slice(0, -4);

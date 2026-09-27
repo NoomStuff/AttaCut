@@ -12,7 +12,7 @@ permissions:
    contents: read
 
 concurrency:
-   group: release-${{ github.sha }}
+   group: release
    cancel-in-progress: false
 
 jobs:
@@ -93,25 +93,84 @@ jobs:
       runs-on: ubuntu-latest
       timeout-minutes: 10
       steps:
+         - uses: actions/checkout@v7
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: latest
          - uses: actions/download-artifact@v8
            with:
               pattern: dist-*
               merge-multiple: true
               path: dist
-         - name: Generate SHA256SUMS
-           run: |
-              cd dist
-              sha256sum AttaCut-* latest*.yml > SHA256SUMS.txt
-         - name: Create GitHub release
+         - name: Prepare update feeds
+           env:
+              RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+           run: bun scripts/prepare-update-feed.mjs dist dist/feed "$RELEASE_TAG"
+         - name: Create draft release
            env:
               GH_TOKEN: ${{ github.token }}
               GH_REPO: ${{ github.repository }}
               RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
            run: |
+              shopt -s nullglob
+              assets=(dist/AttaCut-*.AppImage dist/AttaCut-*.dmg dist/AttaCut-*.zip dist/AttaCut-*.exe)
+              if [ "${#assets[@]}" -ne 8 ]; then
+                echo "Expected eight app downloads, found ${#assets[@]}." >&2
+                exit 1
+              fi
               case "${RELEASE_TAG#v}" in
                 *-*) flags="--prerelease" ;;
                 *) flags="" ;;
               esac
-              gh release create "$RELEASE_TAG" dist/AttaCut-* dist/latest*.yml dist/SHA256SUMS.txt \
-                --title "AttaCut ${RELEASE_TAG#v}" \
-                --target "$GITHUB_SHA" --generate-notes $flags
+              if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+                if [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true ]; then
+                  gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+                fi
+              else
+                gh release create "$RELEASE_TAG" "${assets[@]}" --draft \
+                  --title "AttaCut ${RELEASE_TAG#v}" \
+                  --target "$GITHUB_SHA" --generate-notes $flags
+              fi
+         - name: Publish update feeds
+           uses: actions/github-script@v9
+           env:
+              RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+           with:
+              script: |
+                 const fs = require('node:fs');
+                 const { owner, repo } = context.repo;
+                 const branch = 'updates';
+                 let parent;
+                 try {
+                   parent = (await github.rest.git.getRef({ owner, repo, ref: `heads/${branch}` })).data.object.sha;
+                 } catch (error) {
+                   if (error.status !== 404) throw error;
+                 }
+                 const tree = await github.rest.git.createTree({
+                   owner,
+                   repo,
+                   tree: ['latest.yml', 'latest-linux.yml', 'latest-linux-arm64.yml'].map(path => ({
+                     path,
+                     mode: '100644',
+                     type: 'blob',
+                     content: fs.readFileSync(`dist/feed/${path}`, 'utf8'),
+                   })),
+                 });
+                 const commit = await github.rest.git.createCommit({
+                   owner,
+                   repo,
+                   message: `Update feeds for ${process.env.RELEASE_TAG}`,
+                   tree: tree.data.sha,
+                   parents: [parent ?? context.sha],
+                 });
+                 if (parent) {
+                   await github.rest.git.updateRef({ owner, repo, ref: `heads/${branch}`, sha: commit.data.sha });
+                 } else {
+                   await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: commit.data.sha });
+                 }
+         - name: Publish release
+           env:
+              GH_TOKEN: ${{ github.token }}
+              GH_REPO: ${{ github.repository }}
+              RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+           run: gh release edit "$RELEASE_TAG" --draft=false

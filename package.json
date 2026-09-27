@@ -1,6 +1,6 @@
 {
    "name": "attacut",
-   "version": "0.13.2",
+   "version": "0.13.3",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -79,11 +79,11 @@
          "oneClick": false,
          "allowToChangeInstallationDirectory": true,
          "include": "build/installer.nsh",
-         "artifactName": "${productName}-${version}-${os}-${arch}-Setup.${ext}"
+         "artifactName": "${productName}-${version}-${os}-${arch}-Installer.${ext}"
       },
       "portable": {
          "splashImage": "build/splash.bmp",
-         "artifactName": "${productName}-${version}-${os}-${arch}-Portable.${ext}"
+         "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
       },
       "mac": {
          "icon": "build/icon.icns",
