@@ -77,6 +77,8 @@ Integration tests live in `tests/media` and `tests/ui`. They need FFmpeg and ffp
 
 Before a release, run `bun run verify:release`. It installs from the frozen lockfile, downloads the pinned FFmpeg build, and tests the unpacked app after building the release packages. The command takes several minutes. A passing `bun run build` only checks compilation. Run the release check on each OS and CPU architecture you plan to ship, since one host cannot execute another host's Electron package.
 
+Open a pull request before pushing a version change to `main`. Its checks build and verify packages on Windows, macOS, and Linux. The push to `main` runs those checks once more before publishing the release. A local `bun run verify:release` catches problems on your own OS, but it cannot check packages for the other platforms.
+
 Actions gives a failed Playwright test one retry in a fresh Electron process. A recovered test appears as flaky in the job log, with its failed trace attached to the run. If a release fails for a transient runner problem, use **Re-run failed jobs** on that same Actions run. It uses the same commit and version, so a retry does not need another push or version bump. Candidate packages stay available as run artifacts after packaging, but GitHub publishes them only after the checks and every packaged verification pass. Investigate and fix a failure that repeats on retry.
 
 ---

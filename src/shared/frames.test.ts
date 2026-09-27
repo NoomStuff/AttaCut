@@ -24,8 +24,10 @@ describe("source frame boundaries", () => {
          if (Math.abs(time - frames.at(-1)!) < 0.0001) return frames.at(-1)!;
          return nearest;
       };
-      for (let i = 0; i < 200; i++) {
-         const time = Math.random() * frames.at(-1)!;
+      // Spread deterministic probes across the whole index. The linear oracle scans
+      // 400,000 frames per call, so hundreds of probes can time out on CI runners.
+      for (let i = 0; i < 64; i++) {
+         const time = ((((i * 33) % 64) + 0.371) / 64) * frames.at(-1)!;
          expect(resolveFrameTime(frames, time, frames.at(-1)!)).toBe(linear(time, 0));
          expect(resolveFrameTime(frames, time, frames.at(-1)!, 1)).toBe(linear(time, 1));
          expect(resolveFrameTime(frames, time, frames.at(-1)!, -1)).toBe(linear(time, -1));
@@ -35,5 +37,5 @@ describe("source frame boundaries", () => {
       expect(resolveFrameTime(frames, frames[3]!, frames.at(-1)!)).toBe(frames[3]);
       expect(resolveFrameTime(frames, frames.at(-1)!, frames.at(-1)!, -1)).toBe(frames[frames.length - 2]);
       expect(resolveFrameTime(frames, frames.at(-1)!, frames.at(-1)!, 1)).toBe(frames.at(-1));
-   });
+   }, 15_000);
 });

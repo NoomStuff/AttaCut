@@ -75,7 +75,6 @@ jobs:
    checks:
       name: Checks
       needs: prepare
-      if: needs.prepare.outputs.build == 'true'
       uses: ./.github/workflows/verify.yml
       with:
          tag_check: true

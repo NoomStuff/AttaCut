@@ -1,14 +1,11 @@
 name: Checks
 on:
    pull_request:
-   push:
-      branches: [main]
 permissions:
    contents: read
 jobs:
    verify:
       uses: ./.github/workflows/verify.yml
    packages:
-      if: github.event_name == 'pull_request'
       needs: verify
       uses: ./.github/workflows/package.yml

@@ -78,15 +78,12 @@ export async function preparePreview(
       "yuv420p",
       ...(hdr ? ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"] : []),
    ];
-   const run = (convertVideo: boolean) =>
+   const run = (convertVideo: boolean, hardwareDecode: boolean) =>
       runMedia(
          "ffmpeg",
          [
             ...ffmpegBase,
-            // Decoding drives proxy speed on long recordings; "auto" falls back to software
-            // silently on Windows and macOS. Linux builds probe GPU libraries during device
-            // init and abort when they are missing, so software decode stays the safe path there.
-            ...(process.platform === "linux" ? [] : ["-hwaccel", "auto"]),
+            ...(hardwareDecode ? ["-hwaccel", "auto"] : []),
             "-i",
             source.path,
             "-map",
@@ -113,13 +110,24 @@ export async function preparePreview(
          ],
          { ...options, duration: source.duration }
       );
+   const runWithDecodeFallback = async (convertVideo: boolean) => {
+      // Some drivers advertise a decoder but lose the device partway through a proxy.
+      // Retry in software so preview availability does not depend on that driver.
+      const hardwareDecode = convertVideo && process.platform !== "linux";
+      try {
+         await run(convertVideo, hardwareDecode);
+      } catch (error) {
+         if (options.signal?.aborted || !hardwareDecode) throw error;
+         await run(convertVideo, false);
+      }
+   };
    try {
       options.onProgress?.(0);
       try {
-         await run(transcode);
+         await runWithDecodeFallback(transcode);
       } catch (error) {
          if (options.signal?.aborted || transcode) throw error;
-         await run(true);
+         await runWithDecodeFallback(true);
       }
       options.signal?.throwIfAborted();
       const preview = await probeSource(partial, options.signal);
