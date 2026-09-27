@@ -26,7 +26,9 @@ Using the snapping tool you can cut at keyframes only to avoid re-encoding, whic
 
 If you just want to use the app you can grab the latest version from the [releases page](https://github.com/noomstuff/attacut/releases).
 
-You should be able to download a portable version for your system and architecture of choice.
+On Windows, choose Setup for an installed app with Explorer's "Edit with AttaCut" action and in-app updates. Choose Portable if you want a single EXE. Portable AttaCut downloads new versions to your Downloads folder and leaves the running app open.
+
+On macOS, choose the ZIP for a portable app or the DMG for a drag-to-Applications install. Choose AttaCut from "Open With" for supported videos. Unsigned builds link to releases when an update is available. Linux AppImages can update in place when the desktop environment gives the app permission to replace its AppImage.
 
 ---
 

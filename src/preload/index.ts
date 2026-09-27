@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { DesktopApi, ExportJob } from "../shared/types";
+import type { DesktopApi, ExportJob, UpdateStatus } from "../shared/types";
 import { IpcEvents, type IpcCalls } from "../shared/ipc";
 function invoke<K extends keyof IpcCalls>(
    channel: K,
@@ -17,7 +17,9 @@ function listen<T>(channel: string, callback: (value: T) => void): () => void {
 const api: DesktopApi = {
    bootstrap: () => invoke("app:bootstrap"),
    checkForUpdate: () => invoke("update:check"),
-   dismissUpdate: (version, ignore) => invoke("update:dismiss", { version, ignore }),
+   downloadUpdate: (version) => invoke("update:download", version),
+   restartToUpdate: () => invoke("update:restart"),
+   onUpdateStatus: (callback) => listen<UpdateStatus>(IpcEvents.updateStatus, callback),
    chooseSource: () => invoke("source:choose"),
    openSource: (path) => invoke("source:open", path),
    filePath: (file) => webUtils.getPathForFile(file),

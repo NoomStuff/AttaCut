@@ -1,6 +1,6 @@
 {
    "name": "attacut",
-   "version": "0.12.0",
+   "version": "0.13.0",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -22,7 +22,11 @@
       "package": "bun scripts/package-app.ts package",
       "dist": "bun scripts/package-app.ts dist",
       "dist:win": "bun scripts/package-app.ts dist win32",
+      "dist:win:installer": "bun scripts/package-app.ts dist win32 installer",
+      "dist:win:all": "bun scripts/package-app.ts dist win32 all",
       "dist:mac": "bun scripts/package-app.ts dist darwin",
+      "dist:mac:dmg": "bun scripts/package-app.ts dist darwin installer",
+      "dist:mac:all": "bun scripts/package-app.ts dist darwin all",
       "dist:linux": "bun scripts/package-app.ts dist linux",
       "test": "vitest run",
       "test:media": "bun tests/media/run.ts",
@@ -71,8 +75,15 @@
          ],
          "signExecutable": false
       },
+      "nsis": {
+         "oneClick": false,
+         "allowToChangeInstallationDirectory": true,
+         "include": "build/installer.nsh",
+         "artifactName": "${productName}-${version}-${os}-${arch}-Setup.${ext}"
+      },
       "portable": {
-         "splashImage": "build/splash.bmp"
+         "splashImage": "build/splash.bmp",
+         "artifactName": "${productName}-${version}-${os}-${arch}-Portable.${ext}"
       },
       "mac": {
          "icon": "build/icon.icns",
@@ -81,22 +92,52 @@
             "Contents/Resources/media/ffprobe"
          ],
          "target": [
-            "dmg"
+            "zip"
          ],
-         "category": "public.app-category.video"
+         "category": "public.app-category.video",
+         "fileAssociations": [
+            {
+               "ext": [
+                  "mp4",
+                  "mov",
+                  "mkv",
+                  "webm",
+                  "avi",
+                  "m4v"
+               ],
+               "name": "Video",
+               "role": "Editor",
+               "rank": "Alternate"
+            }
+         ]
       },
       "linux": {
          "icon": "build/icon.png",
          "target": [
             "AppImage"
          ],
-         "category": "AudioVideo"
-      }
+         "category": "AudioVideo",
+         "mimeTypes": [
+            "video/mp4",
+            "video/x-matroska",
+            "video/quicktime",
+            "video/webm",
+            "video/x-msvideo"
+         ]
+      },
+      "publish": [
+         {
+            "provider": "github",
+            "owner": "NoomStuff",
+            "repo": "AttaCut"
+         }
+      ]
    },
    "dependencies": {
       "@fortawesome/fontawesome-svg-core": "^7.3.1",
       "@fortawesome/free-solid-svg-icons": "^7.3.1",
       "@fortawesome/react-fontawesome": "^3.5.0",
+      "electron-updater": "^6.7.3",
       "react": "^19.3.0",
       "react-dom": "^19.3.0",
       "zod": "^4.6.5"
@@ -108,6 +149,7 @@
       "@types/node": "^26.6.2",
       "@types/react": "^19.3.0",
       "@types/react-dom": "^19.3.0",
+      "@types/semver": "^7.8.0",
       "@vitejs/plugin-react": "^5.2.0",
       "electron": "^44.4.5",
       "electron-builder": "^26.15.3",

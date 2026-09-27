@@ -129,6 +129,7 @@ async function start(): Promise<void> {
       return net.fetch(pathToFileURL(target).toString());
    });
    let confirmedClose = false;
+   let applyUpdate: (() => void) | null = null;
    let closing = false;
    let resolveFlush: (() => void) | null = null;
    window.on("close", (event) => {
@@ -146,7 +147,10 @@ async function start(): Promise<void> {
                defaultId: 0,
                cancelId: 0,
             });
-            if (response !== 1) return;
+            if (response !== 1) {
+               applyUpdate = null;
+               return;
+            }
             exportsService.cancel();
             await exportsService.waitForIdle();
          }
@@ -167,7 +171,10 @@ async function start(): Promise<void> {
          confirmedClose = true;
          window.close();
       })()
-         .catch((error: unknown) => dialog.showErrorBox("Could not save before closing", error instanceof Error ? error.message : String(error)))
+         .catch((error: unknown) => {
+            applyUpdate = null;
+            dialog.showErrorBox("Could not save before closing", error instanceof Error ? error.message : String(error));
+         })
          .finally(() => {
             closing = false;
          });
@@ -178,7 +185,10 @@ async function start(): Promise<void> {
       exportsService.cancel();
       // Give killed children and their cleanup handlers a bounded window to finish so
       // temporary export folders are removed instead of stranded beside the user's output.
-      void Promise.race([exportsService.waitForIdle(), new Promise((resolve) => setTimeout(resolve, 15_000))]).finally(() => app.quit());
+      void Promise.race([exportsService.waitForIdle(), new Promise((resolve) => setTimeout(resolve, 15_000))]).finally(() => {
+         if (applyUpdate) applyUpdate();
+         else app.quit();
+      });
    });
    installMenu(window);
    registerIpc({
@@ -195,6 +205,10 @@ async function start(): Promise<void> {
       onFlushed: () => {
          resolveFlush?.();
          resolveFlush = null;
+      },
+      onApplyUpdate: (install) => {
+         applyUpdate = install;
+         window.close();
       },
    });
    ipcMain.on(IpcEvents.windowAction, (event, value: unknown) => {

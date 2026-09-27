@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fetchAvailableUpdate, isNewerVersion, updateInterval } from "./updates.ts";
+import { fetchAvailableUpdate, isNewerVersion } from "./updates.ts";
 
 describe("update checker", () => {
-   it("waits eight hours between startup checks", () => {
-      expect(updateInterval).toBe(8 * 60 * 60 * 1000);
-   });
-
    it("compares release versions by numeric parts", () => {
       expect(isNewerVersion("v0.8.0", "0.7.9")).toBe(true);
       expect(isNewerVersion("0.10.0", "0.9.9")).toBe(true);
@@ -27,6 +23,6 @@ describe("update checker", () => {
                })
             )
       );
-      expect(update).toEqual({ version: "0.8.0", name: "Quicker cuts", url: "https://github.com/NoomStuff/AttaCut/releases/tag/v0.8.0" });
+      expect(update).toEqual({ version: "0.8.0", name: "Quicker cuts", url: "https://github.com/NoomStuff/AttaCut/releases/tag/v0.8.0", mode: "releases" });
    });
 });

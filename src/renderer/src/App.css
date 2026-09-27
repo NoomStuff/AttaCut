@@ -37,6 +37,8 @@
    opacity: 0.4;
 }
 .title-filename {
+   flex: 1;
+   min-width: 0;
    text-overflow: ellipsis;
    white-space: nowrap;
    overflow: hidden;
@@ -44,7 +46,7 @@
 .window-controls {
    display: flex;
    height: 100%;
-   margin-left: auto;
+   margin-left: 0;
 }
 .window-controls button {
    width: 47px;

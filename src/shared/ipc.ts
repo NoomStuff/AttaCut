@@ -15,7 +15,8 @@ type Call<Request, Response> = { request: Request; response: Response };
 export interface IpcCalls {
    "app:bootstrap": Call<void, Result<"bootstrap">>;
    "update:check": Call<void, Result<"checkForUpdate">>;
-   "update:dismiss": Call<{ version: string; ignore: boolean }, void>;
+   "update:download": Call<string, void>;
+   "update:restart": Call<void, void>;
    "source:choose": Call<void, string | null>;
    "source:open": Call<string, Result<"openSource">>;
    "source:keyframes": Call<string, number[]>;
@@ -44,6 +45,7 @@ export interface IpcCalls {
 /** Push and fire-and-forget channels. Names live here so a rename cannot silently break a listener. */
 export const IpcEvents = {
    jobProgress: "export:progress",
+   updateStatus: "update:status",
    flush: "app:flush",
    openFile: "app:open-file",
    command: "app:command",

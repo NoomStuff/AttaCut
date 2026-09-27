@@ -21,13 +21,17 @@ Dev mode calls your local FFmpeg, and `FFMPEG_PATH` / `FFPROBE_PATH` can point s
 
 ## Building installers
 
-Run `bun run dist` on the operating system and CPU architecture you want to build for. Builds support x64 and arm64 hosts. Output goes into `release/`, with the OS and architecture in each filename. `bun run package` creates an unpacked app for the current host.
+Run `bun run dist` on the operating system and CPU architecture you want to build for. It makes the portable build for that host. Builds support x64 and arm64 hosts. Output goes into `release/`, with the OS and architecture in each filename. `bun run package` creates an unpacked app for the current host.
 
-| Host    | Command              | Output      |
-| ------- | -------------------- | ----------- |
-| Windows | `bun run dist:win`   | `.exe`      |
-| macOS   | `bun run dist:mac`   | `.dmg`      |
-| Linux   | `bun run dist:linux` | `.AppImage` |
+| Host    | Command                      | Output                                |
+| ------- | ---------------------------- | ------------------------------------- |
+| Windows | `bun run dist:win`           | Portable `.exe`                       |
+| Windows | `bun run dist:win:installer` | Setup `.exe`                          |
+| Windows | `bun run dist:win:all`       | Both `.exe` builds for release checks |
+| macOS   | `bun run dist:mac`           | `.zip` app bundle                     |
+| macOS   | `bun run dist:mac:dmg`       | `.dmg`                                |
+| macOS   | `bun run dist:mac:all`       | Both formats for release checks       |
+| Linux   | `bun run dist:linux`         | `.AppImage`                           |
 
 Packaged apps include FFmpeg and ffprobe, so users do not need to install them. Supply binaries for the build host:
 
@@ -45,6 +49,8 @@ bun run dist
 
 macOS distribution signing and notarization use electron-builder's certificate and Apple credentials configuration. The build includes both media executables in signing. Without credentials, builds are for local testing and are not notarized. See [electron-builder's macOS signing guide](https://www.electron.build/v26/docs/features/code-signing/code-signing-mac/) before distributing to other users. Build commands never publish artifacts automatically.
 
+The release workflow publishes `latest*.yml` beside the installers. The Windows Setup build uses that feed for in-app updates. The portable build downloads the matching Portable EXE to Downloads. Keep their artifact names distinct, and keep the Setup target pointing at the splash launcher when changing the Windows package layout.
+
 ---
 
 ## Commands
@@ -54,7 +60,7 @@ macOS distribution signing and notarization use electron-builder's certificate a
 | `bun run dev`            | Start the app in dev mode                                                                                  |
 | `bun run test`           | Run the unit tests                                                                                         |
 | `bun run package`        | Build and bundle the unpacked app                                                                          |
-| `bun run dist`           | Build an installer for the current OS                                                                      |
+| `bun run dist`           | Build the portable app for the current OS                                                                  |
 | `bun run format`         | Format the code                                                                                            |
 | `bun run verify`         | Run formatting, lint, unit tests, and build                                                                |
 | `bun run verify:release` | Run the same checks, media tests, UI tests, packaging, and packaged app tests used by Actions on this host |
@@ -69,7 +75,7 @@ macOS distribution signing and notarization use electron-builder's certificate a
 
 Integration tests live in `tests/media` and `tests/ui`. They need FFmpeg and ffprobe on PATH, or `FFMPEG_PATH` and `FFPROBE_PATH`. UI tests also need a desktop session. They run one at a time because Electron windows share keyboard focus.
 
-Before a release, run `bun run verify:release`. It installs from the frozen lockfile, downloads the pinned FFmpeg build, and tests the unpacked app after building the installer. The command takes several minutes. A passing `bun run build` only checks compilation. Run the release check on each OS and CPU architecture you plan to ship, since one host cannot execute another host's Electron package.
+Before a release, run `bun run verify:release`. It installs from the frozen lockfile, downloads the pinned FFmpeg build, and tests the unpacked app after building the release packages. The command takes several minutes. A passing `bun run build` only checks compilation. Run the release check on each OS and CPU architecture you plan to ship, since one host cannot execute another host's Electron package.
 
 Actions gives a failed Playwright test one retry in a fresh Electron process. A recovered test appears as flaky in the job log, with its failed trace attached to the run. If a release fails for a transient runner problem, use **Re-run failed jobs** on that same Actions run. It uses the same commit and version, so a retry does not need another push or version bump. Candidate packages stay available as run artifacts after packaging, but GitHub publishes them only after the checks and every packaged verification pass. Investigate and fix a failure that repeats on retry.
 

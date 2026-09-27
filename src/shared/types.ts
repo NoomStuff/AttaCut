@@ -124,6 +124,14 @@ export interface AvailableUpdate {
    version: string;
    name: string;
    url: string;
+   mode: "automatic" | "download" | "releases";
+}
+export interface UpdateStatus {
+   phase: "downloading" | "ready" | "downloaded" | "error";
+   version: string;
+   percent: number | null;
+   message?: string;
+   path?: string;
 }
 export const exportItemSchema = z.object({ clip: clipSchema, name: z.string().min(1).max(240) });
 export const planRequestSchema = z.object({
@@ -227,7 +235,9 @@ export { exportExtensionFor } from "./export-format";
 export interface DesktopApi {
    bootstrap(): Promise<Bootstrap>;
    checkForUpdate(): Promise<AvailableUpdate | null>;
-   dismissUpdate(version: string, ignore: boolean): Promise<void>;
+   downloadUpdate(version: string): Promise<void>;
+   restartToUpdate(): Promise<void>;
+   onUpdateStatus(listener: (status: UpdateStatus) => void): () => void;
    chooseSource(): Promise<string | null>;
    openSource(path: string): Promise<MediaSource>;
    filePath(file: File): string;

@@ -4,7 +4,7 @@ import { sessionFor } from "./editor/session";
 import { usePersistence } from "./editor/persistence";
 import { useAppearance } from "./lib/appearance";
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import type { AvailableUpdate, MediaSource, ExportJob, SavedSession } from "../../shared/types";
+import type { AvailableUpdate, UpdateStatus, MediaSource, ExportJob, SavedSession } from "../../shared/types";
 import { defaultPreferences } from "../../shared/defaults";
 import { clamp } from "../../shared/time";
 import { adjacentBoundary, neighboringKeyframe, resolveBoundary, splitTargetAt } from "./editor/navigation";
@@ -36,6 +36,7 @@ import { Timeline } from "./components/Timeline";
 import { Transport } from "./components/Transport";
 import { LoadingEditor } from "./components/LoadingEditor";
 import { TopActions } from "./components/TopActions";
+import { UpdateChip } from "./components/UpdateChip";
 import { JobProgress } from "./components/JobProgress";
 import { EmptyState } from "./components/EmptyState";
 import type { ExportDraft } from "./export/useExport";
@@ -57,8 +58,6 @@ const loadHelpPanel = () => import("./components/HelpPanel").then((module) => ({
 const HelpPanel = lazy(loadHelpPanel);
 const loadAboutPanel = () => import("./components/AboutPanel").then((module) => ({ default: module.AboutPanel }));
 const AboutPanel = lazy(loadAboutPanel);
-const loadUpdatePanel = () => import("./components/UpdatePanel").then((module) => ({ default: module.UpdatePanel }));
-const UpdatePanel = lazy(loadUpdatePanel);
 
 type Panel = "export" | "frame" | "settings" | "shortcuts" | "help" | "about" | null;
 
@@ -71,6 +70,7 @@ export default function App() {
    const [platform, setPlatform] = useState("win32");
    const [version, setVersion] = useState("");
    const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
+   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
    const [exportDraft, setExportDraft] = useState<ExportDraft | null>(null);
    const [panel, setPanel] = useState<Panel>(null);
    const [helpTab, setHelpTab] = useState<HelpTab>("intro");
@@ -233,7 +233,7 @@ export default function App() {
    };
    useEffect(() => {
       if (!ready || loading || preparing) return;
-      return prefetchModules([loadExportPanel, loadSettingsPanel, loadFramePanel, loadHelpPanel, loadAboutPanel, loadUpdatePanel]);
+      return prefetchModules([loadExportPanel, loadSettingsPanel, loadFramePanel, loadHelpPanel, loadAboutPanel]);
    }, [ready, loading, preparing]);
    const { keyframes, reading: readingKeys } = useKeyframes({ source, snapping, loading, preparing, videoRef, onError: setError });
    useEffect(() => {
@@ -250,7 +250,9 @@ export default function App() {
             void window.desktop
                .checkForUpdate()
                .then((update) => {
-                  if (!cancelled) setAvailableUpdate(update);
+                  if (!cancelled) {
+                     setAvailableUpdate(update);
+                  }
                })
                .catch(() => {});
             if (data.initialFile) await openPath(data.initialFile, undefined, data.preferences.playbackAudio);
@@ -261,6 +263,7 @@ export default function App() {
             setReady(true);
             setError(errorText(value));
          });
+      const unsubscribeUpdate = window.desktop.onUpdateStatus((status) => setUpdateStatus(status));
       const unsubscribe = window.desktop.onJob((updated) => {
          setJob(updated);
          if (!updated.running && updated.items.some((item) => item.status === "completed"))
@@ -275,6 +278,7 @@ export default function App() {
       return () => {
          cancelled = true;
          unsubscribe();
+         unsubscribeUpdate();
       };
       // Desktop initialization runs once. Later source changes use explicit open commands.
    }, []);
@@ -582,6 +586,27 @@ export default function App() {
                <span className="app-name">AttaCut</span>
                <span className="title-separator">/</span>
                <span className="title-filename">{source?.name ?? "New cut"}</span>
+               {availableUpdate && (
+                  <UpdateChip
+                     update={availableUpdate}
+                     status={updateStatus}
+                     onDownload={() => {
+                        setUpdateStatus({ phase: "downloading", version: availableUpdate.version, percent: null });
+                        void window.desktop
+                           .downloadUpdate(availableUpdate.version)
+                           .catch((value) => setUpdateStatus({ phase: "error", version: availableUpdate.version, percent: null, message: errorText(value) }));
+                     }}
+                     onRestart={() =>
+                        void window.desktop
+                           .restartToUpdate()
+                           .catch((value) => setUpdateStatus({ phase: "error", version: availableUpdate.version, percent: null, message: errorText(value) }))
+                     }
+                     onRelease={() => void window.desktop.openExternal(availableUpdate.url).catch((value) => setError(errorText(value)))}
+                     onReveal={() => {
+                        if (updateStatus?.path) void window.desktop.revealOutput(updateStatus.path).catch((value) => setError(errorText(value)));
+                     }}
+                  />
+               )}
                {!mac && (
                   <div className="window-controls">
                      <button aria-label="Minimize window" onClick={() => window.desktop.windowAction("minimize")}>
@@ -803,7 +828,6 @@ export default function App() {
                {panel === "help" && <HelpPanel initialTab={helpTab} onClose={() => setPanel((current) => (current === panel ? null : current))} />}
                {panel === "about" && <AboutPanel version={version} onClose={() => setPanel((current) => (current === panel ? null : current))} />}
             </Suspense>
-            <Suspense fallback={null}>{availableUpdate && <UpdatePanel update={availableUpdate} onClose={() => setAvailableUpdate(null)} />}</Suspense>
             {draggingFile && (
                <div className="drop-overlay">
                   <FontAwesomeIcon icon={faFolderOpen} />

@@ -17,7 +17,7 @@ import {
 import type { IpcCalls } from "../shared/ipc.ts";
 import { exportFrame } from "./media/frame.ts";
 import { videoExtensions } from "./media/formats.ts";
-import { fetchAvailableUpdate, updateInterval } from "./updates.ts";
+import { fetchAvailableUpdate, UpdateManager } from "./updates.ts";
 import type { SourceSession } from "./source-session.ts";
 import type { ExportService } from "./exports.ts";
 import type { Storage } from "./storage.ts";
@@ -31,6 +31,7 @@ export function registerIpc({
    exportsService,
    takeInitialFile,
    onFlushed,
+   onApplyUpdate,
 }: {
    window: BrowserWindow;
    storage: Storage;
@@ -38,7 +39,9 @@ export function registerIpc({
    exportsService: ExportService;
    takeInitialFile: () => string | null;
    onFlushed: () => void;
+   onApplyUpdate: (install: () => void) => void;
 }): void {
+   const updates = new UpdateManager(window);
    const frameOutputs = new Set<string>();
    const getSource = (id: string) => sourceSession.get(id);
    function handle<K extends keyof IpcCalls>(channel: K, action: (value: unknown) => IpcCalls[K]["response"] | Promise<IpcCalls[K]["response"]>): void {
@@ -59,21 +62,18 @@ export function registerIpc({
       };
    });
    handle("update:check", async () => {
-      if (!app.isPackaged || Date.now() - storage.updates.lastCheckedAt < updateInterval) return null;
+      if (!app.isPackaged) return null;
       try {
          const update = await fetchAvailableUpdate(app.getVersion(), (url, init) => net.fetch(url, init));
-         // Only a completed check suppresses the next one; a failed network call retries next launch.
-         storage.updates = { ...storage.updates, lastCheckedAt: Date.now() };
-         await storage.save();
-         return update?.version === storage.updates.ignoredVersion ? null : update;
+         return update ? updates.offer(update) : null;
       } catch {
          return null;
       }
    });
-   handle("update:dismiss", async (value) => {
-      const choice = z.object({ version: z.string().min(1), ignore: z.boolean() }).parse(value);
-      if (choice.ignore) storage.updates = { ...storage.updates, ignoredVersion: choice.version };
-      await storage.save();
+   handle("update:download", async (value) => updates.downloadPortable(z.string().parse(value)));
+   handle("update:restart", () => {
+      if (!updates.isReady) throw new Error("The update is not ready yet.");
+      onApplyUpdate(() => updates.install());
    });
    handle("source:choose", async () => {
       const result = await dialog.showOpenDialog(window, {

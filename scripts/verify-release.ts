@@ -8,5 +8,8 @@ const env = { ...process.env, ...(await provisionMedia()), CI: "true" };
 run(["run", "verify"], env);
 run(["run", "test:media"], env);
 run(["x", "--no-install", "playwright", "test"], env);
-run(["run", "dist"], { ...env, CSC_IDENTITY_AUTO_DISCOVERY: "false" });
+run(["run", process.platform === "win32" ? "dist:win:all" : process.platform === "darwin" ? "dist:mac:all" : "dist"], {
+   ...env,
+   CSC_IDENTITY_AUTO_DISCOVERY: "false",
+});
 run(["run", "verify:package"], env);

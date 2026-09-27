@@ -2,7 +2,7 @@ import { spawn, execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
-import { resolve, join } from "node:path";
+import { resolve, join, sep } from "node:path";
 
 const base =
    process.platform === "win32"
@@ -24,6 +24,7 @@ async function smokeLauncher(): Promise<void> {
    const launcher = resolve(base, "AttaCut.exe");
    if (!existsSync(launcher)) throw new Error(`Splash launcher missing: ${launcher}`);
    const profile = mkdtempSync(join(tmpdir(), "attacut-launcher-"));
+   if (!resolve(profile).startsWith(resolve(tmpdir()) + sep)) throw new Error("Refusing to remove a profile outside the temp directory");
    const child = spawn(launcher, [], { cwd: base, env: { ...process.env, ATTACUT_USER_DATA: profile }, stdio: "ignore" });
    try {
       const deadline = Date.now() + 30_000;
@@ -50,7 +51,7 @@ async function smokeLauncher(): Promise<void> {
       if (code !== 0) throw new Error(`Launcher smoke failed: exited with ${code}`);
    } finally {
       if (child.exitCode === null) child.kill();
-      rmSync(profile, { recursive: true, force: true });
+      rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
    }
 }
 
