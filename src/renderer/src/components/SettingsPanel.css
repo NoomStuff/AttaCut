@@ -147,7 +147,7 @@
 
 .shortcut-remove:hover {
    color: var(--danger);
-   background: var(--surface-hover);
+   background: var(--danger-hover);
 }
 
 .shortcut-binding:hover {

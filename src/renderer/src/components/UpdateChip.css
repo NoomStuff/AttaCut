@@ -43,14 +43,11 @@
 }
 .update-chip-icon {
    position: absolute;
-   top: 50%;
-   left: 11.5px;
-   width: 16px;
-   height: 16px;
+   inset: 0 auto 0 0;
+   width: 25px;
    display: grid;
    place-items: center;
    font-size: 11px;
-   transform: translate(-50%, -50%);
 }
 .update-chip-ring {
    width: 17px;

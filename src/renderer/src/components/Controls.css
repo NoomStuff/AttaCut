@@ -63,7 +63,14 @@
 }
 .modal .button.danger {
    border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
-   background: color-mix(in srgb, var(--danger) 8%, transparent);
+   background: var(--danger-soft);
+}
+.button.danger:is(:hover:not(:disabled), .shortcut-active) {
+   background: var(--danger-hover);
+   border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
+}
+:root[data-keyboard] .button.danger:focus-visible {
+   outline-color: var(--danger);
 }
 .button.active {
    color: var(--accent);
@@ -272,7 +279,7 @@
 }
 .inline-error {
    padding: 10px 12px;
-   background: color-mix(in srgb, var(--danger) 9%, transparent);
+   background: var(--danger-soft);
    color: var(--danger);
    border-radius: 5px;
    font-size: 12px;

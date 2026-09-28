@@ -43,7 +43,11 @@
    --backdrop: #06090b94;
    --modal-shadow: 0 24px 80px #0006;
    --warning: #e6ca4e;
+   --warning-soft: color-mix(in srgb, var(--warning) 10%, transparent);
+   --warning-hover: color-mix(in srgb, var(--warning) 17%, transparent);
    --danger: #ff6370;
+   --danger-soft: color-mix(in srgb, var(--danger) 9%, transparent);
+   --danger-hover: color-mix(in srgb, var(--danger) 16%, transparent);
    --success: #99cda9;
    --clip-0: #91c3eb;
    --clip-1: #cf9ed9;

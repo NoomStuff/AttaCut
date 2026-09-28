@@ -231,7 +231,17 @@
 }
 .error-banner > button {
    padding: 5px;
+   border-radius: 5px;
    transition: transform 60ms ease-out;
+}
+.error-banner > button:hover:not(:disabled) {
+   background: var(--danger-hover);
+}
+.error-banner.warning > button:hover:not(:disabled) {
+   background: var(--warning-hover);
+}
+:root[data-keyboard] .error-banner > button:focus-visible {
+   outline-color: currentColor;
 }
 .error-banner > button:active {
    transform: translateY(1px);
