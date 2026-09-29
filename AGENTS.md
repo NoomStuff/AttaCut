@@ -32,6 +32,6 @@ Re-encoding a small section near a boundary is acceptable when needed for accura
 
 ## Versioning
 
-Pushing to main with a new version number in `package.json` is what triggers a release via GitHub Actions. Bump it appropriately for the changes made, follow ups should not bump again unless pushes to main have been made since. Don't blindly push without permission from the user.
+Pushing to main with a new version number in `package.json` is what triggers a release via GitHub Actions. Bump it appropriately for the changes made (not every change would need a new version), follow ups should not bump again unless pushes to main have been made since. Don't blindly push without permission from the user.
 
-Always run `bun run verify` on the final files after a turn. For changes to export, playback, packaging, or release workflows, run `bun run verify:release` too. Fix failures before pushing. After a version bump, watch to make sure the release is successful, if it fails you must resolve the issue and push a fix version.
+Always run `bun run format` and `bun run verify` on the final files after a turn. For changes to export, playback, packaging, or release workflows, run `bun run verify:release` too. Fix failures before pushing. After a version bump, watch to make sure the release is successful, if it fails you must resolve the issue and push a fix version.
