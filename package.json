@@ -1,6 +1,6 @@
 {
    "name": "attacut",
-   "version": "0.13.5",
+   "version": "0.13.6",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -45,6 +45,55 @@
       "files": [
          "out/**/*",
          "package.json"
+      ],
+      "fileAssociations": [
+         {
+            "ext": [
+               "mp4",
+               "mov",
+               "mkv",
+               "webm",
+               "avi",
+               "m4v",
+               "ts",
+               "mts",
+               "m2ts",
+               "mpg",
+               "mpeg",
+               "m2v",
+               "vob",
+               "flv",
+               "wmv",
+               "asf",
+               "ogv",
+               "mxf",
+               "3gp",
+               "3g2",
+               "f4v",
+               "m1v",
+               "mpe",
+               "m2p",
+               "m2t",
+               "mod",
+               "tod",
+               "vro",
+               "divx",
+               "dv",
+               "ogm",
+               "wtv",
+               "dvr-ms",
+               "mjpg",
+               "h264",
+               "264",
+               "h265",
+               "265",
+               "hevc"
+            ],
+            "name": "AttaCut.Video",
+            "description": "Video",
+            "role": "Editor",
+            "rank": "Alternate"
+         }
       ],
       "extraResources": [
          {
@@ -94,22 +143,7 @@
          "target": [
             "zip"
          ],
-         "category": "public.app-category.video",
-         "fileAssociations": [
-            {
-               "ext": [
-                  "mp4",
-                  "mov",
-                  "mkv",
-                  "webm",
-                  "avi",
-                  "m4v"
-               ],
-               "name": "Video",
-               "role": "Editor",
-               "rank": "Alternate"
-            }
-         ]
+         "category": "public.app-category.video"
       },
       "linux": {
          "icon": "build/icon.png",
