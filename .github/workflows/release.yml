@@ -131,6 +131,12 @@ jobs:
                   --title "AttaCut ${RELEASE_TAG#v}" \
                   --target "$GITHUB_SHA" --generate-notes $flags
               fi
+         - name: Publish release
+           env:
+              GH_TOKEN: ${{ github.token }}
+              GH_REPO: ${{ github.repository }}
+              RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+           run: gh release edit "$RELEASE_TAG" --draft=false
          - name: Publish update feeds
            uses: actions/github-script@v9
            env:
@@ -168,9 +174,3 @@ jobs:
                  } else {
                    await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: commit.data.sha });
                  }
-         - name: Publish release
-           env:
-              GH_TOKEN: ${{ github.token }}
-              GH_REPO: ${{ github.repository }}
-              RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-           run: gh release edit "$RELEASE_TAG" --draft=false

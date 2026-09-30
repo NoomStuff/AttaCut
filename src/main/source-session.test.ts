@@ -5,6 +5,7 @@ import { preparePreview } from "./media/preview.ts";
 import { extractScrubPcm } from "./media/scrub-audio.ts";
 import type { ProbedSource } from "./media/probe.ts";
 vi.mock("./media/probe.ts", () => ({
+   setSourceLifetime: vi.fn(),
    probeSource: vi.fn(async (path: string) => ({ id: path, path, duration: 36000 }) as ProbedSource),
    sourceKeyframes: vi.fn(async () => [0, 2]),
    sourceFrames: vi.fn(async () => null),
@@ -14,9 +15,27 @@ vi.mock("./media/scrub-audio.ts", () => ({
    scrubChunkSeconds: 30,
    extractScrubPcm: vi.fn(async () => ({ start: 0, sampleRate: 22050, pcm: new ArrayBuffer(2) })),
 }));
-vi.mock("./media/preview.ts", () => ({ preparePreview: vi.fn() }));
+vi.mock("./media/preview.ts", () => ({ preparePreview: vi.fn(), leasePreview: vi.fn(), releasePreview: vi.fn() }));
 afterEach(() => vi.clearAllMocks());
 describe("source lifetime", () => {
+   it("does not adopt a source whose probe finishes after the workspace closes", async () => {
+      const session = new SourceSession("unused-preview-directory");
+      let finish!: (source: ProbedSource) => void;
+      vi.mocked(probeSource).mockImplementationOnce(
+         () =>
+            new Promise((resolve) => {
+               finish = resolve;
+            })
+      );
+      const opening = session.open("pending");
+      const rejected = expect(opening).rejects.toThrow();
+      session.close();
+      finish({ id: "pending", path: "pending", duration: 10 } as ProbedSource);
+      await rejected;
+      expect(session.mediaPaths.size).toBe(0);
+      expect(() => session.get("pending")).toThrow();
+      session.dispose();
+   });
    it("keeps a replacement audio request when a cancelled request for the same chunk rejects", async () => {
       const session = new SourceSession("unused-preview-directory");
       await session.open("a");

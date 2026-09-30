@@ -182,6 +182,9 @@
 .export-note.problem {
    color: var(--danger);
 }
+.export-note.warning {
+   color: var(--warning);
+}
 .export-note-link {
    font-weight: 500;
    font-size: 11px;

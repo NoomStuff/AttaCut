@@ -28,20 +28,20 @@ export function usePersistence({
       return () => {
          flush();
       };
-   }, []);
+   }, [setError]);
    useEffect(() => {
       if (!ready) return;
       const timer = window.setTimeout(() => {
          void window.desktop.savePreferences(preferences).catch((value: unknown) => setError(errorText(value)));
       }, 100);
       return () => window.clearTimeout(timer);
-   }, [preferences, ready]);
+   }, [preferences, ready, setError]);
    useEffect(() => {
       if (!source) return;
       const timer = window.setTimeout(() => {
          const snapshot = sessionFor(source, editor, null);
          if (snapshot) void window.desktop.saveSession(snapshot).catch((value: unknown) => setError(errorText(value)));
-      }, 100);
+      }, 500);
       return () => window.clearTimeout(timer);
-   }, [source, editor]);
+   }, [source, editor, setError]);
 }

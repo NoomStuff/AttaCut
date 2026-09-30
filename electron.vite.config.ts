@@ -1,6 +1,7 @@
 import { defineConfig } from "electron-vite";
 import react from "@vitejs/plugin-react";
 import type { RollupLog } from "rollup";
+import { resolve } from "node:path";
 
 // zod's published code contains prose comments that mention `@__PURE__`; Rollup reads those
 // as misplaced annotations (INVALID_ANNOTATION), strips them, and warns. Silence exactly that
@@ -11,7 +12,15 @@ function ignoreZodCommentNoise(warning: RollupLog, warn: (log: RollupLog | strin
 }
 
 export default defineConfig({
-   main: { build: { rollupOptions: { onwarn: ignoreZodCommentNoise } } },
+   main: {
+      build: {
+         rollupOptions: {
+            input: { index: resolve("src/main/index.ts"), "media-index-worker": resolve("src/main/media/media-index-worker.ts") },
+            output: { entryFileNames: "[name].js" },
+            onwarn: ignoreZodCommentNoise,
+         },
+      },
+   },
    preload: { build: { rollupOptions: { output: { format: "cjs", entryFileNames: "index.cjs" }, onwarn: ignoreZodCommentNoise } } },
    renderer: {
       plugins: [react()],

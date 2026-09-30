@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { CSSProperties } from "react";
 import type { MediaSource } from "../../../shared/types";
 import type { EditDocument } from "../editor/model";
@@ -59,12 +60,25 @@ function VolumeSlider({ volume, muted, onChange }: { volume: number; muted: bool
 
 function TimeField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => number }) {
    const [text, setText] = useState(formatTime(value));
+   const [invalid, setInvalid] = useState(false);
    const cancelled = useRef(false);
-   useEffect(() => setText(formatTime(value)), [value]);
+   const focused = useRef(false);
+   const previousValue = useRef(value);
+   useEffect(() => {
+      if (previousValue.current === value) return;
+      previousValue.current = value;
+      setText(formatTime(value, focused.current ? 6 : 2));
+      setInvalid(false);
+   }, [value]);
    const commit = () => {
       const parsed = cancelled.current ? null : parseTime(text);
+      if (!cancelled.current && parsed === null) {
+         setInvalid(true);
+         return;
+      }
+      setInvalid(false);
       cancelled.current = false;
-      const unchanged = text === formatTime(value) || parsed === parseTime(formatTime(value));
+      const unchanged = [2, 6].some((precision) => text === formatTime(value, precision) || parsed === parseTime(formatTime(value, precision)));
       setText(formatTime(parsed === null || unchanged ? value : onChange(parsed)));
    };
    return (
@@ -73,8 +87,23 @@ function TimeField({ label, value, onChange }: { label: string; value: number; o
          <input
             aria-label={`Clip ${label.toLowerCase()}`}
             value={text}
-            onChange={(event) => setText(event.target.value)}
-            onBlur={commit}
+            aria-invalid={invalid}
+            title={invalid ? "Enter seconds or a time such as 01:23.45" : formatTime(value, 6)}
+            onChange={(event) => {
+               setText(event.target.value);
+               setInvalid(false);
+            }}
+            onFocus={(event) => {
+               focused.current = true;
+               if (!invalid) {
+                  flushSync(() => setText(formatTime(value, 6)));
+                  event.currentTarget.select();
+               }
+            }}
+            onBlur={() => {
+               focused.current = false;
+               commit();
+            }}
             onKeyDown={(event) => {
                if (event.key === "Enter") event.currentTarget.blur();
                if (event.key === "Escape") {

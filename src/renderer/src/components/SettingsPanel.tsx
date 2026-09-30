@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { navigateTabs } from "../lib/tabs";
 import { faMoon, faSun, faDesktop, faCheck, faPlus, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { Preferences } from "../../../shared/types";
@@ -78,10 +79,11 @@ export function SettingsPanel({
    return (
       <>
          <Modal title="Settings" onClose={onClose} className="panel-modal settings-modal">
-            <div className="modal-tabs" role="tablist">
+            <div className="modal-tabs" role="tablist" onKeyDown={navigateTabs}>
                <button
                   role="tab"
                   aria-selected={tab === "general"}
+                  tabIndex={tab === "general" ? 0 : -1}
                   onClick={() => {
                      setTab("general");
                      setRecording(null);
@@ -89,7 +91,7 @@ export function SettingsPanel({
                >
                   General
                </button>
-               <button role="tab" aria-selected={tab === "shortcuts"} onClick={() => setTab("shortcuts")}>
+               <button role="tab" aria-selected={tab === "shortcuts"} tabIndex={tab === "shortcuts" ? 0 : -1} onClick={() => setTab("shortcuts")}>
                   Keyboard shortcuts
                </button>
             </div>

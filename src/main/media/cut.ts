@@ -1,9 +1,12 @@
-import { mkdtemp, writeFile, copyFile, constants } from "node:fs/promises";
-import { publishOutput, removeTemporary } from "./publish.ts";
+import { withTemporaryOutput } from "./transaction";
+import { primaryVideo } from "../../shared/types";
+import { writeFile, copyFile, constants } from "node:fs/promises";
+import { publishOutput } from "./publish.ts";
 import { join, extname, dirname, resolve } from "node:path";
-import type { Clip, ExportPlanItem } from "../../shared/types.ts";
+import type { Clip, ExportPlanItem, StreamAssessment, ExportStage } from "../../shared/types.ts";
 import type { ProbedSource, PacketPoint } from "./probe.ts";
-import { packetsAround, assertSourceUnchanged } from "./probe.ts";
+import { packetsAround, assertSourceUnchanged, sourceFrames } from "./probe.ts";
+import { lowerBound } from "../../shared/sorted";
 import { ffmpegBase, runMedia } from "./process.ts";
 import type { RunOptions } from "./process.ts";
 import { metadataInputs, textSubtitleCodecs } from "./metadata.ts";
@@ -28,6 +31,10 @@ export interface Span {
    readStart?: number;
 }
 export interface CutAnalysis {
+   frameCount?: number;
+   frameDuration?: number;
+   streams?: StreamAssessment[];
+   changes?: string[];
    execution: "file-copy" | "remux" | "trim";
    clip: Clip;
    spans: Span[];
@@ -51,6 +58,59 @@ export interface CutIntent {
    combined?: boolean;
 }
 export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: AbortSignal, intent: CutIntent = {}): Promise<CutAnalysis> {
+   const analysis = await analyzeRange(source, clip, signal, intent);
+   const frames = analysis.method === "unsupported" ? null : await sourceFrames(source, signal);
+   const frameCount = frames ? lowerBound(frames, analysis.clip.end - epsilon) - lowerBound(frames, analysis.clip.start - epsilon) : undefined;
+   let frameDuration = 0;
+   if (analysis.execution === "trim" && analysis.method !== "unsupported") {
+      const windows = await Promise.all([packetsAround(source, analysis.clip.start, signal), packetsAround(source, analysis.clip.end, signal)]);
+      for (const points of windows)
+         for (const [index, point] of points.entries())
+            frameDuration = Math.max(frameDuration, point.duration ?? 0, Math.max(0, (points[index + 1]?.time ?? point.time) - point.time));
+   }
+   const extension = (intent.extension ?? source.exportExtension).toLowerCase();
+   const changes = [...(analysis.changes ?? [])];
+   const streams = source.streams.map((stream): StreamAssessment => {
+      const result = (action: StreamAssessment["action"], reason: string): StreamAssessment => ({ index: stream.index, type: stream.type, action, reason });
+      if (stream.type === "audio" && intent.audioTracks && !intent.audioTracks.includes(stream.index))
+         return result("omit", "Excluded by your audio selection");
+      if (analysis.method === "unsupported") return result("unsupported", analysis.message);
+      if (analysis.execution === "file-copy") return result("copy", "Original file copied unchanged");
+      if (stream.type === "data" && !containerKeepsData(extension)) return result("omit", "The output container cannot hold telemetry");
+      if (analysis.execution === "remux" || stream.attachedPicture || stream.type === "attachment") return result("copy", "Original stream retained");
+      if (stream.type === "video")
+         return result(
+            analysis.encodedSeconds ? "encode" : "trim",
+            analysis.encodedSeconds
+               ? analysis.spans.every((span) => span.encode)
+                  ? "Encode selected frames for accurate cuts"
+                  : "Encode cut boundaries and copy the remaining frames"
+               : "Copy selected frames"
+         );
+      if (stream.type === "audio")
+         return result(
+            isLosslessAudio(stream.codec) ? "encode" : "trim",
+            isLosslessAudio(stream.codec) ? "Trim and encode without audio quality loss" : "Copy selected audio packets"
+         );
+      if (stream.type === "subtitle" && textSubtitleCodecs.has(stream.codec)) {
+         const codec = isMp4Container(extension) ? "mov_text" : extension === ".webm" ? "webvtt" : stream.codec === "mov_text" ? "subrip" : stream.codec;
+         if (codec !== stream.codec) {
+            changes.push("Subtitles change format. Some styling may not survive.");
+            return result("convert", `Trim captions and convert ${stream.codec} to ${codec}`);
+         }
+         return result("trim", "Trim caption timing to the selected range");
+      }
+      return result("trim", "Retain content within the selected range");
+   });
+   return {
+      ...analysis,
+      streams,
+      changes: [...new Set(changes)],
+      ...(frameDuration > 0 ? { frameDuration } : {}),
+      ...(frameCount !== undefined ? { frameCount } : {}),
+   };
+}
+async function analyzeRange(source: ProbedSource, clip: Clip, signal?: AbortSignal, intent: CutIntent = {}): Promise<CutAnalysis> {
    const unsupported = (message: string): CutAnalysis => ({ execution: "trim", clip, spans: [], method: "unsupported", encodedSeconds: 0, message });
    if (clip.start < 0 || clip.end > source.duration + epsilon || clip.end <= clip.start) return unsupported("The selected range is outside the video.");
    const destination = (intent.extension ?? source.exportExtension).toLowerCase();
@@ -75,9 +135,10 @@ export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: Abor
          method: "copy",
          encodedSeconds: 0,
          message: fullCopy || !dataNote ? "Original streams copied" : `Original streams copied.${dataNote}`,
+         changes: fullCopy || !dataNote ? [] : [dataNote.trim()],
       };
    }
-   const video = source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture);
+   const video = primaryVideo(source);
    if (!video) return unsupported("No video track.");
    if (source.streams.some((stream) => !["audio", "video", "subtitle", "attachment", "data"].includes(stream.type)))
       return unsupported("This file contains stream types that cannot yet be preserved during trimming.");
@@ -139,9 +200,6 @@ export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: Abor
             })
       ),
    ];
-   if (encodedSeconds > 12 || (snapped.end - snapped.start > 12 && encodedSeconds > (snapped.end - snapped.start) * 0.5)) {
-      return unsupported("This cut would need more than a small section re-encoded. Try a nearby boundary or a shorter selection.");
-   }
    if (encodedSeconds > epsilon && !encoderArguments(video))
       return unsupported(`Precise boundary encoding is not available for ${video.codec.toUpperCase()} yet. Turn on Snap to keyframes to export losslessly.`);
    if (encodedSeconds > epsilon && ["mpeg4", "mpeg2video", "mpeg1video", "wmv1", "wmv2"].includes(video.codec)) {
@@ -162,6 +220,7 @@ export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: Abor
       clip: snapped,
       spans,
       method: encodedSeconds > epsilon ? "boundary" : "copy",
+      changes: dataNote ? [dataNote.trim()] : [],
       encodedSeconds,
       message:
          (encodedSeconds > epsilon ? `${encodedSeconds.toFixed(2)}s near the cuts re-encoded; remaining video copied` : "Original streams copied") + dataNote,
@@ -176,21 +235,22 @@ export interface CutOptions extends RunOptions {
    replaceSource?: boolean;
    /** Skip output verification; the combined path verifies the concatenated result itself. */
    verify?: boolean;
+   onStage?: (stage: ExportStage) => void;
 }
 export async function exportCut(source: ProbedSource, analysis: CutAnalysis, destination: string, options: CutOptions = {}): Promise<void> {
    if (analysis.method === "unsupported") throw new Error(analysis.message);
    destination = resolve(destination);
    await assertSourceUnchanged(source);
-   const temporary = await mkdtemp(join(dirname(destination), ".attacut-"));
-   const finalTemporary = join(temporary, `output${extname(destination)}`);
-   const { clip } = analysis;
-   const duration = clip.end - clip.start;
-   const sourceAudio = source.streams.filter((stream) => stream.type === "audio");
-   const selectedAudio = options.audioTracks === undefined ? sourceAudio : sourceAudio.filter((stream) => options.audioTracks!.includes(stream.index));
-   const allAudio = selectedAudio.length === sourceAudio.length;
-   // Matroska-family muxers silently drop data streams, so their absence is expected by verification.
-   const keepsData = containerKeepsData(extname(destination).toLowerCase());
-   try {
+   return withTemporaryOutput(dirname(destination), ".attacut-", async (temporary) => {
+      const finalTemporary = join(temporary, `output${extname(destination)}`);
+      const { clip } = analysis;
+      const duration = clip.end - clip.start;
+      const sourceAudio = source.streams.filter((stream) => stream.type === "audio");
+      const selectedAudio = options.audioTracks === undefined ? sourceAudio : sourceAudio.filter((stream) => options.audioTracks!.includes(stream.index));
+      const allAudio = selectedAudio.length === sourceAudio.length;
+      // Matroska-family muxers silently drop data streams, so their absence is expected by verification.
+      const keepsData = containerKeepsData(extname(destination).toLowerCase());
+      options.onStage?.(analysis.method === "boundary" ? "encoding" : "copying");
       if (analysis.execution === "file-copy" && allAudio && extname(destination).toLowerCase() === source.extension.toLowerCase()) {
          await copyFile(source.path, finalTemporary, constants.COPYFILE_EXCL);
       } else if (clip.start === 0 && Math.abs(clip.end - source.duration) < epsilon) {
@@ -217,8 +277,11 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             options
          );
       } else {
-         const video = source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!;
+         const video = primaryVideo(source)!;
          const segmentPaths: string[] = [];
+         const weight = (span: Span) => (span.end - span.start) * (span.encode ? 4 : 1);
+         const totalWork = analysis.spans.reduce((sum, span) => sum + weight(span), duration);
+         let finishedWork = 0;
          for (const [index, span] of analysis.spans.entries()) {
             options.signal?.throwIfAborted();
             const segmentType = segmentExtension(video.codec);
@@ -262,8 +325,9 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             await runMedia("ffmpeg", args, {
                ...options,
                duration: span.end - span.start,
-               onProgress: (fraction) => options.onProgress?.((index + fraction) / (analysis.spans.length + 1)),
+               onProgress: (fraction) => options.onProgress?.((0.9 * (finishedWork + weight(span) * fraction)) / totalWork),
             });
+            finishedWork += weight(span);
             segmentPaths.push(path);
          }
          const listPath = join(temporary, "parts.ffconcat");
@@ -275,11 +339,12 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             )
          );
          const metadata = await metadataInputs(
-            { ...source, streams: source.streams.filter((stream) => stream.type !== "audio" || selectedAudio.some((audio) => audio.index === stream.index)) },
+            source,
             clip,
             temporary,
             destination,
-            options.signal
+            options.signal,
+            selectedAudio.map((audio) => audio.index)
          );
          const audioPreroll = analysis.spans[0]?.readStart ?? 0;
          const covers = source.streams.filter((stream) => stream.attachedPicture);
@@ -331,11 +396,13 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
          await runMedia("ffmpeg", args, {
             ...options,
             duration,
-            onProgress: (fraction) => options.onProgress?.((analysis.spans.length + fraction) / (analysis.spans.length + 1)),
+            onProgress: (fraction) => options.onProgress?.((0.9 * (finishedWork + duration * fraction)) / totalWork),
          });
       }
       options.signal?.throwIfAborted();
       if (options.verify ?? true) {
+         options.onStage?.("checking");
+         options.onProgress?.(0.92);
          if (analysis.execution !== "file-copy" || !allAudio || extname(destination).toLowerCase() !== source.extension.toLowerCase())
             await verifyOutputStructure(
                source,
@@ -344,15 +411,17 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                duration,
                options.signal,
                clip.start,
-               keepsData ? [] : ["data"]
+               keepsData ? [] : ["data"],
+               analysis.frameDuration,
+               analysis.frameCount
             );
          if (analysis.verifyTimes?.length) await verifyCopiedFrames(source, finalTemporary, clip.start, analysis.verifyTimes, options.signal);
          if (analysis.encodedVerifyTimes?.length) await verifyEncodedFrames(source, finalTemporary, clip.start, analysis.encodedVerifyTimes, options.signal);
       }
       await assertSourceUnchanged(source);
+      options.onStage?.("saving");
+      options.onProgress?.(0.98);
       await publishOutput(finalTemporary, destination, options.overwrite, source.path, options.replaceSource);
       options.onProgress?.(1);
-   } finally {
-      await removeTemporary(temporary);
-   }
+   });
 }

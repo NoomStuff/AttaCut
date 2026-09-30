@@ -1,5 +1,6 @@
 import js from "@eslint/js";
 import ts from "typescript-eslint";
+import hooks from "eslint-plugin-react-hooks";
 export default ts.config(
    // after-pack.cjs stays CommonJS because electron-builder loads hooks with require().
    { ignores: ["out/**", "release/**", "resources/**", "work/**", "test-results/**", "scripts/after-pack.cjs"] },
@@ -11,7 +12,10 @@ export default ts.config(
    },
    {
       files: ["src/renderer/**/*.{ts,tsx}"],
+      plugins: { "react-hooks": hooks },
       rules: {
+         "react-hooks/rules-of-hooks": "error",
+         "react-hooks/exhaustive-deps": "error",
          "no-restricted-imports": [
             "error",
             { patterns: [{ group: ["electron", "node:*", "**/main/**", "**/preload/**"], message: "Use the desktop bridge for privileged operations." }] },

@@ -1,24 +1,9 @@
-import { rm } from "node:fs/promises";
-import { setTimeout as delay } from "node:timers/promises";
 import type { ScrubAudio } from "../shared/types.ts";
 import { resolveFrameTime } from "../shared/frames.ts";
-import { packetsAround, probeSource, sourceFrames, sourceKeyframes } from "./media/probe.ts";
+import { packetsAround, probeSource, sourceFrames, sourceKeyframes, setSourceLifetime } from "./media/probe.ts";
 import type { ProbedSource } from "./media/probe.ts";
-import { preparePreview } from "./media/preview.ts";
+import { preparePreview, leasePreview, releasePreview } from "./media/preview.ts";
 import { extractScrubPcm, scrubChunkSeconds } from "./media/scrub-audio.ts";
-
-async function removePreview(path: string): Promise<void> {
-   // Chromium can hold the old file briefly while the renderer adopts its new URL.
-   for (let attempt = 0; attempt < 6; attempt++) {
-      try {
-         await rm(path, { force: true });
-         return;
-      } catch {
-         await delay(200);
-      }
-   }
-   // Startup also clears the private cache, including files locked by an interrupted run.
-}
 
 /** Owns the active source. Export plans retain their own immutable source reference. */
 export class SourceSession {
@@ -40,6 +25,9 @@ export class SourceSession {
    get signal(): AbortSignal {
       return this.lifetime.signal;
    }
+   get current(): ProbedSource | null {
+      return this.source;
+   }
    get(id: string): ProbedSource {
       if (!this.source || this.source.id !== id) throw new Error("Reopen the source video.");
       return this.source;
@@ -52,6 +40,7 @@ export class SourceSession {
       controller.signal.throwIfAborted();
       this.release();
       this.source = source;
+      setSourceLifetime(source, this.signal);
       this.mediaPaths.set(source.id, source.path);
       // Warm what the first seek needs: the in-memory frame index for MP4-family sources,
       // the first small packet window for everything else.
@@ -91,11 +80,14 @@ export class SourceSession {
       const result = await preparePreview(source, this.previewFolder, tracks, transcode, { signal: controller.signal });
       controller.signal.throwIfAborted();
       this.mediaPaths.set(result.id, result.path);
-      if (!this.previewFiles.includes(result.path)) this.previewFiles.push(result.path);
+      if (!this.previewFiles.includes(result.path)) {
+         this.previewFiles.push(result.path);
+         leasePreview(result.path);
+      }
       while (this.previewFiles.length > 2) {
          const old = this.previewFiles.shift()!;
          for (const [key, path] of this.mediaPaths) if (path === old) this.mediaPaths.delete(key);
-         void removePreview(old);
+         releasePreview(old);
       }
       return `media://source/${result.id}`;
    }
@@ -125,7 +117,12 @@ export class SourceSession {
       this.keys = null;
       this.source = null;
       this.mediaPaths.clear();
-      for (const path of this.previewFiles.splice(0)) void removePreview(path);
+      for (const path of this.previewFiles) releasePreview(path);
+      this.previewFiles = [];
+   }
+   close(): void {
+      this.opening.abort();
+      this.release();
    }
    dispose(): void {
       this.opening.abort();

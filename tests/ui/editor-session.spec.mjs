@@ -21,25 +21,25 @@ test("editor session", async ({ launchApp, profile }) => {
    await page.waitForFunction(() => Math.abs(document.querySelector("video").currentTime - 9.7) < 0.01);
    await page.keyboard.press("s");
    const second = page.getByRole("slider", { name: "Clip 2 start", exact: true });
-   await expect(second).toHaveAttribute("aria-valuenow", "9.7");
+   await expect.poll(async () => Number(await second.getAttribute("aria-valuenow"))).toBeCloseTo(9.7, 6);
    await start.fill("00:10.20");
    await start.press("Tab");
-   await expect(second).toHaveAttribute("aria-valuenow", "10.2");
+   await expect.poll(async () => Number(await second.getAttribute("aria-valuenow"))).toBeCloseTo(10.2, 6);
    await start.fill("00:12.00");
    await start.press("Escape");
    await expect(start).toHaveValue("00:10.20");
-   await expect(second).toHaveAttribute("aria-valuenow", "10.2");
+   await expect.poll(async () => Number(await second.getAttribute("aria-valuenow"))).toBeCloseTo(10.2, 6);
    const box = await second.boundingBox();
    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
    await page.mouse.down();
    await page.mouse.move(box.x + 75, box.y + 10, { steps: 5 });
    await page.keyboard.press("Escape");
    await page.mouse.up();
-   await expect(second).toHaveAttribute("aria-valuenow", "10.2");
+   await expect.poll(async () => Number(await second.getAttribute("aria-valuenow"))).toBeCloseTo(10.2, 6);
    await page.keyboard.press("ControlOrMeta+z");
-   await expect(second).toHaveAttribute("aria-valuenow", "9.7");
+   await expect.poll(async () => Number(await second.getAttribute("aria-valuenow"))).toBeCloseTo(9.7, 6);
    await page.keyboard.press("ControlOrMeta+Shift+z");
-   await expect(second).toHaveAttribute("aria-valuenow", "10.2");
+   await expect.poll(async () => Number(await second.getAttribute("aria-valuenow"))).toBeCloseTo(10.2, 6);
    await page.getByRole("button", { name: "Export", exact: true }).click();
    await page.getByRole("dialog", { name: "Export clips" }).waitFor();
    await expect(page.getByRole("textbox", { name: "Clip 1 filename", exact: true })).toHaveValue("fixture (1)");
@@ -70,7 +70,9 @@ test("editor session", async ({ launchApp, profile }) => {
    await application.close();
    const restored = await launchApp(profile, "");
    page = await restored.firstWindow();
-   await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toHaveAttribute("aria-valuenow", "10.2");
+   await expect
+      .poll(async () => Number(await page.getByRole("slider", { name: "Clip 2 start", exact: true }).getAttribute("aria-valuenow")))
+      .toBeCloseTo(10.2, 6);
    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
    console.log("Session restoration passed.");
 });

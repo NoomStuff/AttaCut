@@ -8,3 +8,4 @@ await import("./metadata.ts");
 await import("./keyframes.ts");
 await import("./cancellation.ts");
 await import("./exports.ts");
+await import("./joins.ts");

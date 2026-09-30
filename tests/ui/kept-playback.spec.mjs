@@ -51,7 +51,7 @@ test("kept playback", async ({ launchApp, profile }) => {
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await at(6);
    await at(11);
-   await at(13, 13.001, true);
+   await at(13 - 1 / 30, 13, true);
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await at(1);
    await page.getByRole("button", { name: "Pause", exact: true }).click();
@@ -74,7 +74,7 @@ test("kept playback", async ({ launchApp, profile }) => {
    await page.mouse.up();
    await at(11);
    await clickTime(16);
-   await at(13, 13.001, true);
+   await at(13 - 1 / 30, 13, true);
 
    // Play can arrive before a queued seek has decoded. It must use the requested position.
    await page.mouse.move(bar.x + (bar.width * 4) / 18, bar.y + 36);
@@ -95,7 +95,7 @@ test("kept playback", async ({ launchApp, profile }) => {
    await clickTime(1.5);
    await page.keyboard.press("p");
    await at(1);
-   await at(3, 3.001, true);
+   await at(3 - 1 / 30, 3, true);
    await expect(video).toHaveJSProperty("paused", true);
    console.log("PASS kept-only natural gaps, paused/playing gap clicks, rapid scrubbing, final stop/restart, pending seek + Play, one-clip preview");
 });

@@ -1,4 +1,5 @@
-import type { MediaSource, Clip } from "./types";
+import type { MediaSource } from "./media";
+import type { Clip } from "./editing";
 
 /** A separate export spanning the whole source keeps the source container; everything else exports to the export container. */
 export function exportExtensionFor(

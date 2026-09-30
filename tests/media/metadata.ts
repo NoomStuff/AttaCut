@@ -5,12 +5,13 @@ import { runMedia, ffmpegBase } from "../../src/main/media/process.ts";
 import { probeSource } from "../../src/main/media/probe.ts";
 import { analyzeCut, exportCut } from "../../src/main/media/cut.ts";
 import { preparePreview } from "../../src/main/media/preview.ts";
+import { verifyOutputStructure } from "../../src/main/media/verify.ts";
 const folder = resolve("work/details");
 await mkdir(folder, { recursive: true });
 await writeFile(join(folder, "captions.srt"), "1\n00:00:00,500 --> 00:00:03,000\nAcross the start\n\n2\n00:00:07,000 --> 00:00:09,500\nAcross the end\n");
 await writeFile(
    join(folder, "chapters.txt"),
-   ";FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=5000\ntitle=First\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=5000\nEND=10000\ntitle=Second\n"
+   ";FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=5000\ntitle=First\nartist=Chapter author\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=5000\nEND=10000\ntitle=Second\n"
 );
 await writeFile(join(folder, "attachment.txt"), "An attachment that must survive unchanged.");
 const sourcePath = join(folder, "multiple-tracks.mkv");
@@ -76,6 +77,40 @@ assert.equal(result.streams.find((stream) => stream.title === "Commentary")?.lan
 assert.equal(result.streams.find((stream) => stream.type === "subtitle")?.disposition["forced"], 1);
 assert.equal(result.streams.filter((stream) => stream.type === "attachment").length, 1);
 assert.equal(result.chapters.length, 2);
+assert.ok(Object.entries(result.chapters[0]!.tags ?? {}).some(([key, value]) => key.toLowerCase() === "artist" && value === "Chapter author"));
+const attachmentCopy = join(folder, "preserved-attachment.txt");
+await runMedia("ffmpeg", [...ffmpegBase, "-dump_attachment:t:0", attachmentCopy, "-i", output, "-t", "0.001", "-map", "0:V:0", "-f", "null", "-"]);
+assert.deepEqual(await readFile(attachmentCopy), await readFile(join(folder, "attachment.txt")));
+const alteredAttachment = join(folder, "altered-attachment.txt");
+await writeFile(alteredAttachment, "An attachment with changed content.");
+const alteredOutput = join(folder, "altered-attachment.mkv");
+await runMedia("ffmpeg", [
+   ...ffmpegBase,
+   "-i",
+   output,
+   "-map",
+   "0",
+   "-map",
+   "-0:t",
+   "-c",
+   "copy",
+   "-attach",
+   alteredAttachment,
+   "-metadata:s:t:0",
+   "mimetype=text/plain",
+   alteredOutput,
+]);
+await assert.rejects(
+   verifyOutputStructure(
+      source,
+      alteredOutput,
+      source.streams.filter((stream) => stream.type === "audio").map((stream) => stream.index),
+      result.duration,
+      undefined,
+      analysis.clip.start
+   ),
+   /changed an attachment/
+);
 assert.equal(result.chapters[0]!.start, 0);
 assert.ok(Math.abs(result.chapters[1]!.end - (analysis.clip.end - analysis.clip.start)) < 0.002);
 const subtitles = await runMedia("ffmpeg", ["-v", "error", "-i", output, "-map", "0:s:0", "-c:s", "srt", "-f", "srt", "-"]);

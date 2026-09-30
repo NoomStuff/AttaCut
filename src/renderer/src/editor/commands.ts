@@ -40,15 +40,30 @@ export const commandDefinitions = {
 } as const;
 export type CommandId = keyof typeof commandDefinitions;
 export interface Command {
+   resolve?: () => (() => void) | undefined;
    feedback?: () => CommandId;
    enabled: () => boolean;
    run: () => void;
 }
 /** Availability and execution resolve the same current action, including after another edit. */
 export function resolvedCommand(resolve: () => (() => void) | undefined): Command {
-   return { enabled: () => !!resolve(), run: () => resolve()?.() };
+   return { resolve, enabled: () => !!resolve(), run: () => resolve()?.() };
 }
 export type Commands = Record<CommandId, Command>;
+/** Buttons, native menus and shortcuts all recheck availability before executing. */
+export function guardCommands(commands: Commands): Commands {
+   return Object.fromEntries(
+      Object.entries(commands).map(([id, command]) => [
+         id,
+         command.resolve
+            ? command
+            : {
+                 ...command,
+                 ...resolvedCommand(() => (command.enabled() ? command.run : undefined)),
+              },
+      ])
+   ) as Commands;
+}
 export const CommandContext = createContext<{ commands: Commands; overrides: Record<string, string[]>; mac: boolean } | null>(null);
 export function isCommandId(id: string): id is CommandId {
    return Object.hasOwn(commandDefinitions, id);
@@ -85,12 +100,13 @@ export function useCommands(commands: Commands, overrides: Record<string, string
       const pointer = () => {
          keyboardFocus = false;
       };
-      const execute = (id: string) => {
+      const execute = (id: string, resolved?: () => void) => {
          // The dialog's open attribute clears the moment a panel dismisses, even though its
          // exit fade still renders, so shortcuts work again immediately.
          if (!isCommandId(id) || latest.current.blocked || document.querySelector("dialog[open]")) return;
          const command = latest.current.commands[id];
-         if (command.enabled()) {
+         const action = resolved ?? (command.resolve ? command.resolve() : command.enabled() ? command.run : undefined);
+         if (action) {
             const feedbackId = command.feedback?.() ?? id;
             document.querySelectorAll<HTMLElement>(`[data-command="${feedbackId}"]`).forEach((button) => {
                button.classList.remove("shortcut-active");
@@ -98,7 +114,7 @@ export function useCommands(commands: Commands, overrides: Record<string, string
                button.classList.add("shortcut-active");
                window.setTimeout(() => button.classList.remove("shortcut-active"), 480);
             });
-            command.run();
+            action();
          }
       };
       const handler = (event: KeyboardEvent) => {
@@ -122,13 +138,16 @@ export function useCommands(commands: Commands, overrides: Record<string, string
             return;
          const binding = bindingFromEvent(event, latest.current.mac);
          const id = commandForBinding(binding, latest.current.overrides);
-         if (!id || !latest.current.commands[id].enabled()) return;
+         if (!id) return;
+         const command = latest.current.commands[id];
+         const action = command.resolve ? command.resolve() : command.enabled() ? command.run : undefined;
+         if (!action) return;
          event.preventDefault();
          // App shortcuts should not turn a mouse-focused button into a keyboard target.
          if (!keyboardFocus && target instanceof HTMLElement && target.closest("button")) target.blur();
          const definition = commandDefinitions[id];
          if (event.repeat && !("repeat" in definition && definition.repeat)) return;
-         execute(id);
+         execute(id, action);
       };
       window.addEventListener("keydown", handler);
       window.addEventListener("pointerdown", pointer);

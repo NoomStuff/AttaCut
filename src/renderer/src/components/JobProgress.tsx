@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faArrowUpFromBracket, faCircleExclamation, faCheck, faXmark, faFolderOpen, faPlay } from "@fortawesome/free-solid-svg-icons";
 import type { ExportJob, JobItem } from "../../../shared/types";
@@ -21,9 +21,20 @@ export function JobProgress({
 }) {
    const [hideSuccess, setHideSuccess] = useState(false);
    const [hideFailures, setHideFailures] = useState(false);
+   const [showStage, setShowStage] = useState(false);
+   useEffect(() => {
+      setShowStage(false);
+      if (!job.running) return;
+      const timer = window.setTimeout(() => setShowStage(true), 3000);
+      return () => window.clearTimeout(timer);
+   }, [job.id, job.running]);
+   const active = job.items.find((item) => item.status === "running");
    const completed = job.items.filter((item) => item.status === "completed");
    const failures = job.items.filter((item) => item.status === "failed" || item.status === "cancelled");
-   const progress = job.items.reduce((sum, item) => sum + item.progress, 0) / job.items.length;
+   const totalDuration = job.items.reduce((sum, item) => sum + (item.duration ?? 1), 0);
+   const progress =
+      job.items.reduce((sum, item) => sum + (item.duration ?? 1) * (["completed", "failed", "cancelled"].includes(item.status) ? 1 : item.progress), 0) /
+      totalDuration;
    const dismissSuccess = () => {
       if (!failures.length || hideFailures) onDismiss();
       else setHideSuccess(true);
@@ -45,8 +56,27 @@ export function JobProgress({
                      <FontAwesomeIcon icon={faArrowUpFromBracket} />
                   </span>
                   <div>
-                     <strong>{job.items.length === 1 ? "Exporting video" : `Exporting ${completed.length + 1} of ${job.items.length}`}</strong>
-                     <small>{job.items.find((item) => item.status === "running")?.name}</small>
+                     <strong>
+                        {job.items.length === 1
+                           ? "Exporting video"
+                           : `Exporting ${
+                                Math.max(
+                                   0,
+                                   job.items.findIndex((item) => item.status === "running")
+                                ) + 1
+                             } of ${job.items.length}`}
+                     </strong>
+                     <small>
+                        {showStage && active?.stage === "checking"
+                           ? `Checking ${active.name}`
+                           : showStage && active?.stage === "saving"
+                             ? `Saving ${active.name}`
+                             : showStage && active?.stage === "encoding"
+                               ? `Encoding ${active.name}`
+                               : showStage && active?.stage === "copying"
+                                 ? `Copying ${active.name}`
+                                 : active?.name}
+                     </small>
                   </div>
                </div>
                <progress max={1} value={progress} />
@@ -102,6 +132,8 @@ export function JobProgress({
                </div>
                <div className="job-actions">
                   <Button
+                     disabled={!failures.some((item) => item.failure?.retryable !== false)}
+                     title={failures.every((item) => item.failure?.retryable === false) ? "Change the cuts or options before exporting again" : undefined}
                      onClick={() => {
                         void window.desktop
                            .retryExport(job.id)
@@ -123,7 +155,12 @@ export function JobProgress({
 }
 
 function Failure({ item }: { item: JobItem }) {
-   const explanation = item.status === "cancelled" ? "Stopped before this file finished." : explainExportError(item.error);
+   const explanation =
+      item.status === "cancelled"
+         ? "Stopped before this file finished."
+         : item.failure && !["unknown", "media"].includes(item.failure.code)
+           ? item.failure.message
+           : explainExportError(item.error);
    return (
       <div className="job-failure-item">
          <b>{item.name}</b>

@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { test, waitForVideo, wrapIpcHandler } from "./app.mjs";
+import { test, waitForVideo, configureIpc } from "./app.mjs";
 import { resolve } from "node:path";
 
 test("opening shows a skeleton, then permits editing while preview loads", async ({ launchApp, profile }) => {
@@ -7,34 +7,16 @@ test("opening shows a skeleton, then permits editing while preview loads", async
    const page = await app.firstWindow();
    await page.getByRole("button", { name: "Import video", exact: true }).first().waitFor();
    // Hold the real probe result so the transient opening state can be inspected reliably.
-   await wrapIpcHandler(app, "source:open", async (original, ...args) => {
-      const result = await original(...args);
-      await new Promise((resolve) => {
-         globalThis.finishOpening = resolve;
-      });
-      return { ...result, url: "media://source/delayed-preview" };
-   });
-   await wrapIpcHandler(app, "preview:prepare", async (prepare, ...args) => {
-      await new Promise((resolve) => {
-         globalThis.finishPreview = resolve;
-      });
-      return prepare(...args);
-   });
-   await app.evaluate(() => {
-      globalThis.keyframeRequests = 0;
-   });
-   await wrapIpcHandler(app, "source:keyframes", async (keys, ...args) => {
-      globalThis.keyframeRequests++;
-      return keys(...args);
-   });
+   await configureIpc(app, "source:open", { after: "opening", patch: { url: "media://source/delayed-preview" } });
+   await configureIpc(app, "preview:prepare", { before: "preview" });
    // Hold playback rather than simulating a successful decoded frame.
    await page.route("media://source/delayed-preview", () => {});
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
    await expect(page.getByRole("status", { name: "Opening video", exact: true })).toBeVisible();
    await expect(page.locator(".loading-editor-transport .play-button")).toBeVisible();
    await page.screenshot({ path: "test-results/loading-source.png" });
-   await expect.poll(() => app.evaluate(() => typeof globalThis.finishOpening)).toBe("function");
-   await app.evaluate(() => globalThis.finishOpening());
+   await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.waiting("opening"))).toBe(true);
+   await app.evaluate(() => globalThis.attacutTestIpc.release("opening"));
    await expect(page.locator(".player-stage video")).toBeVisible();
    await expect(page.locator(".player-stage.pending")).toBeVisible();
    await page.waitForTimeout(1200);
@@ -66,10 +48,10 @@ test("opening shows a skeleton, then permits editing while preview loads", async
    await start.fill("00:01.00");
    await start.press("Tab");
    await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", "1");
-   expect(await app.evaluate(() => globalThis.keyframeRequests)).toBe(0);
+   expect(await app.evaluate(() => globalThis.attacutTestIpc.count("source:keyframes"))).toBe(0);
    await page.getByRole("button", { name: "Snap to keyframes", exact: true }).click();
-   await expect.poll(() => app.evaluate(() => globalThis.keyframeRequests)).toBe(1);
-   await app.evaluate(() => globalThis.finishPreview?.());
+   await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.count("source:keyframes"))).toBe(1);
+   await app.evaluate(() => globalThis.attacutTestIpc.release("preview"));
    await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
@@ -80,14 +62,9 @@ test("a stalled seek keeps the decoded preview visible through both fades", asyn
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
    await waitForVideo(page);
    await expect(page.locator(".player-stage video.frame-ready")).toBeVisible();
-   await wrapIpcHandler(app, "source:frame-time", async (original, ...args) => {
-      await new Promise((release) => {
-         globalThis.releaseFrameTime = release;
-      });
-      return original(...args);
-   });
+   await configureIpc(app, "source:frame-time", { before: "frame" });
    await page.locator(".timeline-viewport").click({ position: { x: 180, y: 20 } });
-   await expect.poll(() => app.evaluate(() => typeof globalThis.releaseFrameTime)).toBe("function");
+   await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.waiting("frame"))).toBe(true);
    const status = page.locator(".preview-loading.delayed");
    await expect(status).toBeVisible();
    await expect(status).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
@@ -106,7 +83,7 @@ test("a stalled seek keeps the decoded preview visible through both fades", asyn
       });
       observer.observe(indicator, { attributes: true, attributeFilter: ["class"] });
    });
-   await app.evaluate(() => globalThis.releaseFrameTime());
+   await app.evaluate(() => globalThis.attacutTestIpc.release("frame"));
    await expect.poll(() => page.evaluate(() => globalThis.fadeOutOpacities)).toBeTruthy();
    const fade = await page.evaluate(() => globalThis.fadeOutOpacities);
    expect(fade.start).toBeLessThan(0.95);
@@ -118,20 +95,11 @@ test("a prepared preview replaces the source frame without a blank flash", async
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();
    await page.getByRole("button", { name: "Import video", exact: true }).waitFor();
-   await wrapIpcHandler(app, "source:open", async (open, ...args) => {
-      const source = await open(...args);
-      globalThis.testPreviewUrl = source.url;
-      return { ...source, streams: source.streams.map((stream) => (stream.type === "audio" ? { ...stream, codec: "unsupported" } : stream)) };
-   });
-   await wrapIpcHandler(app, "preview:prepare", async () => {
-      await new Promise((release) => {
-         globalThis.releasePreview = release;
-      });
-      return `${globalThis.testPreviewUrl}?preview=1`;
-   });
+   await configureIpc(app, "source:open", { rememberUrl: true, unsupportedAudio: true });
+   await configureIpc(app, "preview:prepare", { before: "preview", previewSuffix: "?preview=1" });
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
    await waitForVideo(page);
-   await expect.poll(() => app.evaluate(() => typeof globalThis.releasePreview)).toBe("function");
+   await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.waiting("preview"))).toBe(true);
    await expect(page.locator(".player-stage.pending")).toHaveCount(0);
    await page.locator(".timeline-viewport").click({ position: { x: 400, y: 20 } });
    await page.waitForFunction(() => {
@@ -153,7 +121,7 @@ test("a prepared preview replaces the source frame without a blank flash", async
       });
       observer.observe(video, { attributes: true, attributeFilter: ["src"] });
    });
-   await app.evaluate(() => globalThis.releasePreview());
+   await app.evaluate(() => globalThis.attacutTestIpc.release("preview"));
    await expect.poll(() => page.evaluate(() => globalThis.previewSwapState)).toBeTruthy();
    expect(await page.evaluate(() => globalThis.previewSwapState)).toMatchObject({ held: true, skeleton: false });
    const held = page.locator(".preview-held-frame");
@@ -185,23 +153,13 @@ test("idle time warms dialogs and keyframes before they are requested", async ({
       );
    await debuggerSession.detach();
    expect(await page.locator("dialog[open]").count()).toBe(0);
-   await app.evaluate(() => {
-      globalThis.keyframeRequests = 0;
-      globalThis.keysReady = false;
-   });
-   await wrapIpcHandler(app, "source:keyframes", async (original, ...args) => {
-      globalThis.keyframeRequests++;
-      const keys = await original(...args);
-      globalThis.keysReady = true;
-      return keys;
-   });
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
    await waitForVideo(page);
    const snap = page.getByRole("button", { name: "Snap to keyframes", exact: true });
    await expect(snap).toHaveAttribute("aria-pressed", "false");
-   await expect.poll(() => app.evaluate(() => globalThis.keysReady)).toBe(true);
+   await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.ready("source:keyframes"))).toBe(true);
    await snap.click();
    await expect(snap).toHaveAttribute("aria-pressed", "true");
    await expect(snap).toHaveAttribute("aria-busy", "false");
-   expect(await app.evaluate(() => globalThis.keyframeRequests)).toBe(1);
+   expect(await app.evaluate(() => globalThis.attacutTestIpc.count("source:keyframes"))).toBe(1);
 });

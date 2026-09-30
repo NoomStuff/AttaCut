@@ -42,7 +42,7 @@
    color: var(--muted);
 }
 .time-field input {
-   width: 68px;
+   width: 80px;
    border: 0;
    background: transparent;
    padding: 2px 0;
@@ -55,6 +55,9 @@
 .time-field input:hover {
    background: var(--surface-hover);
    transition-duration: 0ms;
+}
+.time-field input[aria-invalid="true"] {
+   outline: 1px solid var(--danger);
 }
 .clip-duration {
    font-size: 11px;
@@ -162,7 +165,7 @@
       gap: 3px;
    }
    .transport .time-field input {
-      width: 59px;
+      width: 70px;
    }
    .transport .volume-controls {
       gap: 1px;

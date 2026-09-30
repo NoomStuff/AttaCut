@@ -11,6 +11,7 @@ import type {
    ExportPlan,
    PlanRequest,
    CutReport,
+   ExportStage,
 } from "../shared/types.ts";
 import { analyzeRequestSchema, exportExtensionFor, planRequestSchema } from "../shared/types.ts";
 import { analyzeCut, exportCut } from "./media/cut.ts";
@@ -18,7 +19,11 @@ import type { CutAnalysis } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import { protectSource } from "./media/publish.ts";
 import { exportCombined } from "./media/combine.ts";
-import { sanitizeName } from "./media/filename.ts";
+import { sanitizeName } from "../shared/filename";
+import { substantialEncoding } from "../shared/export-policy";
+import { waitForWork } from "./media/shared-work";
+import { appFailure } from "./failure";
+import { recordDiagnostic } from "./diagnostics";
 
 interface StoredPlan {
    plan: ExportPlan;
@@ -30,8 +35,14 @@ interface StoredPlan {
 export class ExportService {
    private plans = new Map<string, StoredPlan>();
    private analysisController = new AbortController();
+   private inspectionController = new AbortController();
+   cancelAnalysis(): void {
+      this.inspectionController.abort();
+      this.inspectionController = new AbortController();
+   }
    private analyses = new Map<string, Promise<CutAnalysis>>();
    cancelPlanning(): void {
+      this.cancelAnalysis();
       this.analysisController.abort();
       this.analysisController = new AbortController();
       this.analyses.clear();
@@ -94,7 +105,15 @@ export class ExportService {
       return results;
    }
    async inspect(source: ProbedSource, request: AnalyzeRequest): Promise<CutReport[]> {
-      return (await this.analyze(source, request)).map(({ clip, method, encodedSeconds, message }) => ({ clip, method, encodedSeconds, message }));
+      const work = this.analyze(source, request);
+      return (await waitForWork(work, this.inspectionController.signal)).map(({ clip, method, encodedSeconds, message, changes, streams }) => ({
+         clip,
+         method,
+         encodedSeconds,
+         message,
+         ...(changes ? { changes } : {}),
+         ...(streams ? { streams } : {}),
+      }));
    }
    /** Per-item destination conflicts; the renderer never reconstructs export naming itself. */
    async checkDestinations(source: ProbedSource, request: PlanRequest): Promise<ExportDestinations> {
@@ -139,6 +158,9 @@ export class ExportService {
             method: analysis.method,
             encodedSeconds: analysis.encodedSeconds,
             message: analysis.message,
+            changes: analysis.changes ?? [],
+            streams: analysis.streams ?? [],
+            duration: analysis.clip.end - analysis.clip.start,
          });
       }
       if (settings.mode === "combined") {
@@ -150,7 +172,12 @@ export class ExportService {
             name,
             outputPath: join(directoryPath, name),
             method: unsupported.length ? ("unsupported" as const) : cuts.some((cut) => cut.method === "boundary") ? ("boundary" as const) : ("copy" as const),
-            message: [...new Set(unsupported.map((cut) => cut.message))].join(" "),
+            message: [...new Set(cuts.map((cut) => cut.message))].join(" "),
+            changes: [...new Set(cuts.flatMap((cut) => cut.changes ?? []))],
+            streams: cuts
+               .flatMap((cut) => cut.streams ?? [])
+               .filter((stream, index, all) => all.findIndex((item) => item.index === stream.index && item.action === stream.action) === index),
+            duration: cuts.reduce((sum, cut) => sum + cut.clip.end - cut.clip.start, 0),
             encodedSeconds: cuts.reduce((sum, cut) => sum + cut.encodedSeconds, 0),
          };
          analyses.clear();
@@ -185,6 +212,10 @@ export class ExportService {
       if (stored.plan.directoryMissing && !approval.createDirectory) throw new Error("Confirm creating the output folder before exporting.");
       if (stored.plan.existingPaths.length && !approval.overwrite) throw new Error("Confirm replacing the existing files before exporting.");
       if (stored.plan.sourcePath && !approval.replaceSource) throw new Error("Confirm replacing the source video before exporting.");
+      if (stored.plan.items.some((item) => item.changes?.length) && !approval.mediaChanges)
+         throw new Error("Confirm the changes to preserved media before exporting.");
+      if (stored.plan.items.some(substantialEncoding) && !approval.substantialEncoding)
+         throw new Error("Confirm re-encoding a substantial part of the video before exporting.");
       if (stored.plan.items.some((item) => item.method === "unsupported")) throw new Error("Some clips cannot be exported with these boundaries.");
       this.runningPlan = stored;
       stored.approval = approval;
@@ -200,6 +231,7 @@ export class ExportService {
             outputPath: item.outputPath,
             status: "queued",
             progress: 0,
+            duration: item.duration ?? item.clip.end - item.clip.start,
             error: null,
          })),
       };
@@ -215,11 +247,15 @@ export class ExportService {
    }
    retry(jobId: string): ExportJob {
       if (!this.job || this.job.id !== jobId || this.running) throw new Error("This export cannot be retried now.");
+      if (!this.job.items.some((item) => item.status !== "completed" && item.failure?.retryable !== false))
+         throw new Error("Change the cuts or options before exporting these files again.");
       for (const item of this.job.items)
-         if (item.status !== "completed") {
+         if (item.status !== "completed" && item.failure?.retryable !== false) {
             item.status = "queued";
             item.error = null;
             item.progress = 0;
+            delete item.failure;
+            delete item.stage;
          }
       this.job.running = true;
       this.controller = new AbortController();
@@ -231,24 +267,38 @@ export class ExportService {
       const stored = this.runningPlan!;
       const signal = this.controller!.signal;
       for (const item of job.items) {
-         if (item.status === "completed") continue;
+         if (item.status !== "queued") continue;
          if (signal.aborted) {
             item.status = "cancelled";
             continue;
          }
          item.status = "running";
+         let recordedStage: ExportStage | undefined;
+         let stageStarted = performance.now();
+         const finishStage = (outcome: "ok" | ReturnType<typeof appFailure>["code"] = "ok") => {
+            if (recordedStage) recordDiagnostic("export:stage", performance.now() - stageStarted, outcome, recordedStage);
+         };
          this.emit(structuredClone(job));
          try {
             if (stored.approval?.createDirectory) await mkdir(stored.plan.directory, { recursive: true });
             await protectSource(stored.source.path, item.outputPath, !!stored.approval?.replaceSource && item.outputPath === stored.plan.sourcePath);
             const cuts = stored.analyses.get(item.id)!;
             const options = {
+               priority: "export" as const,
+               onStage: (stage: ExportStage) => {
+                  if (stage === recordedStage) return;
+                  finishStage();
+                  recordedStage = stage;
+                  stageStarted = performance.now();
+                  item.stage = stage;
+                  this.emit(structuredClone(job));
+               },
                signal,
                audioTracks: stored.audioTracks,
                overwrite: !!stored.approval?.overwrite && stored.plan.existingPaths.includes(item.outputPath),
                replaceSource: !!stored.approval?.replaceSource && item.outputPath === stored.plan.sourcePath,
                onProgress: (value: number) => {
-                  item.progress = value;
+                  item.progress = Math.max(item.progress, Math.min(0.99, value));
                   this.emit(structuredClone(job));
                },
             };
@@ -259,7 +309,9 @@ export class ExportService {
          } catch (error) {
             item.status = signal.aborted ? "cancelled" : "failed";
             item.error = error instanceof Error ? error.message : String(error);
+            item.failure = appFailure(error);
          }
+         finishStage(item.status === "cancelled" ? "cancelled" : (item.failure?.code ?? "ok"));
          this.emit(structuredClone(job));
       }
       job.running = false;

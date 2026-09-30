@@ -131,7 +131,7 @@ export interface StepOptions {
 export function stepBoundary(document: EditDocument, id: string, side: "start" | "end", direction: -1 | 1, options: StepOptions): number {
    const clip = document.clips.find((item) => item.id === id);
    if (!clip) return 0;
-   const floor = clipFloor(document, id, options.viewLength, options.frameStep);
+   const floor = clipFloor(document, id, 0, options.frameStep);
    const target = options.snapping
       ? adjacentKeyframe(
            clip[side],
@@ -143,7 +143,7 @@ export function stepBoundary(document: EditDocument, id: string, side: "start" |
       : clip[side] + direction * (options.step ?? options.frameStep);
    return resolveBoundary(document, id, side, target, {
       duration: options.duration,
-      viewLength: options.viewLength,
+      viewLength: 0,
       frameStep: options.frameStep,
       snapping: false,
    });

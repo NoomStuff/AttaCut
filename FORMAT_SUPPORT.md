@@ -1,4 +1,4 @@
-# Format support in 0.11.0
+# Format support
 
 Tested on Windows with Electron 44.4.5 and the pinned FFmpeg builds: 8.1.2 on Windows and Linux, 9.0.2 on macOS. The app uses FFmpeg to read the source and export clips. Chromium handles playback when it can; a temporary compatible preview handles the other tested formats.
 

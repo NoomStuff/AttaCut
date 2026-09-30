@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { clipColor, nextClipColor } from "./colors";
-import { deleteClip, editorReducer, emptyEditor, newDocument, splitClip } from "./model";
+import { addGap, deleteClip, editorReducer, emptyEditor, newDocument, splitClip } from "./model";
 
 it("keeps identities unique and neighboring base colors distinct through repeated splits", () => {
    let state = editorReducer(emptyEditor, { type: "load", document: newDocument(100) });
@@ -13,9 +13,17 @@ it("keeps identities unique and neighboring base colors distinct through repeate
    }
 });
 
-it("skips both neighboring base colours when continuing the sequence", () => {
+it("reuses a free slot while avoiding both neighboring base colours", () => {
    const clips = [0, 1, 4].map((color, index) => ({ id: String(index), start: index, end: index + 1, color }));
-   expect(nextClipColor(clips, clips[0], clips[1])).toBe(7);
+   expect(nextClipColor(clips, clips[0], clips[1])).toBe(2);
+});
+
+it("restores a removed middle clip's free color without recoloring its neighbors", () => {
+   const clips = [0, 1, 2, 3, 4, 5, 6].map((color, index) => ({ id: String(index), start: index, end: index + 1, color }));
+   const removed = deleteClip({ clips, selectedId: "3" }, "3");
+   const restored = addGap(removed, 3.5, 7);
+   expect(restored.clips.map((clip) => clip.color)).toEqual(clips.map((clip) => clip.color));
+   expect(restored.clips.filter((clip) => clip.id !== restored.selectedId)).toEqual(removed.clips);
 });
 
 it("does not recolour existing clips when an edit makes equal base colours adjacent", () => {

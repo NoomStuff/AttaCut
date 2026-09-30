@@ -1,4 +1,6 @@
-import { constants, copyFile, link, rename, rm, stat } from "node:fs/promises";
+import { link, open, rename, rm, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { resolve } from "node:path";
 
@@ -16,9 +18,18 @@ export async function publishOutput(temporary: string, destination: string, over
    } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (!["EXDEV", "EPERM", "ENOTSUP", "ENOSYS"].includes(code ?? "")) throw error;
-      await copyFile(temporary, destination, constants.COPYFILE_EXCL);
+      const output = await open(destination, "wx");
+      try {
+         await pipeline(createReadStream(temporary), output.createWriteStream());
+      } catch (copyError) {
+         await output.close().catch(() => undefined);
+         await rm(destination, { force: true }).catch(() => undefined);
+         throw copyError;
+      } finally {
+         await output.close().catch(() => undefined);
+      }
    }
-   await rm(temporary, { force: true });
+   await rm(temporary, { force: true }).catch(() => undefined);
 }
 
 /** Remove a work directory. Windows keeps handles open briefly after a killed child, so retry. */

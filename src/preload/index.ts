@@ -1,11 +1,14 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DesktopApi, ExportJob, UpdateStatus } from "../shared/types";
 import { IpcEvents, type IpcCalls } from "../shared/ipc";
-function invoke<K extends keyof IpcCalls>(
+import type { IpcResult } from "../shared/failure";
+async function invoke<K extends keyof IpcCalls>(
    channel: K,
    ...args: IpcCalls[K]["request"] extends void ? [] : [IpcCalls[K]["request"]]
 ): Promise<IpcCalls[K]["response"]> {
-   return ipcRenderer.invoke(channel, ...args) as Promise<IpcCalls[K]["response"]>;
+   const result = (await ipcRenderer.invoke(channel, ...args)) as IpcResult<IpcCalls[K]["response"]>;
+   if (!result.ok) throw result.error;
+   return result.value;
 }
 function listen<T>(channel: string, callback: (value: T) => void): () => void {
    const handler = (_event: Electron.IpcRendererEvent, value: T) => callback(value);
@@ -22,6 +25,7 @@ const api: DesktopApi = {
    onUpdateStatus: (callback) => listen<UpdateStatus>(IpcEvents.updateStatus, callback),
    chooseSource: () => invoke("source:choose"),
    openSource: (path) => invoke("source:open", path),
+   closeSource: () => invoke("source:close"),
    filePath: (file) => webUtils.getPathForFile(file),
    chooseDirectory: (current) => invoke("directory:choose", current),
    savePreferences: (value) => invoke("preferences:save", value),
@@ -35,6 +39,7 @@ const api: DesktopApi = {
    cancelScrub: () => invoke("audio:cancel"),
    frameTime: (sourceId, time, direction) => invoke("source:frame-time", { sourceId, time, direction }),
    cancelExportPlanning: () => invoke("export:cancel-planning"),
+   cancelExportAnalysis: () => invoke("export:cancel-analysis"),
    flushState: (value) => invoke("state:flush", value),
    onFlush: (callback) => listen<void>(IpcEvents.flush, callback),
    onOpenFile: (callback) => listen<string>(IpcEvents.openFile, callback),
@@ -49,6 +54,7 @@ const api: DesktopApi = {
    openOutput: (path) => invoke("output:open", path),
    openExternal: (url) => invoke("open:external", url),
    openNotices: () => invoke("notices:open"),
+   exportDiagnostics: () => invoke("diagnostics:export"),
    windowAction: (action) => ipcRenderer.send(IpcEvents.windowAction, action),
    rendererReady: () => ipcRenderer.send(IpcEvents.rendererReady),
    onJob: (callback) => listen<ExportJob>(IpcEvents.jobProgress, callback),

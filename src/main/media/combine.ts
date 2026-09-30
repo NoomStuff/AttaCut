@@ -1,5 +1,7 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { publishOutput, removeTemporary } from "./publish.ts";
+import { withTemporaryOutput } from "./transaction";
+import { primaryVideo } from "../../shared/types";
+import { writeFile } from "node:fs/promises";
+import { publishOutput } from "./publish.ts";
 import { dirname, extname, join } from "node:path";
 import type { ProbedSource } from "./probe.ts";
 import { assertSourceUnchanged } from "./probe.ts";
@@ -11,22 +13,27 @@ import { ffconcatList, isLosslessAudio, dispositionFlags, serializeChapters } fr
 import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
 
 export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], destination: string, options: CutOptions): Promise<void> {
-   const temporary = await mkdtemp(join(dirname(destination), ".attacut-combined-"));
-   const selectedAudio = source.streams.filter(
-      (stream) => stream.type === "audio" && (options.audioTracks === undefined || options.audioTracks.includes(stream.index))
-   );
-   try {
+   return withTemporaryOutput(dirname(destination), ".attacut-combined-", async (temporary) => {
+      const selectedAudio = source.streams.filter(
+         (stream) => stream.type === "audio" && (options.audioTracks === undefined || options.audioTracks.includes(stream.index))
+      );
       const paths: string[] = [];
       const duration = cuts.reduce((sum, cut) => sum + cut.clip.end - cut.clip.start, 0);
+      const totalWork = duration * 3;
+      let finishedWork = 0;
       for (const [index, cut] of cuts.entries()) {
          const rawPath = join(temporary, `raw-${index}${extname(destination)}`);
          const path = join(temporary, `clip-${index}${extname(destination)}`);
+         const clipDuration = cut.clip.end - cut.clip.start;
          // Verification of each cut happens on the concatenated output below, so the
          // intermediate files skip it instead of decoding every clip twice.
          await exportCut(source, cut, rawPath, {
             ...options,
             verify: false,
-            onProgress: (fraction) => options.onProgress?.((index + fraction) / (cuts.length + 1)),
+            onStage: (stage) => {
+               if (stage === "copying" || stage === "encoding") options.onStage?.(stage);
+            },
+            onProgress: (fraction) => options.onProgress?.((0.85 * (finishedWork + clipDuration * fraction)) / totalWork),
          });
          // Remove audio hidden by edit lists before concatenation; otherwise its
          // preroll can overlap the preceding clip by seconds.
@@ -52,8 +59,13 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
                "disabled",
                path,
             ],
-            { ...options, duration: cut.clip.end - cut.clip.start }
+            {
+               ...options,
+               duration: clipDuration,
+               onProgress: (fraction) => options.onProgress?.((0.85 * (finishedWork + clipDuration * (1 + fraction))) / totalWork),
+            }
          );
+         finishedWork += clipDuration * 2;
          paths.push(path);
       }
       const list = join(temporary, "clips.ffconcat");
@@ -86,13 +98,14 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
                start: chapterOffset + Math.max(chapter.start, cut.clip.start) - cut.clip.start,
                end: chapterOffset + Math.min(chapter.end, cut.clip.end) - cut.clip.start,
                title: chapter.title,
+               ...(chapter.tags ? { tags: chapter.tags } : {}),
             }));
          chapterOffset += cut.clip.end - cut.clip.start;
          return result;
       });
       const chapterPath = join(temporary, "chapters.ffmetadata");
       if (chapters.length) await writeFile(chapterPath, serializeChapters(chapters));
-      const video = source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!;
+      const video = primaryVideo(source)!;
       await runMedia(
          "ffmpeg",
          [
@@ -127,13 +140,16 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
             String(duration),
             output,
          ],
-         { ...options, duration }
+         { ...options, duration, onProgress: (fraction) => options.onProgress?.((0.85 * (finishedWork + duration * fraction)) / totalWork) }
       );
+      options.onStage?.("checking");
+      options.onProgress?.(0.9);
       let offset = 0;
       for (const cut of cuts) {
          if (cut.verifyTimes?.length) await verifyCopiedFrames(source, output, cut.clip.start - offset, cut.verifyTimes, options.signal);
          if (cut.encodedVerifyTimes?.length) await verifyEncodedFrames(source, output, cut.clip.start - offset, cut.encodedVerifyTimes, options.signal);
          offset += cut.clip.end - cut.clip.start;
+         options.onProgress?.(0.9 + (0.07 * offset) / duration);
       }
       options.signal?.throwIfAborted();
       await verifyOutputStructure(
@@ -143,11 +159,13 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
          duration,
          options.signal,
          cuts[0]!.clip.start,
-         containerKeepsData(extname(destination).toLowerCase()) ? [] : ["data"]
+         containerKeepsData(extname(destination).toLowerCase()) ? [] : ["data"],
+         Math.max(0, ...cuts.map((cut) => cut.frameDuration ?? 0)) || undefined,
+         cuts.every((cut) => cut.frameCount !== undefined) ? cuts.reduce((sum, cut) => sum + cut.frameCount!, 0) : undefined
       );
       await assertSourceUnchanged(source);
+      options.onStage?.("saving");
+      options.onProgress?.(0.99);
       await publishOutput(output, destination, options.overwrite, source.path, options.replaceSource);
-   } finally {
-      await removeTemporary(temporary);
-   }
+   });
 }

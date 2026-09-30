@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { substantialEncoding } from "../../../shared/export-policy";
+import { sanitizeName } from "../../../shared/filename";
 import type { Clip, ExportJob, ExportPlan, CutReport, MediaSource, Preferences } from "../../../shared/types";
-import { errorText } from "../lib/errors";
+import { errorText, isCancellation } from "../lib/errors";
 import { rememberAudioSelection, resolveAudioSelection } from "../playback/audioSelection";
 
 export interface ExportDraft {
@@ -9,7 +11,7 @@ export interface ExportDraft {
    mode: Preferences["exportMode"];
    audioTracks: number[];
    name: string;
-   rows: { clip: Clip; included: boolean; name: string }[];
+   rows: { clipId: string; included: boolean; name: string }[];
 }
 
 export interface ExportOptions {
@@ -41,42 +43,60 @@ export function useExport({
    const sourceAudio = source.streams.filter((stream) => stream.type === "audio");
    const [directory, setDirectory] = useState(saved?.directory ?? (preferences.outputDirectory || source.directory));
    const [mode, setMode] = useState<Preferences["exportMode"]>(clips.length === 1 ? "combined" : (saved?.mode ?? preferences.exportMode));
-   const [audioTracks, setAudioTracks] = useState(saved?.audioTracks ?? resolveAudioSelection(sourceAudio, preferences.exportAudio, true));
+   const [audioTracks, updateAudioTracks] = useState(saved?.audioTracks ?? resolveAudioSelection(sourceAudio, preferences.exportAudio, true));
+   const setAudioTracks = (selected: number[]) => {
+      updateAudioTracks(selected);
+      onPreferences((current) => ({ ...current, exportAudio: rememberAudioSelection(sourceAudio, selected, true) }));
+   };
    const [name, setName] = useState(saved?.name ?? `${source.name.slice(0, -source.extension.length)} (Trim)`);
    const [rows, setRows] = useState(() =>
       clips.map((clip, index) => ({
          clip,
-         included: saved?.rows.find((row) => row.clip.id === clip.id)?.included ?? true,
-         name: saved?.rows.find((row) => row.clip.id === clip.id)?.name ?? `${source.name.slice(0, -source.extension.length)} (${index + 1})`,
+         included: saved?.rows.find((row) => row.clipId === clip.id)?.included ?? true,
+         name: saved?.rows.find((row) => row.clipId === clip.id)?.name ?? `${source.name.slice(0, -source.extension.length)} (${index + 1})`,
       }))
    );
    useEffect(() => {
-      onDraft({ sourceId: source.id, directory, mode, audioTracks, name, rows });
-   }, [source.id, directory, mode, audioTracks, name, rows, onDraft]);
-   // Panel choices persist as export preferences; the updater form keeps this from
-   // re-running (and from clobbering) when unrelated preferences change while the panel is open.
+      onDraft({
+         sourceId: source.id,
+         directory,
+         mode: clips.length === 1 ? preferences.exportMode : mode,
+         audioTracks,
+         name,
+         rows: rows.map(({ clip, included, name }) => ({ clipId: clip.id, included, name })),
+      });
+   }, [source.id, directory, mode, clips.length, preferences.exportMode, audioTracks, name, rows, onDraft]);
+   // A single clip requires combined mode but must not overwrite the multi-clip preference.
    useEffect(() => {
-      const exportAudio = rememberAudioSelection(
-         source.streams.filter((stream) => stream.type === "audio"),
-         audioTracks
-      );
-      onPreferences((current) =>
-         current.exportMode === mode && JSON.stringify(current.exportAudio) === JSON.stringify(exportAudio)
-            ? current
-            : { ...current, exportMode: mode, exportAudio }
-      );
-   }, [source, mode, audioTracks, onPreferences]);
+      if (clips.length > 1) onPreferences((current) => (current.exportMode === mode ? current : { ...current, exportMode: mode }));
+   }, [clips.length, mode, onPreferences]);
    const [confirmation, setConfirmation] = useState<ExportPlan | null>(null);
+   const normalizeName = (index?: number) => {
+      if (index === undefined) {
+         setName(sanitizeName(name));
+         return;
+      }
+      setRows((current) => {
+         const stem = sanitizeName(current[index]!.name);
+         const others = new Set(current.filter((_, i) => i !== index).map((row) => sanitizeName(row.name).toLowerCase()));
+         let result = stem;
+         for (let suffix = 2; others.has(result.toLowerCase()); suffix++) result = `${stem} (${suffix})`;
+         return current.map((row, i) => (i === index ? { ...row, name: result } : row));
+      });
+   };
    const [replaceSourceChecked, setReplaceSourceChecked] = useState(false);
    const [conflicts, setConflicts] = useState<Map<string, string | null>>(() => new Map());
-   const request = {
-      sourceId: source.id,
-      directory,
-      mode,
-      audioTracks,
-      name,
-      items: rows.filter((row) => row.included).map((row, index) => ({ clip: row.clip, name: mode === "combined" ? `Clip ${index + 1}` : row.name })),
-   };
+   const request = useMemo(
+      () => ({
+         sourceId: source.id,
+         directory,
+         mode,
+         audioTracks,
+         name,
+         items: rows.filter((row) => row.included).map((row, index) => ({ clip: row.clip, name: mode === "combined" ? `Clip ${index + 1}` : row.name })),
+      }),
+      [source.id, directory, mode, audioTracks, name, rows]
+   );
    const [error, setError] = useState<string | null>(null);
    const [starting, setStarting] = useState(false);
    const [analysis, setAnalysis] = useState<CutReport[] | null>(null);
@@ -90,17 +110,16 @@ export function useExport({
          .then((items) => {
             if (!cancelled) setAnalysis(items);
          })
-         .catch(() => {
-            // The note is informational; click-time planning still reports real problems.
+         .catch((value: unknown) => {
+            if (!cancelled && !isCancellation(errorText(value))) setError(errorText(value));
          });
       return () => {
          cancelled = true;
-         void window.desktop.cancelExportPlanning();
+         void window.desktop.cancelExportAnalysis();
       };
    }, [source.id, clips, mode, audioTracks]);
    const valid = request.items.length > 0 && !!directory.trim() && (mode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim()));
    // Main reports conflicts per clip, so the panel never replicates export naming rules.
-   const requestKey = JSON.stringify(request);
    useEffect(() => {
       let cancelled = false;
       setConflicts(new Map());
@@ -119,7 +138,7 @@ export function useExport({
          cancelled = true;
          window.clearTimeout(timer);
       };
-   }, [requestKey, valid]);
+   }, [request, valid]);
    const start = async (approved?: ExportPlan) => {
       if (!valid || starting) return;
       setStarting(true);
@@ -129,7 +148,10 @@ export function useExport({
          const plan = approved ?? (await window.desktop.planExport(request));
          const unsupported = plan.items.find((item) => item.method === "unsupported");
          if (unsupported) throw new Error(unsupported.message);
-         if (!approved && (plan.directoryMissing || plan.existingPaths.length)) {
+         if (
+            !approved &&
+            (plan.directoryMissing || plan.existingPaths.length || plan.items.some(substantialEncoding) || plan.items.some((item) => item.changes?.length))
+         ) {
             setConfirmation(plan);
             setReplaceSourceChecked(false);
             setStarting(false);
@@ -141,10 +163,17 @@ export function useExport({
          }
          const job = await window.desktop.startExport(
             plan.id,
-            approved ? { createDirectory: plan.directoryMissing, overwrite: plan.existingPaths.length > 0, replaceSource: !!plan.sourcePath } : undefined
+            approved
+               ? {
+                    createDirectory: plan.directoryMissing,
+                    overwrite: plan.existingPaths.length > 0,
+                    replaceSource: !!plan.sourcePath,
+                    substantialEncoding: plan.items.some(substantialEncoding),
+                    mediaChanges: plan.items.some((item) => item.changes?.length),
+                 }
+               : undefined
          );
          setConfirmation(null);
-         onPreferences((current) => ({ ...current, exportMode: mode, exportAudio: rememberAudioSelection(sourceAudio, audioTracks) }));
          onStarted(job);
          onClose();
       } catch (value) {
@@ -164,6 +193,7 @@ export function useExport({
       setAudioTracks,
       name,
       setName,
+      normalizeName,
       rows,
       setRows,
       confirmation,

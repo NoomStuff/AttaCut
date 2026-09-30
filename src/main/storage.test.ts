@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rmdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rmdir, rm, writeFile, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -16,6 +16,80 @@ const session = savedSessionSchema.parse({
 });
 
 describe("Storage", () => {
+   it("discards stale saves during reset and flushes the completed reset", async () => {
+      const directory = await folder();
+      try {
+         const storage = new Storage(directory);
+         storage.preferences = preferencesSchema.parse({ theme: "light" });
+         storage.session = session;
+         await storage.save();
+         const reset = storage.reset();
+         expect(storage.reset()).toBe(reset);
+         storage.preferences = preferencesSchema.parse({ theme: "light" });
+         storage.session = session;
+         const lateSave = storage.save();
+         await storage.flush();
+         await Promise.all([reset, lateSave]);
+         expect(storage.preferences).toEqual(defaultPreferences);
+         expect(storage.session).toBeNull();
+         const restored = new Storage(directory);
+         await restored.load();
+         expect(restored.preferences).toEqual(defaultPreferences);
+         expect(restored.session).toBeNull();
+      } finally {
+         await rm(directory, { recursive: true, force: true });
+      }
+   });
+   it("retains in-memory preferences and edits when reset cannot write", async () => {
+      const directory = await folder();
+      try {
+         const storage = new Storage(directory);
+         storage.preferences = preferencesSchema.parse({ theme: "light" });
+         storage.session = session;
+         await storage.save();
+         await mkdir(join(directory, "settings.json.tmp"));
+         await expect(storage.reset()).rejects.toThrow();
+         expect(storage.preferences.theme).toBe("light");
+         expect(storage.session).toEqual(session);
+      } finally {
+         await rm(directory, { recursive: true, force: true });
+      }
+   });
+   it("retains newer documents before saving the current format", async () => {
+      const directory = await folder();
+      try {
+         const newer = JSON.stringify({ version: 99, session, preferences: defaultPreferences });
+         await writeFile(join(directory, "settings.json"), newer);
+         await writeFile(join(directory, "session.json"), newer);
+         const storage = new Storage(directory);
+         await storage.load();
+         expect(storage.warning).toBeTruthy();
+         await storage.save();
+         const retained = (await readdir(directory)).filter((name) => name.includes(".unreadable-"));
+         expect(retained).toHaveLength(2);
+         for (const name of retained) expect(await readFile(join(directory, name), "utf8")).toBe(newer);
+      } finally {
+         await rm(directory, { recursive: true, force: true });
+      }
+   });
+   it("does not resurrect old preferences or edits from backups after reset", async () => {
+      const directory = await folder();
+      try {
+         const storage = new Storage(directory);
+         storage.preferences = preferencesSchema.parse({ theme: "light" });
+         storage.session = session;
+         await storage.save();
+         await storage.reset();
+         await writeFile(join(directory, "settings.json"), "broken");
+         await writeFile(join(directory, "session.json"), "broken");
+         const restored = new Storage(directory);
+         await restored.load();
+         expect(restored.preferences).toEqual(defaultPreferences);
+         expect(restored.session).toBeNull();
+      } finally {
+         await rm(directory, { recursive: true, force: true });
+      }
+   });
    it("keeps the export folder only in memory for this run", async () => {
       const directory = await folder();
       try {

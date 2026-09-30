@@ -1,11 +1,12 @@
 import type { Clip } from "../../../shared/types";
 import { clipColorCount } from "../../../shared/defaults";
 
-/** Continue the sequence, skipping base colours used by either new neighbour. */
+/** Reuse the first free palette slot, skipping either neighbour's base colour. */
 export function nextClipColor(clips: Clip[], left?: Clip, right?: Clip): number {
-   let color = Math.max(-1, ...clips.map((clip) => clip.color)) + 1;
+   const used = new Set(clips.map((clip) => clip.color));
+   let color = 0;
    const blocked = new Set([left, right].filter((clip) => clip !== undefined).map((clip) => clip.color % clipColorCount));
-   while (blocked.has(color % clipColorCount)) color++;
+   while (used.has(color) || blocked.has(color % clipColorCount)) color++;
    return color;
 }
 

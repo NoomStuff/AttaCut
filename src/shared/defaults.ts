@@ -1,4 +1,4 @@
-import type { Preferences } from "./types";
+import type { Preferences } from "./preferences";
 
 // Renderer defaults must stay independent of the main process validation library.
 export const clipColorCount = 5;

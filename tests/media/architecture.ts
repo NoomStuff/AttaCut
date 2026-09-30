@@ -5,8 +5,37 @@ import { ffmpegBase, runMedia } from "../../src/main/media/process.ts";
 import { probeSource } from "../../src/main/media/probe.ts";
 import { ExportService } from "../../src/main/exports.ts";
 import { extractScrubPcm } from "../../src/main/media/scrub-audio.ts";
+import { verifyOutputStructure } from "../../src/main/media/verify.ts";
 
 const directory = await mkdtemp(resolve("work/architecture-test-"));
+// Identical pictures defeat SSIM as a timing check. Dropping one frame must still fail.
+const staticPath = join(directory, "static.mp4");
+const missingFrame = join(directory, "missing-frame.mp4");
+await runMedia("ffmpeg", [...ffmpegBase, "-f", "lavfi", "-i", "color=size=64x64:rate=30", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", staticPath]);
+await runMedia("ffmpeg", [...ffmpegBase, "-i", staticPath, "-frames:v", "59", "-c", "copy", missingFrame]);
+await assert.rejects(verifyOutputStructure(await probeSource(staticPath), missingFrame, [], 2, undefined, 0, [], 1 / 30, 60), /frame count/);
+const audioTail = join(directory, "audio-tail.mp4");
+await runMedia("ffmpeg", [
+   ...ffmpegBase,
+   "-t",
+   "2",
+   "-i",
+   resolve("work/fixture.mp4"),
+   "-t",
+   "4",
+   "-i",
+   resolve("work/fixture.mp4"),
+   "-map",
+   "0:v:0",
+   "-map",
+   "1:a:0",
+   "-c",
+   "copy",
+   audioTail,
+]);
+const extended = await probeSource(audioTail);
+assert.ok(extended.videoInterval && extended.videoInterval.end < 3);
+assert.ok(extended.duration > 3.9, "The source extent retains the audio tail rather than silently cropping it");
 const path = join(directory, "two-video.mkv");
 await runMedia("ffmpeg", [...ffmpegBase, "-i", resolve("work/fixture.mp4"), "-map", "0:v:0", "-map", "0:v:0", "-map", "0:a:0", "-t", "2", "-c", "copy", path]);
 const source = await probeSource(path);
@@ -60,7 +89,8 @@ const telemetryPlan = await service.plan(transport, {
    items: [{ name: "without-telemetry", clip: { id: "t", color: 0, start: 0, end: transport.duration } }],
 });
 assert.match(telemetryPlan.items[0]!.message, /telemetry tracks/);
-service.start(telemetryPlan.id);
+assert.throws(() => service.start(telemetryPlan.id), /Confirm the changes/);
+service.start(telemetryPlan.id, { mediaChanges: true });
 await service.waitForIdle();
 assert.equal(service.current?.items[0]?.status, "completed", service.current?.items[0]?.error ?? "");
 const telemetryOutput = await probeSource(telemetryPlan.items[0]!.outputPath);

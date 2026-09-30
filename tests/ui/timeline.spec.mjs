@@ -6,6 +6,117 @@ import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 // Prefer the packaged binary when it has been bundled; fall back to PATH for dev runs.
 
+test("focused time fields reveal resolved precision without creating another edit", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const field = page.getByRole("textbox", { name: "Clip start", exact: true });
+   await field.fill("00:01.23");
+   await field.press("Tab");
+   const handle = page.getByRole("slider", { name: "Clip 1 start", exact: true });
+   await expect.poll(async () => Number(await handle.getAttribute("aria-valuenow"))).toBeCloseTo(1.233333333, 5);
+   const before = await handle.getAttribute("aria-valuenow");
+   await expect(page.locator(".player-excluded")).toHaveClass(/hidden/);
+   await expect(page.getByRole("button", { name: "Add clip in gap", exact: true })).toBeEnabled();
+   await field.click();
+   await expect(field).toHaveValue("00:01.233333");
+   await field.press("Tab");
+   expect(await handle.getAttribute("aria-valuenow")).toBe(before);
+   await page.locator(".title-filename").click();
+   await page.keyboard.press(process.platform === "darwin" ? "Meta+Z" : "Control+Z");
+   await expect(handle).toHaveAttribute("aria-valuenow", "0");
+});
+
+test("frame stepping advances from the included end frame and can cross the cutoff", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   await page.locator("video").evaluate((video) => {
+      const record = (_now, metadata) => {
+         globalThis.presentedFrameTime = metadata.mediaTime;
+         video.requestVideoFrameCallback(record);
+      };
+      video.requestVideoFrameCallback(record);
+   });
+   const end = page.getByRole("textbox", { name: "Clip end", exact: true });
+   await end.fill("00:02.00");
+   await end.press("Tab");
+   await page.getByRole("slider", { name: "Clip 1 end", exact: true }).click();
+   const video = page.locator("video");
+   const atFrame = async (time) => {
+      await expect.poll(() => video.evaluate((element) => element.currentTime)).toBeCloseTo(time, 4);
+      await expect.poll(() => page.evaluate(() => globalThis.presentedFrameTime)).toBeCloseTo(time, 4);
+   };
+   await atFrame(2 - 1 / 30);
+   await page.keyboard.press(",");
+   await atFrame(2 - 2 / 30);
+   await page.keyboard.press(".");
+   await atFrame(2 - 1 / 30);
+   await page.keyboard.press(".");
+   await atFrame(2);
+});
+
+test("touching clip handles inspect their own included frame while held", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   await page.locator("video").evaluate((video) => {
+      const record = (_now, metadata) => {
+         globalThis.presentedFrameTime = metadata.mediaTime;
+         video.requestVideoFrameCallback(record);
+      };
+      video.requestVideoFrameCallback(record);
+   });
+   const viewport = await page.locator(".timeline-viewport").boundingBox();
+   await page.mouse.click(viewport.x + (viewport.width * 2) / 18, viewport.y + 36);
+   await waitForPlaybackTime(page, 2);
+   await page.keyboard.press("s");
+   const left = page.getByRole("slider", { name: "Clip 1 end", exact: true });
+   const right = page.getByRole("slider", { name: "Clip 2 start", exact: true });
+   await expect(right).toBeVisible();
+   const seam = Number(await left.getAttribute("aria-valuenow"));
+   for (const [handle, frame] of [
+      [left, seam - 1 / 30],
+      [right, seam],
+   ]) {
+      const bounds = await handle.boundingBox();
+      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+      await page.mouse.down();
+      await expect.poll(() => page.evaluate(() => globalThis.presentedFrameTime)).toBeCloseTo(frame, 4);
+      await page.mouse.up();
+      await expect.poll(() => page.evaluate(() => globalThis.presentedFrameTime)).toBeCloseTo(frame, 4);
+   }
+});
+
+test("keyframe ticks stay at their source position while a clip edge follows a drag", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   await page.getByRole("button", { name: "Snap to keyframes", exact: true }).click();
+   const tick = page.locator(".keyframe-tick").nth(2);
+   await expect(tick).toBeVisible();
+   const keyframe = await tick.getAttribute("data-time");
+   const handle = await page.getByRole("slider", { name: "Clip 1 start", exact: true }).boundingBox();
+   const viewport = await page.locator(".timeline-viewport").boundingBox();
+   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+   await page.mouse.down();
+   await page.evaluate((keyframe) => {
+      globalThis.tickPositions = [];
+      const record = () => {
+         const tick = document.querySelector(`.keyframe-tick[data-time="${keyframe}"]`);
+         if (tick) globalThis.tickPositions.push(tick.getBoundingClientRect().x);
+         if (globalThis.tickPositions.length < 20) globalThis.requestAnimationFrame(record);
+      };
+      globalThis.requestAnimationFrame(record);
+   }, keyframe);
+   await page.mouse.move(viewport.x + (viewport.width * 2) / 18, handle.y + handle.height / 2, { steps: 8 });
+   await page.waitForFunction(() => globalThis.tickPositions.length >= 12);
+   const positions = await page.evaluate(() => globalThis.tickPositions);
+   expect(Math.max(...positions) - Math.min(...positions)).toBeLessThan(1.5);
+   await page.mouse.up();
+   await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", "2");
+});
+
 test("timeline", async ({ launchApp, profile }) => {
    const ffmpeg =
       process.env.FFMPEG_PATH ??

@@ -1,49 +1,44 @@
-import type {
-   AnalyzeRequest,
-   DesktopApi,
-   ExportApproval,
-   FrameRequest,
-   FrameTimeRequest,
-   PlanRequest,
-   Preferences,
-   PreviewRequest,
-   SavedSession,
-   ScrubRequest,
-} from "./types";
+import type { z } from "zod";
+import type { DesktopApi } from "./desktop";
+import type { ipcRequestSchemas } from "./ipc-requests";
 type Result<K extends keyof DesktopApi> = Awaited<ReturnType<DesktopApi[K]>>;
-type Call<Request, Response> = { request: Request; response: Response };
-export interface IpcCalls {
-   "app:bootstrap": Call<void, Result<"bootstrap">>;
-   "update:check": Call<void, Result<"checkForUpdate">>;
-   "update:download": Call<string, void>;
-   "update:restart": Call<void, void>;
-   "source:choose": Call<void, string | null>;
-   "source:open": Call<string, Result<"openSource">>;
-   "source:keyframes": Call<string, number[]>;
-   "source:frame-time": Call<FrameTimeRequest, number>;
-   "directory:choose": Call<string, string | null>;
-   "preferences:save": Call<Preferences, void>;
-   "session:save": Call<SavedSession, void>;
-   "state:flush": Call<{ preferences: Preferences; session: SavedSession | null }, void>;
-   "app:factory-reset": Call<void, void>;
-   "window:title": Call<string, void>;
-   "preview:prepare": Call<PreviewRequest, string>;
-   "preview:cancel": Call<void, void>;
-   "audio:scrub": Call<ScrubRequest, Result<"scrubAudio">>;
-   "audio:cancel": Call<void, void>;
-   "frame:export": Call<FrameRequest, string>;
-   "export:plan": Call<PlanRequest, Result<"planExport">>;
-   "export:check-destinations": Call<PlanRequest, Result<"checkExportDestinations">>;
-   "export:analyze": Call<AnalyzeRequest, Result<"analyzeExport">>;
-   "export:cancel-planning": Call<void, void>;
-   "export:start": Call<{ id: string; approval: ExportApproval | undefined }, Result<"startExport">>;
-   "export:cancel": Call<void, void>;
-   "export:retry": Call<string, Result<"retryExport">>;
-   "output:open": Call<string, void>;
-   "output:reveal": Call<string, void>;
-   "open:external": Call<string, void>;
-   "notices:open": Call<void, void>;
+interface IpcResponses {
+   "app:bootstrap": Result<"bootstrap">;
+   "update:check": Result<"checkForUpdate">;
+   "update:download": void;
+   "update:restart": void;
+   "source:choose": string | null;
+   "source:open": Result<"openSource">;
+   "source:close": void;
+   "source:keyframes": number[];
+   "source:frame-time": number;
+   "directory:choose": string | null;
+   "preferences:save": void;
+   "session:save": void;
+   "state:flush": void;
+   "app:factory-reset": void;
+   "window:title": void;
+   "preview:prepare": string;
+   "preview:cancel": void;
+   "audio:scrub": Result<"scrubAudio">;
+   "audio:cancel": void;
+   "frame:export": string;
+   "export:plan": Result<"planExport">;
+   "export:check-destinations": Result<"checkExportDestinations">;
+   "export:analyze": Result<"analyzeExport">;
+   "export:cancel-planning": void;
+   "export:cancel-analysis": void;
+   "export:start": Result<"startExport">;
+   "export:cancel": void;
+   "export:retry": Result<"retryExport">;
+   "output:open": void;
+   "output:reveal": void;
+   "open:external": void;
+   "notices:open": void;
+   "diagnostics:export": boolean;
 }
+export type IpcCalls = { [K in keyof IpcResponses]: { request: z.input<(typeof ipcRequestSchemas)[K]>; response: IpcResponses[K] } };
+export type IpcRequest<K extends keyof IpcCalls> = z.output<(typeof ipcRequestSchemas)[K]>;
 /** Push and fire-and-forget channels. Names live here so a rename cannot silently break a listener. */
 export const IpcEvents = {
    jobProgress: "export:progress",

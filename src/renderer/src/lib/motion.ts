@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 export const pointerSmoothingMs = 20;
@@ -35,28 +35,32 @@ export function useSmoothValue(target: number, options: SmoothOptions = {}): num
    const run = useRef<{ from: number; start: number; last: number } | null>(null);
    const frame = useRef(0);
 
-   if (target !== targetRef.current) {
-      targetRef.current = target;
-      const { jump = 0, snap, glide, follow } = optionsRef.current;
-      const gliding = glide?.() ?? false;
-      const immediate = reducedMotion() || (Math.abs(target - display.current) < jump && !gliding) || (snap?.() ?? false);
-      if (immediate) {
+   useLayoutEffect(() => {
+      const previousDisplay = display.current;
+      if (target !== targetRef.current) {
+         targetRef.current = target;
+         const { jump = 0, snap, glide, follow } = optionsRef.current;
+         const gliding = glide?.() ?? false;
+         const immediate = reducedMotion() || (Math.abs(target - display.current) < jump && !gliding) || (snap?.() ?? false);
+         if (immediate) {
+            cancelAnimationFrame(frame.current);
+            frame.current = 0;
+            run.current = null;
+            display.current = target;
+         } else if (!follow || !run.current) {
+            const now = performance.now();
+            run.current = { from: display.current, start: now, last: now };
+         }
+      }
+      if (optionsRef.current.key !== keyRef.current) {
+         keyRef.current = optionsRef.current.key;
          cancelAnimationFrame(frame.current);
          frame.current = 0;
          run.current = null;
-         display.current = target;
-      } else if (!follow || !run.current) {
-         const now = performance.now();
-         run.current = { from: display.current, start: now, last: now };
+         display.current = targetRef.current;
       }
-   }
-   if (optionsRef.current.key !== keyRef.current) {
-      keyRef.current = optionsRef.current.key;
-      cancelAnimationFrame(frame.current);
-      frame.current = 0;
-      run.current = null;
-      display.current = targetRef.current;
-   }
+      if (display.current !== previousDisplay) render();
+   });
 
    useEffect(() => {
       if (!run.current || frame.current) return;

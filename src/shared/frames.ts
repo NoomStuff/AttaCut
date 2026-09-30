@@ -1,7 +1,7 @@
 import { lowerBound } from "./sorted";
 
 /** Boundaries are source presentation timestamps; starts are inclusive, ends exclusive. */
-export function resolveFrameTime(points: readonly number[], time: number, duration: number, direction: -1 | 0 | 1 = 0): number {
+export function resolveFrameTime(points: ArrayLike<number>, time: number, duration: number, direction: -1 | 0 | 1 = 0): number {
    if (!points.length) return Math.max(0, Math.min(time, duration));
    const low = lowerBound(points, time);
    const after = low < points.length ? points[low]! : null;

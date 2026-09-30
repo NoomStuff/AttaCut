@@ -3,7 +3,8 @@ import type { MediaSource, Preferences } from "../../../shared/types";
 import { formatTime } from "../../../shared/time";
 import { Button, Modal } from "./Controls";
 import { errorText } from "../lib/errors";
-import { faFolderOpen, faCamera } from "@fortawesome/free-solid-svg-icons";
+import { faCamera } from "@fortawesome/free-solid-svg-icons";
+import { OutputDirectoryField } from "./OutputDirectoryField";
 import { DropdownSelect } from "./DropdownSelect";
 
 export function FramePanel({
@@ -43,6 +44,7 @@ export function FramePanel({
    return (
       <Modal
          title="Export current frame"
+         closeDisabled={busy}
          description={formatTime(capturedTime)}
          onClose={() => {
             if (!busy) onClose();
@@ -52,32 +54,24 @@ export function FramePanel({
          <div className="modal-body export-body">
             <label className="field-label">
                Save to
-               <div className="directory-field">
-                  <input aria-label="Save frame to" value={directory} onChange={(event) => setDirectory(event.target.value)} />
-                  <Button
-                     variant="secondary"
-                     icon={faFolderOpen}
-                     onClick={() => {
-                        void window.desktop
-                           .chooseDirectory(directory)
-                           .then((value) => {
-                              if (value) setDirectory(value);
-                           })
-                           .catch((value) => setError(errorText(value)));
-                     }}
-                  >
-                     Browse
-                  </Button>
-               </div>
+               <OutputDirectoryField
+                  label="Save frame to"
+                  className="directory-field"
+                  value={directory}
+                  disabled={busy}
+                  onChange={setDirectory}
+                  onError={(value) => setError(errorText(value))}
+               />
             </label>
             <label className="field-label">
                Filename
-               <input aria-label="Frame filename" value={name} onChange={(event) => setName(event.target.value)} />
+               <input aria-label="Frame filename" disabled={busy} value={name} onChange={(event) => setName(event.target.value)} />
             </label>
             <div className="field-label">
                Format
                <DropdownSelect
                   label="Image format"
+                  disabled={busy}
                   options={[
                      { value: "png", label: "PNG" },
                      { value: "jpg", label: "JPEG" },
@@ -92,6 +86,7 @@ export function FramePanel({
                   Quality {quality}
                   <input
                      aria-label="Image quality"
+                     disabled={busy}
                      type="range"
                      min="1"
                      max="100"

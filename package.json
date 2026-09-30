@@ -1,6 +1,6 @@
 {
    "name": "attacut",
-   "version": "0.13.6",
+   "version": "0.14.0",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -189,6 +189,7 @@
       "electron-builder": "^26.15.3",
       "electron-vite": "^5.0.0",
       "eslint": "^10.11.0",
+      "eslint-plugin-react-hooks": "^7.1.1",
       "png-to-ico": "^3.0.2",
       "prettier": "^3.9.9",
       "sharp": "^0.35.4",

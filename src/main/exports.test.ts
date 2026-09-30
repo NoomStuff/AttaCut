@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { ExportService } from "./exports.ts";
 import { publishOutput } from "./media/publish.ts";
-import { sanitizeName } from "./media/filename.ts";
+import { sanitizeName } from "../shared/filename";
 import { analyzeCut } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import type { Clip } from "../shared/types.ts";
@@ -37,6 +37,24 @@ async function fixture() {
 }
 
 describe("export destination confirmation", () => {
+   it("requires explicit consent for substantial encoding and declared media loss", async () => {
+      const { source, request, service } = await fixture();
+      vi.mocked(analyzeCut).mockResolvedValueOnce({
+         execution: "trim",
+         clip: request.items[0]!.clip,
+         method: "boundary",
+         encodedSeconds: 20,
+         message: "Re-encoded",
+         spans: [],
+         changes: ["Telemetry is left out."],
+      });
+      const plan = await service.plan(source, request);
+      expect(() => service.start(plan.id)).toThrow("Confirm the changes");
+      expect(() => service.start(plan.id, { mediaChanges: true })).toThrow("Confirm re-encoding");
+      service.start(plan.id, { mediaChanges: true, substantialEncoding: true });
+      await service.waitForIdle();
+      expect(service.current?.items[0]?.status).toBe("completed");
+   });
    it("does not start analysis if planning was cancelled during destination checks", async () => {
       const { source, request, service } = await fixture();
       const pending = service.plan(source, request);

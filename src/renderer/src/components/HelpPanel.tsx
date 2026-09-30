@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { navigateTabs } from "../lib/tabs";
 import type { ReactNode } from "react";
 import { Modal } from "./Controls";
 
@@ -38,8 +39,8 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
             </ol>
             <h3>Worth knowing</h3>
             <ul>
-               <li>Nothing is final until export. Undo and redo revert anything, and the original file is never changed.</li>
-               <li>Cuts are remembered per file, so reopening a recording puts your clips back on the timeline.</li>
+               <li>Editing leaves the original unchanged. Undo and redo revert edits. Replacing the original during export requires your confirmation.</li>
+               <li>Your latest recording and its cuts are remembered, so restarting AttaCut restores your edit.</li>
                <li>
                   Play normally runs through the whole recording. The "Play kept clips only" setting skips the gaps, so playback shows only what will be
                   exported. You can also use <kbd>P</kbd> to preview only the current clip.
@@ -96,11 +97,11 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
                When copying the data from the original file, we can only cleanly start at a keyframe. Meaning that some frames at the edges of a cut may have to
                be re-encoded, losing a little bit of quality, while the rest of the clip can losslessly be copied.
             </p>
-            <h3>When a cut gets refused</h3>
+            <h3>When encoding needs your approval</h3>
             <p>
-               Cuts that would need more than a small section re-encoded are refused instead of quietly degrading your file, and so are cuts in formats whose
-               edges can't be re-encoded faithfully yet. The export dialog names the exact cause when it happens, and Keyframe Snapping avoids the re-encoding
-               refusals entirely.
+               If a cut needs a large section re-encoded, export asks you to confirm the quality change. Formats whose edges can't be reproduced faithfully
+               still need a different cut. The export dialog explains the cause. Keyframe Snapping can avoid boundary encoding, but some formats have other
+               preservation limits.
             </p>
             <h3>If you want lossless cuts</h3>
             <p>
@@ -118,12 +119,13 @@ export function HelpPanel({ initialTab = "intro", onClose }: { initialTab?: Help
    const body = useRef<HTMLDivElement>(null);
    return (
       <Modal title="Help" onClose={onClose} className="panel-modal help-modal">
-         <div className="modal-tabs" role="tablist">
+         <div className="modal-tabs" role="tablist" onKeyDown={navigateTabs}>
             {topics.map((topic) => (
                <button
                   key={topic.id}
                   role="tab"
                   aria-selected={tab === topic.id}
+                  tabIndex={tab === topic.id ? 0 : -1}
                   onClick={() => {
                      setTab(topic.id);
                      body.current?.scrollTo(0, 0);

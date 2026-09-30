@@ -1,10 +1,27 @@
 import { expect } from "@playwright/test";
 import { test, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 
-const longVideo = process.env.ATTACUT_LONG_VIDEO;
+const longVideo = process.env.ATTACUT_LONG_VIDEO || resolve("work/long-video/two-hours.mp4");
 
-test.skip(!longVideo, "set ATTACUT_LONG_VIDEO to exercise a multi-hour recording");
+test.beforeAll(async () => {
+   if (process.env.ATTACUT_LONG_VIDEO) return;
+   await mkdir("work/long-video", { recursive: true });
+   const ffmpeg = process.env.FFMPEG_PATH || "ffmpeg";
+   const segment = resolve("work/long-video/segment.mp4");
+   // Small pixels keep fixture generation cheap; 216,000 frames still exercise a real long index.
+   // ATTACUT_LONG_VIDEO can replace it with a representative recording for decode benchmarks.
+   execFileSync(
+      ffmpeg,
+      ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=64x64:rate=30", "-t", "1", "-c:v", "libx264", "-preset", "ultrafast", "-g", "30", segment],
+      { windowsHide: true }
+   );
+   execFileSync(ffmpeg, ["-v", "error", "-y", "-stream_loop", "7199", "-i", segment, "-c", "copy", "-movflags", "+faststart", longVideo], {
+      windowsHide: true,
+   });
+});
 
 test("opens, plays, scrubs, and steps a multi-hour recording", async ({ launchApp, profile }) => {
    const application = await launchApp(profile, resolve(longVideo));
@@ -28,7 +45,10 @@ test("opens, plays, scrubs, and steps a multi-hour recording", async ({ launchAp
    expect(seekMs).toBeLessThan(750);
 
    // Frame stepping works deep into the recording.
-   await page.keyboard.press("ArrowRight");
+   await page.locator(".title-filename").click();
+   const beforeStep = await page.evaluate(() => document.querySelector("video").currentTime);
+   await page.keyboard.press(".");
+   await page.waitForFunction((before) => document.querySelector("video")?.currentTime > before, beforeStep);
    await page.waitForFunction(() => document.querySelector("video")?.readyState >= 2, undefined, { timeout: 15000 });
    expect(await page.evaluate(() => document.querySelector("video").error)).toBeNull();
 

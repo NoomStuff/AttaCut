@@ -30,6 +30,7 @@ export interface ChapterMark {
    start: number;
    end: number;
    title: string;
+   tags?: Record<string, string>;
 }
 
 /** Serialize chapters into an FFMETADATA file body; times are seconds. */
@@ -37,7 +38,15 @@ export function serializeChapters(chapters: ChapterMark[]): string {
    return `;FFMETADATA1\n${chapters
       .map(
          (chapter) =>
-            `[CHAPTER]\nTIMEBASE=1/1000\nSTART=${Math.round(chapter.start * 1000)}\nEND=${Math.round(chapter.end * 1000)}\ntitle=${chapter.title.replace(/[\\=;#\n\r]/g, (character) => `\\${character}`)}\n`
+            `[CHAPTER]\nTIMEBASE=1/1000\nSTART=${Math.round(chapter.start * 1000)}\nEND=${Math.round(chapter.end * 1000)}\n${Object.entries({
+               ...chapter.tags,
+               title: chapter.title,
+            })
+               .map(
+                  ([key, value]) =>
+                     `${key.replace(/[\\=;#\n\r]/g, (character) => `\\${character}`)}=${value.replace(/[\\=;#\n\r]/g, (character) => `\\${character}`)}`
+               )
+               .join("\n")}\n`
       )
       .join("")}`;
 }

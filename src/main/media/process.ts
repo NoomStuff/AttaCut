@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { scheduleMedia } from "./scheduler";
+import { recordDiagnostic } from "../diagnostics";
+import { appFailure } from "../failure";
 
 export function binaryPath(name: "ffmpeg" | "ffprobe"): string {
    const extension = process.platform === "win32" ? ".exe" : "";
@@ -12,6 +15,7 @@ export function binaryPath(name: "ffmpeg" | "ffprobe"): string {
    return `${name}${extension}`;
 }
 export interface RunOptions {
+   priority?: "interactive" | "export" | "background";
    signal?: AbortSignal | undefined;
    duration?: number;
    /** Kill the child after this much silence on stdout and stderr; a hung process must never pin an export. */
@@ -22,11 +26,26 @@ export interface RunOptions {
     * output grows with recording length; only a short tail is kept for error text.
     */
    onLines?: ((line: string) => void) | undefined;
+   /** Binary consumers own their bounded buffer; process lifetime remains shared. */
+   onBytes?: (chunk: Buffer) => void;
 }
 /** ffmpeg and ffprobe stream progress or results continuously, so two minutes of total silence means a wedged decoder or stalled disk. */
 const defaultIdleTimeoutMs = 120_000;
 const killGraceMs = 5_000;
 export function runMedia(name: "ffmpeg" | "ffprobe", args: string[], options: RunOptions = {}): Promise<string> {
+   const started = performance.now();
+   return scheduleMedia(() => runChild(name, args, options), options.priority, options.signal).then(
+      (result) => {
+         recordDiagnostic(name, performance.now() - started);
+         return result;
+      },
+      (error: unknown) => {
+         recordDiagnostic(name, performance.now() - started, appFailure(error).code);
+         throw error;
+      }
+   );
+}
+function runChild(name: "ffmpeg" | "ffprobe", args: string[], options: RunOptions): Promise<string> {
    return new Promise((resolve, reject) => {
       if (options.signal?.aborted) {
          reject(new Error("Cancelled"));
@@ -64,10 +83,20 @@ export function runMedia(name: "ffmpeg" | "ffprobe", args: string[], options: Ru
          }, idleLimit);
       };
       armIdle();
-      child.stdout.setEncoding("utf8");
+      if (!options.onBytes) child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
-      child.stdout.on("data", (data: string) => {
+      child.stdout.on("data", (data: string | Buffer) => {
          armIdle();
+         if (options.onBytes) {
+            try {
+               options.onBytes(data as Buffer);
+            } catch (error) {
+               processError ??= error instanceof Error ? error : new Error(String(error));
+               stop();
+            }
+            return;
+         }
+         data = data as string;
          for (const match of data.matchAll(/out_time_us=(\d+)/g)) {
             if (options.duration) options.onProgress?.(Math.min(0.99, Number(match[1]) / 1e6 / options.duration));
          }

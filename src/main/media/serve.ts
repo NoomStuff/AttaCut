@@ -36,6 +36,9 @@ export async function serveMedia(path: string, request: Request): Promise<Respon
    headers.set("Content-Length", String(end - start + 1));
    if (request.method === "HEAD") return new Response(null, { status: range ? 206 : 200, headers });
    const stream = createReadStream(path, { start, end });
-   request.signal.addEventListener("abort", () => stream.destroy(), { once: true });
+   const abort = () => stream.destroy();
+   request.signal.addEventListener("abort", abort, { once: true });
+   stream.once("close", () => request.signal.removeEventListener("abort", abort));
+   if (request.signal.aborted) abort();
    return new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>, { status: range ? 206 : 200, headers });
 }

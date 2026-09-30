@@ -1,5 +1,5 @@
 /** First index whose value is >= target, or > target when exclusive. Input must be sorted. */
-export function lowerBound(points: readonly number[], target: number, exclusive = false): number {
+export function lowerBound(points: ArrayLike<number>, target: number, exclusive = false): number {
    let low = 0;
    let high = points.length;
    while (low < high) {

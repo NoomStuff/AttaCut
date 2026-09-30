@@ -1,9 +1,11 @@
 import { useExport, type ExportOptions } from "../export/useExport";
+import { substantialEncoding } from "../../../shared/export-policy";
 import type { HelpTab } from "./HelpPanel";
 import { useEffect, useState } from "react";
 import { exportExtensionFor } from "../../../shared/export-format";
 import { formatTime } from "../../../shared/time";
-import { faArrowUpFromBracket, faCircleExclamation, faCircleInfo, faFolderOpen } from "@fortawesome/free-solid-svg-icons";
+import { faArrowUpFromBracket, faCircleExclamation, faCircleInfo } from "@fortawesome/free-solid-svg-icons";
+import { OutputDirectoryField } from "./OutputDirectoryField";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { Button, Modal, Toggle } from "./Controls";
 import { DropdownSelect } from "./DropdownSelect";
@@ -23,6 +25,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
       setAudioTracks,
       name,
       setName,
+      normalizeName,
       rows,
       setRows,
       confirmation,
@@ -50,7 +53,11 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                  ? "Replace source video?"
                  : confirmation.existingPaths.length === 1
                    ? "Replace existing file?"
-                   : "Replace existing files?"
+                   : confirmation.existingPaths.length
+                     ? "Replace existing files?"
+                     : confirmation.items.some(substantialEncoding)
+                       ? "Re-encode selected video?"
+                       : "Export with media changes?"
          }
          onClose={() => setConfirmation(null)}
          className="export-confirmation"
@@ -63,8 +70,18 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                     ? `This will replace the video you opened. The original cannot be recovered. The exported video will open when it is ready.${confirmation.existingPaths.length > 1 ? " Other listed files will also be replaced." : ""}`
                     : confirmation.existingPaths.length === 1
                       ? "This file already exists. Exporting will replace it. This cannot be undone."
-                      : "These files already exist. Exporting will replace them. This cannot be undone."}
+                      : confirmation.existingPaths.length
+                        ? "These files already exist. Exporting will replace them. This cannot be undone."
+                        : confirmation.items.some(substantialEncoding)
+                          ? "These cuts need more than a small section re-encoded."
+                          : "This output format cannot preserve all source media."}
             </p>
+            {confirmation.items.some(substantialEncoding) && (
+               <p>Part of the selected video will be re-encoded. This takes longer and may reduce quality. Snap the cuts to keyframes to avoid it.</p>
+            )}
+            {[...new Set(confirmation.items.flatMap((item) => item.changes ?? []))].map((change) => (
+               <p key={change}>{change}</p>
+            ))}
             <div className="export-conflicts">
                {confirmation.directoryMissing ? confirmation.directory : confirmation.existingPaths.map((path) => <div key={path}>{path}</div>)}
             </div>
@@ -97,7 +114,11 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                     ? "Create folder and export"
                     : confirmation.sourcePath
                       ? "Replace source and export"
-                      : "Replace and export"}
+                      : confirmation.existingPaths.length
+                        ? "Replace and export"
+                        : confirmation.items.some(substantialEncoding)
+                          ? "Re-encode and export"
+                          : "Export"}
             </Button>
          </div>
       </Modal>
@@ -116,13 +137,15 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
       Math.abs(checked[0].clip.start) < 0.001 &&
       Math.abs(checked[0].clip.end - source.duration) < 0.001 &&
       sourceAudio.every((stream) => audioTracks.includes(stream.index));
-   const note = problem
+   const baseNote = problem
       ? problem.message
       : unchangedVideo
         ? "Exporting the video unchanged."
         : encoded > 0
           ? `${encodedLabel(encoded)} may be re-encoded.`
           : "Exporting losslessly.";
+   const changes = [...new Set(checked.flatMap((item) => item.changes ?? []))];
+   const note = [baseNote, ...changes].join(" ");
    return (
       <>
          <Modal
@@ -146,31 +169,27 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                <label className="field-label" htmlFor="destination">
                   Save to
                </label>
-               <div className="folder-field">
-                  <input id="destination" value={directory} disabled={starting} onChange={(event) => setDirectory(event.target.value)} />
-                  <Button
-                     variant="secondary"
-                     icon={faFolderOpen}
-                     disabled={starting}
-                     onClick={() => {
-                        void window.desktop
-                           .chooseDirectory(directory)
-                           .then((path) => {
-                              if (path) setDirectory(path);
-                           })
-                           .catch((value: unknown) => setError(errorText(value)));
-                     }}
-                  >
-                     Browse
-                  </Button>
-               </div>
+               <OutputDirectoryField
+                  id="destination"
+                  className="folder-field"
+                  value={directory}
+                  disabled={starting}
+                  onChange={setDirectory}
+                  onError={(value) => setError(errorText(value))}
+               />
                <div>
                   {mode === "combined" && (
                      <label className="field-label combined-name">
                         Filename
                         <div className="filename-field">
                            <span className="export-name-input">
-                              <input aria-label="Combined filename" value={name} disabled={starting} onChange={(event) => setName(event.target.value)} />
+                              <input
+                                 aria-label="Combined filename"
+                                 value={name}
+                                 disabled={starting}
+                                 onBlur={() => normalizeName()}
+                                 onChange={(event) => setName(event.target.value)}
+                              />
                               <ConflictIndicator message={conflicts.get("combined") ?? null} />
                            </span>
                            <span className="filename-extension">{source.exportExtension}</span>
@@ -194,7 +213,6 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                         options={sourceAudio.map((track, index) => ({ value: String(track.index), label: audioTrackLabel(track, index) }))}
                         value={audioTracks.map(String)}
                         multiple
-                        required
                         disabled={starting}
                         onChange={(values) => setAudioTracks(values.map(Number))}
                         trigger={
@@ -240,6 +258,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                                        <input
                                           aria-label={`Clip ${index + 1} filename`}
                                           value={row.name}
+                                          onBlur={() => normalizeName(index)}
                                           disabled={starting}
                                           onChange={(event) => setRows(rows.map((value, i) => (i === index ? { ...value, name: event.target.value } : value)))}
                                        />
@@ -262,7 +281,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
             </div>
             <div className="modal-footer">
                {analysis && request.items.length > 0 && (
-                  <p className={`export-note${problem ? " problem" : ""}`}>
+                  <p className={`export-note${problem ? " problem" : checked.some(substantialEncoding) || changes.length ? " warning" : ""}`}>
                      <FontAwesomeIcon icon={problem ? faCircleExclamation : faCircleInfo} />
                      <span>
                         {note}{" "}
@@ -280,7 +299,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                <Button
                   variant="primary"
                   icon={faArrowUpFromBracket}
-                  disabled={starting || !valid}
+                  disabled={starting || !valid || !!problem}
                   onClick={() => {
                      void start();
                   }}

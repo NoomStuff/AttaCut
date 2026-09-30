@@ -1,3 +1,4 @@
+import { primaryVideo } from "../../shared/types";
 import { stat } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -8,6 +9,7 @@ import { outputExtension, isHdrTransfer } from "./formats.ts";
 import { indexedSampleTimes } from "./mp4-index.ts";
 import type { SampleTimes } from "./mp4-index.ts";
 import { indexedMkvKeyframes } from "./mkv-index.ts";
+import { waitForWork } from "./shared-work";
 
 const numberLike = z.union([z.string(), z.number()]).optional();
 const probeSchema = z.object({
@@ -17,7 +19,13 @@ const probeSchema = z.object({
          index: z.number(),
          codec_type: z.string().optional(),
          codec_name: z.string().optional(),
+         extradata_hash: z.string().optional(),
+         sample_rate: numberLike,
+         channels: z.number().optional(),
+         channel_layout: z.string().optional(),
+         sample_aspect_ratio: z.string().optional(),
          start_time: numberLike,
+         duration: numberLike,
          width: z.number().optional(),
          height: z.number().optional(),
          pix_fmt: z.string().optional(),
@@ -53,14 +61,20 @@ export function streamTitle(tags: Record<string, string> = {}): string {
    return /^(sound|audio|video)handler$/i.test(handler) ? "" : handler;
 }
 export interface ProbedSource extends MediaSource {
+   attachmentHashes?: Record<number, string>;
    startOffset: number;
+   fileIdentity?: { device: number; inode: number };
 }
 export async function probeSource(path: string, signal?: AbortSignal): Promise<ProbedSource> {
    const fullPath = resolve(path);
    const info = await stat(fullPath);
    if (!info.isFile()) throw new Error("Choose a video file.");
    const result = probeSchema.parse(
-      JSON.parse(await runMedia("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-show_chapters", "-of", "json", fullPath], { signal }))
+      JSON.parse(
+         await runMedia("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-show_chapters", "-show_data_hash", "sha256", "-of", "json", fullPath], {
+            signal,
+         })
+      )
    );
    const duration = Number(result.format.duration);
    if (!Number.isFinite(duration) || duration <= 0) throw new Error("This file has no usable video duration.");
@@ -70,6 +84,12 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
       startTime: Number(stream.start_time ?? result.format.start_time) || 0,
       type: stream.codec_type ?? "unknown",
       codec: stream.codec_name ?? "unknown",
+      sampleRate: Number(stream.sample_rate) || 0,
+      channels: stream.channels ?? 0,
+      // Matroska PCM can omit a layout label. One and two channels still have
+      // unambiguous mono/stereo defaults; do not guess multichannel ordering.
+      channelLayout: stream.channel_layout ?? (stream.channels === 1 ? "mono" : stream.channels === 2 ? "stereo" : ""),
+      sampleAspectRatio: stream.sample_aspect_ratio ?? "",
       title: stream.codec_type === "audio" ? streamTitle(stream.tags) : (stream.tags?.["title"] ?? ""),
       language: stream.tags?.["language"] ?? "",
       width: stream.width ?? 0,
@@ -140,9 +160,14 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
       if (cll) video.maxCll = `${Number(cll["max_content"])},${Number(cll["max_average"])}`;
       video.dynamicHdr ||= sideData.some((item) => isDynamicHdrMetadata(item["side_data_type"]));
    }
-   if (!streams.some((stream) => stream.type === "video" && stream.width > 0)) throw new Error("This file does not contain a video track.");
+   if (!video || video.width <= 0) throw new Error("This file does not contain a video track.");
+   const startOffset = Number(result.format.start_time) || 0;
+   const videoDuration = Number(result.streams.find((stream) => stream.index === video.index)?.duration);
+   const videoStart = video.startTime - startOffset;
    return {
       id,
+      primaryVideoIndex: video.index,
+      ...(Number.isFinite(videoDuration) && videoDuration > 0 ? { videoInterval: { start: Math.max(0, videoStart), end: videoStart + videoDuration } } : {}),
       path: fullPath,
       name: basename(fullPath),
       directory: dirname(fullPath),
@@ -151,44 +176,85 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
       duration,
       size: info.size,
       modified: info.mtimeMs,
+      fileIdentity: { device: info.dev, inode: info.ino },
+      attachmentHashes: Object.fromEntries(
+         result.streams.filter((stream) => stream.codec_type === "attachment" && stream.extradata_hash).map((stream) => [stream.index, stream.extradata_hash!])
+      ),
       streams,
       url: `media://source/${id}`,
-      startOffset: Number(result.format.start_time) || 0,
+      startOffset,
       chapters: result.chapters.map((chapter) => ({
          start: Number(chapter.start_time),
          end: Number(chapter.end_time),
          title: chapter.tags?.["title"] ?? "",
+         tags: chapter.tags ?? {},
       })),
    };
 }
 export async function assertSourceUnchanged(source: MediaSource): Promise<void> {
    const info = await stat(source.path);
-   if (info.size !== source.size || info.mtimeMs !== source.modified) throw new Error("The original file changed. Reopen it before exporting.");
+   const identity = (source as ProbedSource).fileIdentity;
+   if (info.size !== source.size || info.mtimeMs !== source.modified || (identity && (info.dev !== identity.device || info.ino !== identity.inode)))
+      throw new Error("The original file changed. Reopen it before exporting.");
 }
 const packetSchema = z.object({
-   packets: z.array(z.object({ pts_time: z.string().optional(), dts_time: z.string().optional(), flags: z.string().optional() })),
+   packets: z.array(
+      z.object({ pts_time: z.string().optional(), dts_time: z.string().optional(), duration_time: z.string().optional(), flags: z.string().optional() })
+   ),
 });
 export interface PacketPoint {
+   duration?: number;
    time: number;
    key: boolean;
    dts: number;
 }
 const sampleIndexes = new WeakMap<ProbedSource, Promise<SampleTimes | null>>();
+const reopenedIndexes = new Map<string, SampleTimes>();
+const indexBudget = 64 * 1024 * 1024;
+function indexBytes(index: SampleTimes): number {
+   return (index.frames?.buffer.byteLength ?? 0) + (index.keyframes.buffer === index.frames?.buffer ? 0 : index.keyframes.buffer.byteLength);
+}
+const sourceLifetimes = new WeakMap<ProbedSource, AbortSignal>();
+export function setSourceLifetime(source: ProbedSource, signal: AbortSignal): void {
+   sourceLifetimes.set(source, signal);
+}
 /** Opening and keyframe snapping share the same MP4 table parse. */
 function sampleTimes(source: ProbedSource, signal?: AbortSignal): Promise<SampleTimes | null> {
    let cached = sampleIndexes.get(source);
    if (!cached) {
-      cached = indexedSampleTimes(source, signal).catch((error: unknown) => {
-         if (sampleIndexes.get(source) === cached) sampleIndexes.delete(source);
-         throw error;
-      });
+      const identity = JSON.stringify([
+         process.platform === "win32" ? source.path.toLowerCase() : source.path,
+         source.size,
+         source.modified,
+         source.fileIdentity,
+         source.startOffset,
+         source.duration,
+      ]);
+      const reusable = reopenedIndexes.get(identity);
+      if (reusable) {
+         reopenedIndexes.delete(identity);
+         reopenedIndexes.set(identity, reusable);
+      }
+      cached = (reusable ? Promise.resolve(reusable) : indexedSampleTimes(source, sourceLifetimes.get(source)))
+         .then((index) => {
+            if (index && indexBytes(index) <= indexBudget) {
+               reopenedIndexes.set(identity, index);
+               while ([...reopenedIndexes.values()].reduce((sum, value) => sum + indexBytes(value), 0) > indexBudget)
+                  reopenedIndexes.delete(reopenedIndexes.keys().next().value!);
+            }
+            return index;
+         })
+         .catch((error: unknown) => {
+            if (sampleIndexes.get(source) === cached) sampleIndexes.delete(source);
+            throw error;
+         });
       sampleIndexes.set(source, cached);
    }
-   return cached;
+   return waitForWork(cached, signal);
 }
 export async function sourceKeyframes(source: ProbedSource, signal?: AbortSignal): Promise<number[]> {
    const index = await sampleTimes(source, signal);
-   if (index) return index.keyframes;
+   if (index) return Array.from(index.keyframes);
    const cued = await indexedMkvKeyframes(source, signal);
    if (cued) return cued;
    const times = new Set<number>();
@@ -200,7 +266,7 @@ export async function sourceKeyframes(source: ProbedSource, signal?: AbortSignal
          "-fflags",
          "+genpts",
          "-select_streams",
-         String(source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!.index),
+         String(primaryVideo(source)!.index),
          "-show_packets",
          "-show_entries",
          "packet=pts_time,flags",
@@ -211,6 +277,7 @@ export async function sourceKeyframes(source: ProbedSource, signal?: AbortSignal
       {
          signal,
          // This scan reads every packet in the file, so its output must not be buffered;
+         priority: "background",
          // multi-hour recordings index as a stream instead of hitting the memory cap.
          onLines: (line) => {
             if (!line.includes("K")) return;
@@ -225,7 +292,7 @@ export async function sourceKeyframes(source: ProbedSource, signal?: AbortSignal
  * Presentation time of every frame for MP4-family sources, read once from the sample tables.
  * Lets seeks resolve in memory; null means the container needs packet windows instead.
  */
-export function sourceFrames(source: ProbedSource, signal?: AbortSignal): Promise<number[] | null> {
+export function sourceFrames(source: ProbedSource, signal?: AbortSignal): Promise<Float64Array | number[] | null> {
    return sampleTimes(source, signal).then((index) => index?.frames ?? null);
 }
 const packetWindows = new WeakMap<ProbedSource, Map<number, { points: number; value: Promise<PacketPoint[]> }>>();
@@ -251,7 +318,8 @@ export async function packetsAround(source: ProbedSource, time: number, signal?:
    let pending = windows.get(begin)?.value;
    if (!pending) {
       const cache = windows;
-      pending = (mode === "seek" ? readSeekWindow(source, begin, window, read, signal) : readPacketWindow(source, begin, read, signal))
+      const ownerSignal = sourceLifetimes.get(source);
+      pending = (mode === "seek" ? readSeekWindow(source, begin, window, read, ownerSignal) : readPacketWindow(source, begin, read, ownerSignal))
          .then((points) => {
             const entry = cache.get(begin);
             if (entry && entry.value === pending) entry.points = points.length;
@@ -267,7 +335,7 @@ export async function packetsAround(source: ProbedSource, time: number, signal?:
       if (mode === "analysis" && windows.size >= 16) windows.delete(windows.keys().next().value!);
       windows.set(begin, { points: 0, value: pending });
    }
-   const points = await pending;
+   const points = await waitForWork(pending, signal);
    signal?.throwIfAborted();
    return points;
 }
@@ -297,12 +365,12 @@ async function readPacketWindow(source: ProbedSource, begin: number, read: numbe
          "-fflags",
          "+genpts",
          "-select_streams",
-         String(source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)!.index),
+         String(primaryVideo(source)!.index),
          "-read_intervals",
          begin > 0 ? `${begin + source.startOffset}%+${read}` : `%+${read}`,
          "-show_packets",
          "-show_entries",
-         "packet=pts_time,dts_time,flags",
+         "packet=pts_time,dts_time,duration_time,flags",
          "-of",
          "json",
          source.path,
@@ -316,6 +384,7 @@ async function readPacketWindow(source: ProbedSource, begin: number, read: numbe
          time: Number(packet.pts_time) - source.startOffset,
          key: packet.flags?.includes("K") ?? false,
          dts: Number(packet.dts_time) - source.startOffset,
+         ...(Number(packet.duration_time) > 0 ? { duration: Number(packet.duration_time) } : {}),
       }))
       .filter((packet) => Number.isFinite(packet.time))
       .sort((a, b) => a.time - b.time);

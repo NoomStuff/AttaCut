@@ -19,17 +19,27 @@ const releaseSchema = z.object({
    prerelease: z.boolean(),
 });
 
-function parts(version: string): number[] | null {
-   const match = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version.trim());
-   return match ? match.slice(1).map(Number) : null;
-}
-
 export function isNewerVersion(candidate: string, current: string): boolean {
-   const next = parts(candidate);
-   const installed = parts(current);
+   const parse = (value: string) => /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(value.trim());
+   const next = parse(candidate);
+   const installed = parse(current);
    if (!next || !installed) return false;
-   for (let index = 0; index < next.length; index++) {
-      if (next[index] !== installed[index]) return next[index]! > installed[index]!;
+   for (let index = 1; index <= 3; index++) {
+      if (Number(next[index]) !== Number(installed[index])) return Number(next[index]) > Number(installed[index]);
+   }
+   if (!next[4] || !installed[4]) return !next[4] && !!installed[4];
+   const a = next[4].split(".");
+   const b = installed[4].split(".");
+   for (let index = 0; index < Math.max(a.length, b.length); index++) {
+      const left = a[index];
+      const right = b[index];
+      if (left === right) continue;
+      if (left === undefined || right === undefined) return right === undefined;
+      const leftNumeric = /^\d+$/.test(left);
+      const rightNumeric = /^\d+$/.test(right);
+      if (leftNumeric && rightNumeric) return Number(left) > Number(right);
+      if (leftNumeric !== rightNumeric) return !leftNumeric;
+      return left > right;
    }
    return false;
 }
@@ -63,6 +73,7 @@ export class UpdateManager {
    private current: AvailableUpdate | null = null;
    private busy = false;
    private ready = false;
+   downloadedPath: string | null = null;
    constructor(window: BrowserWindow) {
       this.window = window;
    }
@@ -174,6 +185,7 @@ export class UpdateManager {
          if (hash.digest("hex").toLowerCase() !== expectedHash.toLowerCase()) throw new Error("The download did not pass verification.");
          await rename(temporary, destination);
          temporary = null;
+         this.downloadedPath = destination;
          this.emit({ phase: "downloaded", version, percent: 100, message: `Saved ${basename(destination)} to Downloads.`, path: destination });
       } catch (error) {
          this.emit({ phase: "error", version, percent: null, message: error instanceof Error ? error.message : "The download failed." });

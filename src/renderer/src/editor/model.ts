@@ -1,5 +1,5 @@
 import type { Clip } from "../../../shared/types";
-import { clipColorCount, undoLimit } from "../../../shared/defaults";
+import { undoLimit } from "../../../shared/defaults";
 import { clamp } from "../../../shared/time";
 import { nextClipColor } from "./colors";
 
@@ -8,13 +8,15 @@ export interface EditDocument {
    selectedId: string | null;
 }
 export interface EditorState {
+   group?: string;
    document: EditDocument;
    past: EditDocument[];
    future: EditDocument[];
 }
 export type EditAction =
    | { type: "load"; document: EditDocument; past?: EditDocument[]; future?: EditDocument[] }
-   | { type: "commit"; document: EditDocument }
+   | { type: "commit"; document: EditDocument; group?: string }
+   | { type: "resolve"; document: EditDocument; times: Map<number, number> }
    | { type: "undo" }
    | { type: "redo" };
 export const emptyEditor: EditorState = { document: { clips: [], selectedId: null }, past: [], future: [] };
@@ -26,12 +28,35 @@ export function editorReducer(state: EditorState, action: EditAction): EditorSta
             past: action.past ?? [],
             future: action.future ?? [],
          };
+      case "resolve": {
+         if (state.document !== action.document) return state;
+         const resolve = (document: EditDocument): EditDocument => {
+            const clips = document.clips.map((clip) => ({
+               ...clip,
+               start: action.times.get(clip.start) ?? clip.start,
+               end: action.times.get(clip.end) ?? clip.end,
+            }));
+            // An older history entry may be shorter than the current source frame.
+            // Resolve it when restored rather than producing an invalid saved document.
+            return clips.some((clip) => clip.end <= clip.start) ? document : { ...document, clips };
+         };
+         return { ...state, document: resolve(state.document), past: state.past.map(resolve), future: state.future.map(resolve) };
+      }
       case "commit": {
-         if (JSON.stringify(state.document.clips) === JSON.stringify(action.document.clips)) return state;
+         if (
+            state.document.clips === action.document.clips ||
+            (state.document.clips.length === action.document.clips.length &&
+               state.document.clips.every((clip, index) => {
+                  const next = action.document.clips[index]!;
+                  return clip.id === next.id && clip.start === next.start && clip.end === next.end && clip.color === next.color;
+               }))
+         )
+            return state;
          return {
             document: action.document,
-            past: [...state.past, state.document].slice(-undoLimit),
+            past: action.group && action.group === state.group ? state.past : [...state.past, state.document].slice(-undoLimit),
             future: [],
+            ...(action.group ? { group: action.group } : {}),
          };
       }
       case "undo": {
@@ -154,12 +179,8 @@ export function mergeClips(document: EditDocument, index: number): EditDocument 
    const left = document.clips[index];
    const right = document.clips[index + 1];
    if (index < 0 || !left || !right) return document;
-   const previous = document.clips[index - 1];
-   const next = document.clips[index + 2];
-   const collision = [previous, next].some((clip) => clip && clip.color % clipColorCount === left.color % clipColorCount);
-   const color = collision ? nextClipColor(document.clips, previous, next) : left.color;
    return {
-      clips: document.clips.flatMap((clip, i) => (i === index ? [{ ...left, end: right.end, color }] : i === index + 1 ? [] : [clip])),
+      clips: document.clips.flatMap((clip, i) => (i === index ? [{ ...left, end: right.end }] : i === index + 1 ? [] : [clip])),
       selectedId: left.id,
    };
 }

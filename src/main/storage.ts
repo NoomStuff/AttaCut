@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { z } from "zod";
 import { defaultPreferences, preferencesSchema, savedSessionSchema } from "../shared/types.ts";
 import type { Preferences, SavedSession } from "../shared/types.ts";
-/** Bump when the on-disk format changes in a way older code cannot read; unknown versions reset to defaults. */
+import { RecoveryDocument } from "./recovery-document";
+/** Change with deliberate migrations. Unreadable documents stay recoverable before replacement. */
 export const storageVersion = 1;
 const envelope = z.object({ version: z.literal(storageVersion), preferences: z.unknown(), session: z.unknown() });
 type Snapshot = { version: number; preferences: Preferences; session: SavedSession | null };
@@ -13,17 +14,24 @@ export class Storage {
    warning: string | null = null;
    private pending: Snapshot | null = null;
    private writes: Promise<void> | null = null;
+   private resetting: Promise<void> | null = null;
    private primaryValid = false;
+   private unreadable = false;
    private directory: string;
+   private recovery: RecoveryDocument;
    constructor(directory: string) {
       this.directory = directory;
+      this.recovery = new RecoveryDocument(directory);
    }
    async load(): Promise<void> {
       const read = async (name: string) => {
          try {
             return envelope.parse(JSON.parse(await readFile(join(this.directory, name), "utf8")));
          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.warning = "Saved settings could not be fully restored. Recoverable data was kept.";
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+               this.warning = "Saved settings could not be fully restored. Recoverable data was kept.";
+               if (name === "settings.json") this.unreadable = true;
+            }
             return null;
          }
       };
@@ -31,6 +39,7 @@ export class Storage {
       const preferences = preferencesSchema.safeParse(primary?.preferences);
       const session = savedSessionSchema.nullable().safeParse(primary?.session);
       this.primaryValid = preferences.success && session.success;
+      if (primary && !this.primaryValid) this.unreadable = true;
       const backup = this.primaryValid ? null : await read("settings.backup.json");
       const recoveredPreferences = preferencesSchema.safeParse(backup?.preferences);
       const recoveredSession = savedSessionSchema.nullable().safeParse(backup?.session);
@@ -39,8 +48,12 @@ export class Storage {
       if (session.success) this.session = session.data;
       else if (recoveredSession.success) this.session = recoveredSession.data;
       if (primary && !this.primaryValid) this.warning = "Some saved settings were invalid. Recoverable preferences and edits were kept.";
+      const recovery = await this.recovery.load();
+      if (recovery.found) this.session = recovery.session;
+      if (recovery.recovered) this.warning = "Saved edits could not be fully restored. Recoverable data was kept.";
    }
    save(): Promise<void> {
+      if (this.resetting) return this.resetting;
       this.pending = { version: storageVersion, preferences: { ...this.preferences, outputDirectory: "" }, session: this.session };
       if (!this.writes) {
          this.writes = Promise.resolve()
@@ -50,7 +63,12 @@ export class Storage {
                while (this.pending) {
                   const snapshot = this.pending;
                   this.pending = null;
-                  await writeFile(`${target}.tmp`, JSON.stringify(snapshot));
+                  await writeFile(`${target}.tmp`, JSON.stringify({ ...snapshot, session: null }));
+                  await this.recovery.save(snapshot.session);
+                  if (this.unreadable) {
+                     await copyFile(target, join(this.directory, `settings.unreadable-${Date.now()}.json`));
+                     this.unreadable = false;
+                  }
                   if (this.primaryValid) {
                      const backup = join(this.directory, "settings.backup.json");
                      await copyFile(target, `${backup}.tmp`);
@@ -67,14 +85,35 @@ export class Storage {
       return this.writes;
    }
    async flush(): Promise<void> {
-      await this.writes;
+      await (this.resetting ?? this.writes);
    }
    /** Factory state on disk too: save() mirrors the healthy primary into the backup, so
        stale preferences cannot resurface through the recovery path after a reset. */
-   async reset(): Promise<void> {
+   reset(): Promise<void> {
+      if (this.resetting) return this.resetting;
+      const previous = { preferences: this.preferences, session: this.session, warning: this.warning };
       this.preferences = structuredClone(defaultPreferences);
       this.session = null;
       this.warning = null;
-      await this.save();
+      const saved = this.save();
+      this.resetting = saved
+         .then(async () => {
+            await copyFile(join(this.directory, "settings.json"), join(this.directory, "settings.backup.json.tmp"));
+            await rename(join(this.directory, "settings.backup.json.tmp"), join(this.directory, "settings.backup.json"));
+            await this.recovery.reset();
+            this.preferences = structuredClone(defaultPreferences);
+            this.session = null;
+            this.warning = null;
+         })
+         .catch((error) => {
+            this.preferences = previous.preferences;
+            this.session = previous.session;
+            this.warning = previous.warning;
+            throw error;
+         })
+         .finally(() => {
+            this.resetting = null;
+         });
+      return this.resetting;
    }
 }

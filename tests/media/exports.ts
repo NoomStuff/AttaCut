@@ -83,51 +83,56 @@ for (const muteAudio of [false, true]) {
       assert.ok(score > 0.94, "Joined boundary frame matches its source");
    }
    if (!muteAudio)
-      for (const [originalTime, outputTime] of [
-         [1.9, 0.6],
-         [9.8, 6],
-      ]) {
-         const pcm = [join(directory, "source.pcm"), join(directory, "joined.pcm")];
-         for (const [index, file, time] of [
-            [0, source.path, originalTime!],
-            [1, output, outputTime!],
-         ] as const)
-            await runMedia("ffmpeg", [
-               "-v",
-               "error",
-               "-y",
-               "-copyts",
-               "-i",
-               file,
-               "-map",
-               "0:a:0",
-               "-af",
-               `atrim=start=${time}:end=${time + 0.1},asetpts=PTS-STARTPTS`,
-               "-f",
-               "s16le",
-               pcm[index]!,
-            ]);
-         const [a, b] = await Promise.all(pcm.map((path) => readFile(path)));
-         assert.equal(a!.length, b!.length);
-         // MP4 edit lists use millisecond timestamps; permit less than 1 ms rounding.
-         let bestRms = Infinity;
-         let bestShift = 0;
-         for (let shift = -48; shift <= 48; shift++) {
-            let squares = 0;
-            let count = 0;
-            for (let i = 96; i < a!.length / 2 - 96; i++) {
-               squares += (a!.readInt16LE(i * 2) - b!.readInt16LE((i + shift) * 2)) ** 2;
-               count++;
+      for (const audioIndex of [0, 1])
+         for (const [originalTime, outputTime] of [
+            [1.9, 0.6],
+            [9.8, 6],
+            [6.64, 5.34],
+            // AAC overlap state needs two packets after a discontinuity. Beyond that
+            // bounded decoder settling interval, both tracks must match their source.
+            [9.26, 5.46],
+         ]) {
+            const pcm = [join(directory, "source.pcm"), join(directory, "joined.pcm")];
+            for (const [index, file, time] of [
+               [0, source.path, originalTime!],
+               [1, output, outputTime!],
+            ] as const)
+               await runMedia("ffmpeg", [
+                  "-v",
+                  "error",
+                  "-y",
+                  "-copyts",
+                  "-i",
+                  file,
+                  "-map",
+                  `0:a:${audioIndex}`,
+                  "-af",
+                  `atrim=start=${time}:end=${time + 0.025},asetpts=PTS-STARTPTS`,
+                  "-f",
+                  "s16le",
+                  pcm[index]!,
+               ]);
+            const [a, b] = await Promise.all(pcm.map((path) => readFile(path)));
+            assert.equal(a!.length, b!.length);
+            // MP4 edit lists use millisecond timestamps; permit less than 1 ms rounding.
+            let bestRms = Infinity;
+            let bestShift = 0;
+            for (let shift = -48; shift <= 48; shift++) {
+               let squares = 0;
+               let count = 0;
+               for (let i = 96; i < a!.length / 2 - 96; i++) {
+                  squares += (a!.readInt16LE(i * 2) - b!.readInt16LE((i + shift) * 2)) ** 2;
+                  count++;
+               }
+               const rms = Math.sqrt(squares / count);
+               if (rms < bestRms) {
+                  bestRms = rms;
+                  bestShift = shift;
+               }
             }
-            const rms = Math.sqrt(squares / count);
-            if (rms < bestRms) {
-               bestRms = rms;
-               bestShift = shift;
-            }
+            assert.ok(bestRms < 10, `Audio remains synchronized after the join: RMS ${bestRms}, shift ${bestShift}`);
+            console.log("Audio alignment", originalTime, "→", outputTime, bestShift, "samples");
          }
-         assert.ok(bestRms < 10, `Audio remains synchronized after the join: RMS ${bestRms}, shift ${bestShift}`);
-         console.log("Audio alignment", originalTime, "→", outputTime, bestShift, "samples");
-      }
    console.log("PASS combined", muteAudio ? "muted" : "all tracks");
 }
 const whole = await service.plan(source, {

@@ -4,11 +4,12 @@ const key = (value: string) => value.trim().toLocaleLowerCase();
 
 export function resolveAudioSelection(tracks: MediaStream[], preference: AudioSelectionPreference, defaultAll = false): number[] {
    if (!tracks.length) return [];
+   if (preference.mode === "tracks" && preference.sourceTrackCount > 0 && !preference.tracks.length) return [];
    if (preference.mode === "default") {
       if (defaultAll) return tracks.map((track) => track.index);
       return [tracks.find((track) => track.disposition["default"] === 1)?.index ?? tracks[0]!.index];
    }
-   if (tracks.length === 1) return preference.mode === "tracks" && preference.sourceTrackCount === 1 && !preference.tracks.length ? [] : [tracks[0]!.index];
+   if (tracks.length === 1) return [tracks[0]!.index];
    if (preference.mode === "all") return tracks.map((track) => track.index);
 
    const matched: number[] = [];
@@ -24,11 +25,12 @@ export function resolveAudioSelection(tracks: MediaStream[], preference: AudioSe
       const positions = preference.tracks.map((track) => tracks[track.position]?.index).filter((index): index is number => index !== undefined);
       if (positions.length) return positions;
    }
-   return [tracks.find((track) => track.disposition["default"] === 1)?.index ?? tracks[0]!.index];
+   return defaultAll ? tracks.map((track) => track.index) : [tracks.find((track) => track.disposition["default"] === 1)?.index ?? tracks[0]!.index];
 }
 
-export function rememberAudioSelection(tracks: MediaStream[], selected: number[]): AudioSelectionPreference {
-   if (tracks.length > 1 && selected.length === tracks.length) return { mode: "all", sourceTrackCount: tracks.length, tracks: [] };
+export function rememberAudioSelection(tracks: MediaStream[], selected: number[], allForSingle = false): AudioSelectionPreference {
+   if ((tracks.length > 1 || (allForSingle && tracks.length === 1)) && selected.length === tracks.length)
+      return { mode: "all", sourceTrackCount: tracks.length, tracks: [] };
    return {
       mode: "tracks",
       sourceTrackCount: tracks.length,

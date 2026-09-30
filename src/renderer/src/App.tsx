@@ -2,9 +2,12 @@ import { usePlayback } from "./playback/usePlayback";
 import { NavDropdown } from "./components/NavDropdown";
 import { sessionFor } from "./editor/session";
 import { usePersistence } from "./editor/persistence";
+import { useFrameBoundaries } from "./editor/frameBoundaries";
 import { useAppearance } from "./lib/appearance";
+import { useDesktopLifecycle } from "./lib/desktopLifecycle";
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import type { AvailableUpdate, UpdateStatus, MediaSource, ExportJob, SavedSession } from "../../shared/types";
+import type { MediaSource, ExportJob, SavedSession } from "../../shared/types";
+import { primaryVideo } from "../../shared/media";
 import { defaultPreferences } from "../../shared/defaults";
 import { clamp } from "../../shared/time";
 import { adjacentBoundary, neighboringKeyframe, resolveBoundary, splitTargetAt } from "./editor/navigation";
@@ -28,7 +31,7 @@ import {
    trimClip,
 } from "./editor/model";
 import type { EditDocument } from "./editor/model";
-import { CommandContext, resolvedCommand, useCommands } from "./editor/commands";
+import { CommandContext, guardCommands, resolvedCommand, useCommands } from "./editor/commands";
 import type { CommandId, Commands } from "./editor/commands";
 import { Button, Modal } from "./components/Controls";
 import { Player } from "./components/Player";
@@ -36,7 +39,7 @@ import { Timeline } from "./components/Timeline";
 import { Transport } from "./components/Transport";
 import { LoadingEditor } from "./components/LoadingEditor";
 import { TopActions } from "./components/TopActions";
-import { UpdateChip } from "./components/UpdateChip";
+import { AppUpdate } from "./components/AppUpdate";
 import { JobProgress } from "./components/JobProgress";
 import { EmptyState } from "./components/EmptyState";
 import type { ExportDraft } from "./export/useExport";
@@ -64,6 +67,10 @@ type Panel = "export" | "frame" | "settings" | "shortcuts" | "help" | "about" | 
 const releasesUrl = "https://github.com/NoomStuff/AttaCut/releases";
 
 export default function App() {
+   useEffect(() => {
+      performance.mark("attacut:editor-commit");
+      performance.clearMarks("attacut:editor-commit");
+   });
    usePressFeedback();
    const [source, setSource] = useState<MediaSource | null>(null);
    const [editor, dispatch] = useReducer(editorReducer, emptyEditor);
@@ -71,8 +78,6 @@ export default function App() {
    const [ready, setReady] = useState(false);
    const [platform, setPlatform] = useState("win32");
    const [version, setVersion] = useState("");
-   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
-   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
    const [exportDraft, setExportDraft] = useState<ExportDraft | null>(null);
    const [panel, setPanel] = useState<Panel>(null);
    const [helpTab, setHelpTab] = useState<HelpTab>("intro");
@@ -81,7 +86,7 @@ export default function App() {
    const [loading, setLoading] = useState(false);
    const [error, setError] = useState<{ text: string; tone: "error" | "warning" } | null>(null);
    /** Errors interrupt work and deserve the red banner; warnings only explain a recoverable state. */
-   const showError = (message: string | null) => setError(message === null ? null : { text: message, tone: "error" });
+   const showError = useCallback((message: string | null) => setError(message === null ? null : { text: message, tone: "error" }), []);
    const [restore, setRestore] = useState<SavedSession | null>(null);
    const {
       playing,
@@ -135,28 +140,31 @@ export default function App() {
    const replacingSourceId = useRef<string | null>(null);
    const sourceRef = useRef(source);
    sourceRef.current = source;
+   const documentRef = useRef(editor.document);
+   documentRef.current = editor.document;
    const mac = platform === "darwin";
    const [priority] = useState(() => new ClipPriority());
+   const editingTime = clock.getFrame;
    // Time displays subscribe separately. The root only updates when the active clip changes.
-   useSyncExternalStore(clock.subscribe, () => priority.resolve(editor.document, clock.get())?.id ?? null);
+   useSyncExternalStore(clock.subscribe, () => priority.resolve(editor.document, editingTime())?.id ?? null);
    const [, refreshPriority] = useReducer((value: number) => value + 1, 0);
    const remember = (clip: ReturnType<typeof selectedClip>) => {
       priority.remember(clip);
       refreshPriority();
    };
-   const deleteTarget = () => priority.resolve(editor.document, clock.get(), false);
-   const targetClip = () => priority.resolve(editor.document, clock.get());
+   const deleteTarget = () => priority.resolve(editor.document, editingTime(), false);
+   const targetClip = () => priority.resolve(editor.document, editingTime());
    const currentClip = () => {
       const target = targetClip();
       return editor.document.clips.find((item) => item.id === target?.id);
    };
    const clip = currentClip();
    const activeDocument = { ...editor.document, selectedId: clip?.id ?? null };
-   const commit = (document: EditDocument) => {
+   const commit = (document: EditDocument, group?: string) => {
       remember(selectedClip(document));
-      dispatch({ type: "commit", document });
+      dispatch({ type: "commit", document, ...(group ? { group } : {}) });
    };
-   const seek = (time: number, preservePriority = false, glide = false) => {
+   const seek = (time: number, preservePriority = false, glide = false, side?: "start" | "end") => {
       if (!source) return;
       const target = clamp(time, 0, source.duration);
       if (!trimmingRef.current && !preservePriority) {
@@ -164,7 +172,7 @@ export default function App() {
          refreshPriority();
       }
       playback.previewEnd = null;
-      seeker.seek(target, preferences.keepPlaying, glide);
+      seeker.seek(target, preferences.keepPlaying, glide, side ? (side === "end" ? -1 : 0) : undefined);
       // Scrub bursts only belong to paused seeking; playing video provides its own audio.
       if (videoRef.current?.paused && preferences.audioScrub) scrubber.scrub(target, muted ? 0 : preferences.volume);
    };
@@ -198,7 +206,12 @@ export default function App() {
          scrubber.reset();
          setSource(media);
          sourceRef.current = media;
-         seeker.configure((time) => window.desktop.frameTime(media.id, time, 0));
+         seeker.configure((time, direction) => {
+            const clips = documentRef.current.clips;
+            const ending = clips.some((clip) => Math.abs(clip.end - time) < 0.0001);
+            const starting = clips.some((clip) => Math.abs(clip.start - time) < 0.0001);
+            return window.desktop.frameTime(media.id, time, direction ?? (ending && !starting ? -1 : 0));
+         });
          playback.source(media);
          remember(undefined);
          clock.set(0);
@@ -249,15 +262,15 @@ export default function App() {
    };
    // Back to the start screen. The saved session stays on disk, so the next launch restores
    // the project like any other quit; closing only clears the workspace.
-   const closeProject = () => {
-      if (!source) return;
+   const closeProject = (keepRecovery = true) => {
       // Invalidate any in-flight open so it cannot repopulate the workspace after the close.
       openSequence.current++;
       playback.invalidate();
       setMenu(null);
       setPanel(null);
       setError(null);
-      setRestore(null);
+      setRestore(keepRecovery ? sessionFor(source, editor, restore) : null);
+      void window.desktop.closeSource().catch((value) => showError(errorText(value)));
       setLoading(false);
       videoRef.current?.pause();
       scrubber.stop();
@@ -280,7 +293,7 @@ export default function App() {
          showError(errorText(value));
          return;
       }
-      closeProject();
+      closeProject(false);
       setPreferences(defaultPreferences);
    };
    useEffect(() => {
@@ -288,38 +301,25 @@ export default function App() {
       return prefetchModules([loadExportPanel, loadSettingsPanel, loadFramePanel, loadHelpPanel, loadAboutPanel]);
    }, [ready, loading, preparing]);
    const { keyframes, reading: readingKeys } = useKeyframes({ source, snapping, loading, preparing, videoRef, onError: showError });
-   useEffect(() => {
-      let cancelled = false;
-      void window.desktop
-         .bootstrap()
-         .then(async (data) => {
-            if (cancelled) return;
-            setPreferences(data.preferences);
-            setPlatform(data.platform);
-            setVersion(data.version);
-            setRestore(data.session);
-            setReady(true);
-            void window.desktop
-               .checkForUpdate()
-               .then((update) => {
-                  if (!cancelled) {
-                     setAvailableUpdate(update);
-                  }
-               })
-               .catch(() => {});
-            if (data.initialFile) await openPath(data.initialFile, undefined, data.preferences.playbackAudio);
-            else if (data.session) await openPath(data.session.path, data.session, data.preferences.playbackAudio);
-            if (!cancelled && data.warning) {
-               const warning = data.warning;
-               setError((current) => current ?? { text: warning, tone: "error" });
-            }
-         })
-         .catch((value: unknown) => {
-            setReady(true);
-            showError(errorText(value));
-         });
-      const unsubscribeUpdate = window.desktop.onUpdateStatus((status) => setUpdateStatus(status));
-      const unsubscribe = window.desktop.onJob((updated) => {
+   useDesktopLifecycle({
+      onBootstrap: async (data, signal) => {
+         setPreferences(data.preferences);
+         setPlatform(data.platform);
+         setVersion(data.version);
+         setRestore(data.session);
+         setReady(true);
+         if (data.initialFile) await openPath(data.initialFile, undefined, data.preferences.playbackAudio);
+         else if (data.session) await openPath(data.session.path, data.session, data.preferences.playbackAudio);
+         if (!signal.aborted && data.warning) {
+            const warning = data.warning;
+            setError((current) => current ?? { text: warning, tone: "error" });
+         }
+      },
+      onError: (value) => {
+         setReady(true);
+         showError(errorText(value));
+      },
+      onJob: (updated) => {
          setJob(updated);
          if (!updated.running && updated.items.some((item) => item.status === "completed"))
             setPreferences((current) => ({ ...current, outputDirectory: updated.directory }));
@@ -327,26 +327,15 @@ export default function App() {
          replacingSourceId.current = null;
          const current = sourceRef.current;
          if (!current || current.id !== updated.sourceId) return;
-         if (updated.items.some((item) => item.status === "completed" && item.outputPath === current.path)) void openLatest.current(current.path);
+         if (updated.items.some((item) => item.status === "completed" && item.outputPath === current.path)) void openPath(current.path);
          else playback.source(current);
-      });
-      return () => {
-         cancelled = true;
-         unsubscribe();
-         unsubscribeUpdate();
-      };
-      // Desktop initialization runs once. Later source changes use explicit open commands.
-   }, []);
-   const openLatest = useRef(openPath);
-   openLatest.current = openPath;
-   useEffect(
-      () =>
-         window.desktop.onOpenFile((path) => {
-            void openLatest.current(path);
-         }),
-      []
-   );
+      },
+      onOpenFile: (path) => {
+         void openPath(path);
+      },
+   });
    usePersistence({ source, editor, restore, preferences, ready, setError: showError });
+   useFrameBoundaries(source, editor.document, dispatch, showError);
    useAppearance(preferences);
    useEffect(() => {
       if (!menu) return;
@@ -385,18 +374,12 @@ export default function App() {
       if (preparing) return;
       void video.play().catch(() => undefined);
    };
-   const selectAdjacent = (direction: -1 | 1) => {
-      const time = adjacentBoundary(editor.document.clips, clock.get(), direction);
-      if (time !== null) {
-         seek(time, false, true);
-      }
-   };
    const setBoundary = (side: "start" | "end", value: number, target = clip) => {
       const clip = target;
       if (source && clip) {
          const time = resolveBoundary(editor.document, clip.id, side, value, {
             duration: source.duration,
-            viewLength: (source.duration * 100) / Math.max(1, zoom),
+            viewLength: 0,
             frameStep,
             snapping,
             keyframes,
@@ -406,32 +389,29 @@ export default function App() {
          if (actual === clip[side]) return actual;
          animateTrim();
          commit(next);
-         seeker.seek(actual, preferences.keepPlaying);
+         seeker.seek(actual, preferences.keepPlaying, false, side === "end" ? -1 : 0);
          return actual;
       }
       return value;
    };
    const minimumClipLength = () => minClipLength(0, frameStep);
-   const splitTime = () => (clip ? splitTargetAt(editor.document, clip.id, clock.get(), { snapping, keyframes }) : clock.get());
-   const seekKeyframe = (direction: -1 | 1) => {
-      // Sitting on a keyframe steps to its neighbor, not back onto the same point. The seek
-      // glides even when the hop is a single frame: the move is discrete navigation, not a
-      // continuous step.
-      const target = neighboringKeyframe(clock.get(), direction, keyframes);
-      if (target !== null) seek(target, false, true);
-   };
    const available = () => !!source && !loading && !trimmingRef.current;
-   const frameStep = 1 / (source?.streams.find((stream) => stream.type === "video")?.frameRate || 100);
+   const frameStep = 1 / ((source && primaryVideo(source)?.frameRate) || 100);
    const frameSequence = useRef(0);
    const stepFrame = (direction: -1 | 1) => {
       videoRef.current?.pause();
       playback.previewEnd = null;
       const sequence = ++frameSequence.current;
       const id = source!.id;
+      const video = videoRef.current;
+      const from =
+         seeker.pending || video?.seeking
+            ? clock.get()
+            : (clock.getResolved() ?? (video && clock.getDisplayed(video.currentSrc)) ?? video?.currentTime ?? clock.get());
       void window.desktop
-         .frameTime(id, clock.get(), direction)
+         .frameTime(id, from, direction)
          .then((target) => {
-            if (sequence === frameSequence.current && sourceRef.current?.id === id) seek(target);
+            if (sequence === frameSequence.current && sourceRef.current?.id === id) seek(target, false, false, "start");
          })
          .catch((value: unknown) => {
             if (sourceRef.current?.id === id) showError(errorText(value));
@@ -450,7 +430,20 @@ export default function App() {
       setZoom(percent);
       viewportWidth.current = width;
    }, []);
-   const commands: Commands = {
+   const navigate = (resolveTime: () => number | null) =>
+      resolvedCommand(() => {
+         if (!available()) return;
+         const target = resolveTime();
+         if (target !== null) return () => seek(target, false, true);
+      });
+   const trimCommand = (side: "start" | "end") =>
+      resolvedCommand(() => {
+         if (!available()) return;
+         const target = currentClip();
+         const time = clock.get();
+         if (target && time > target.start && time < target.end) return () => setBoundary(side, time, target);
+      });
+   const commands: Commands = guardCommands({
       frameBack: { enabled: available, run: () => stepFrame(-1) },
       frameForward: { enabled: available, run: () => stepFrame(1) },
       mute: {
@@ -461,20 +454,20 @@ export default function App() {
          },
       },
       snap: { enabled: () => available() && !readingKeys, run: () => setPreferences((current) => ({ ...current, snapping: !current.snapping })) },
-      merge: {
-         enabled: () => available() && joinAtPlayhead() >= 0,
-         run: () => {
-            const index = joinAtPlayhead();
-            if (index < 0) return;
+      merge: resolvedCommand(() => {
+         if (!available()) return;
+         const index = joinAtPlayhead();
+         if (index < 0) return;
+         return () => {
             const boundary = editor.document.clips[index]!.end;
             commit(mergeClips(editor.document, index));
             seek(boundary, true);
-         },
-      },
+         };
+      }),
       toggleClip: {
          ...resolvedCommand(() => {
             const action = currentClip() ? commands.delete : commands.add;
-            return action.enabled() ? action.run : undefined;
+            return action.resolve?.();
          }),
          feedback: () => (currentClip() ? "delete" : "add"),
       },
@@ -513,46 +506,26 @@ export default function App() {
       forward: { enabled: available, run: () => seek(clock.get() + 1, false, true) },
       backFast: { enabled: available, run: () => seek(clock.get() - 5, false, true) },
       forwardFast: { enabled: available, run: () => seek(clock.get() + 5, false, true) },
-      previousKeyframe: {
-         enabled: () => available() && neighboringKeyframe(clock.get(), -1, keyframes) !== null,
-         run: () => seekKeyframe(-1),
-      },
-      nextKeyframe: {
-         enabled: () => available() && neighboringKeyframe(clock.get(), 1, keyframes) !== null,
-         run: () => seekKeyframe(1),
-      },
-      previous: {
-         enabled: () => available() && adjacentBoundary(editor.document.clips, clock.get(), -1) !== null,
-         run: () => selectAdjacent(-1),
-      },
-      next: {
-         enabled: () => available() && adjacentBoundary(editor.document.clips, clock.get(), 1) !== null,
-         run: () => selectAdjacent(1),
-      },
-      split: {
-         enabled: () =>
-            available() &&
-            !!clip &&
-            joinAtPlayhead() < 0 &&
-            (!snapping || !readingKeys) &&
-            canSplit(editor.document, clip.id, clock.get(), minimumClipLength()) &&
-            canSplit(editor.document, clip.id, splitTime(), minimumClipLength()),
-         run: () => {
-            if (!clip) return;
-            const time = splitTime();
-            const next = splitClip(editor.document, clip.id, time, minimumClipLength());
+      previousKeyframe: navigate(() => neighboringKeyframe(clock.get(), -1, keyframes)),
+      nextKeyframe: navigate(() => neighboringKeyframe(clock.get(), 1, keyframes)),
+      previous: navigate(() => adjacentBoundary(editor.document.clips, clock.get(), -1)),
+      next: navigate(() => adjacentBoundary(editor.document.clips, clock.get(), 1)),
+      split: resolvedCommand(() => {
+         if (!available() || joinAtPlayhead() >= 0 || (snapping && readingKeys)) return;
+         const target = currentClip();
+         if (!target) return;
+         const current = clock.get();
+         const time = splitTargetAt(editor.document, target.id, current, { snapping, keyframes });
+         const minimum = minimumClipLength();
+         if (!canSplit(editor.document, target.id, current, minimum) || !canSplit(editor.document, target.id, time, minimum)) return;
+         return () => {
+            const next = splitClip(editor.document, target.id, time, minimum);
             commit(next);
             seeker.seek(time, preferences.keepPlaying);
-         },
-      },
-      setStart: {
-         enabled: () => available() && !!currentClip() && clock.get() > currentClip()!.start && clock.get() < currentClip()!.end,
-         run: () => setBoundary("start", clock.get(), currentClip()),
-      },
-      setEnd: {
-         enabled: () => available() && !!currentClip() && clock.get() > currentClip()!.start && clock.get() < currentClip()!.end,
-         run: () => setBoundary("end", clock.get(), currentClip()),
-      },
+         };
+      }),
+      setStart: trimCommand("start"),
+      setEnd: trimCommand("end"),
       delete: resolvedCommand(() => {
          if (!available()) return;
          const target = deleteTarget();
@@ -592,7 +565,7 @@ export default function App() {
       zoomOut: { enabled: available, run: () => setZoomRequest((value) => ({ id: value.id + 1, direction: -1 })) },
       settings: { enabled: () => ready, run: () => setPanel("settings") },
       shortcuts: { enabled: () => ready, run: () => setPanel("shortcuts") },
-      closeProject: { enabled: () => !!source, run: closeProject },
+      closeProject: { enabled: () => !!source || loading, run: closeProject },
       quit: { enabled: () => true, run: () => window.desktop.windowAction("close") },
       releases: {
          enabled: () => ready,
@@ -609,7 +582,7 @@ export default function App() {
          },
       },
       about: { enabled: () => ready, run: () => setPanel("about") },
-   };
+   });
    // Panel dialogs guard themselves: the command handler checks the live dialog state, so the
    // panel's exit fade never blocks shortcuts. Only the menu needs the React-side flag.
    useCommands(commands, preferences.shortcuts, mac, !!menu);
@@ -649,27 +622,7 @@ export default function App() {
                <span className="app-name">AttaCut</span>
                <span className="title-separator">/</span>
                <span className="title-filename">{source?.name ?? "New cut"}</span>
-               {availableUpdate && (
-                  <UpdateChip
-                     update={availableUpdate}
-                     status={updateStatus}
-                     onDownload={() => {
-                        setUpdateStatus({ phase: "downloading", version: availableUpdate.version, percent: null });
-                        void window.desktop
-                           .downloadUpdate(availableUpdate.version)
-                           .catch((value) => setUpdateStatus({ phase: "error", version: availableUpdate.version, percent: null, message: errorText(value) }));
-                     }}
-                     onRestart={() =>
-                        void window.desktop
-                           .restartToUpdate()
-                           .catch((value) => setUpdateStatus({ phase: "error", version: availableUpdate.version, percent: null, message: errorText(value) }))
-                     }
-                     onRelease={() => void window.desktop.openExternal(availableUpdate.url).catch((value) => showError(errorText(value)))}
-                     onReveal={() => {
-                        if (updateStatus?.path) void window.desktop.revealOutput(updateStatus.path).catch((value) => showError(errorText(value)));
-                     }}
-                  />
-               )}
+               <AppUpdate ready={ready} onError={showError} />
                {!mac && (
                   <div className="window-controls">
                      <button aria-label="Minimize window" onClick={() => window.desktop.windowAction("minimize")}>
@@ -688,7 +641,22 @@ export default function App() {
                <nav aria-label="Application menu">
                   {Object.entries(menuSections).map(([name, sections]) => (
                      <div className="app-menu" key={name} data-menu>
-                        <button aria-haspopup="menu" aria-expanded={menu === name} onClick={() => setMenu(menu === name ? null : name)}>
+                        <button
+                           aria-haspopup="menu"
+                           aria-expanded={menu === name}
+                           onClick={() => setMenu(menu === name ? null : name)}
+                           onKeyDown={(event) => {
+                              if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+                              event.preventDefault();
+                              setMenu(name);
+                              const parent = event.currentTarget.parentElement;
+                              const last = event.key === "ArrowUp";
+                              requestAnimationFrame(() => {
+                                 const items = parent?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+                                 if (items?.length) items[last ? items.length - 1 : 0]?.focus();
+                              });
+                           }}
+                        >
                            {name}
                         </button>
                         <NavDropdown
@@ -747,13 +715,12 @@ export default function App() {
                         audioIndices={audioIndices}
                         onPlaying={(value) => {
                            setPlaying(value);
-                           if (!value && playback.get().intent === "playing") playback.pause();
                            // Real playback replaces any scrub burst still sounding.
                            if (value) {
-                              playback.playing();
                               scrubber.stop();
                            }
                         }}
+                        onAudioFallback={() => void preparePreview(source, audioIndices, playback.get().transcode, playback.get().intent !== "paused")}
                         onFailure={() => {
                            if (!source) return;
                            const requested = playback.get().intent !== "paused";
@@ -871,7 +838,7 @@ export default function App() {
                {panel === "frame" && source && (
                   <FramePanel
                      source={source}
-                     time={clock.get()}
+                     time={(videoRef.current && clock.getDisplayed(videoRef.current.currentSrc)) ?? videoRef.current?.currentTime ?? clock.get()}
                      preferences={preferences}
                      onPreferences={setPreferences}
                      onClose={() => setPanel((current) => (current === panel ? null : current))}

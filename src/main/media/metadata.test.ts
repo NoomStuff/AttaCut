@@ -1,6 +1,36 @@
-import { describe, expect, it } from "vitest";
-import { isDynamicHdrMetadata } from "./probe.ts";
-import { trimAss } from "./metadata.ts";
+import { isDynamicHdrMetadata } from "./probe";
+import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { metadataInputs, trimAss } from "./metadata";
+import { runMedia } from "./process";
+import type { ProbedSource } from "./probe";
+
+vi.mock("./process", () => ({ runMedia: vi.fn(async () => "[Events]\nDialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,Caption") }));
+
+it("reuses source captions across clips without losing the selected audio mapping", async () => {
+   const directory = await mkdtemp(join(tmpdir(), "attacut-captions-"));
+   const source = {
+      path: "recording.mkv",
+      chapters: [],
+      streams: [
+         { type: "audio", index: 1, disposition: {} },
+         { type: "audio", index: 2, disposition: {} },
+         { type: "subtitle", index: 3, codec: "ass", language: "eng", title: "Captions", disposition: {} },
+      ],
+   } as unknown as ProbedSource;
+   try {
+      await metadataInputs(source, { id: "a", start: 0, end: 1, color: 0 }, directory, "first.mkv", undefined, [1]);
+      const second = await metadataInputs(source, { id: "b", start: 2, end: 3, color: 1 }, directory, "second.mkv", undefined, [2]);
+      expect(runMedia).toHaveBeenCalledTimes(1);
+      expect(second.outputs).toContain("1:s:2");
+      expect(second.outputs).not.toContain("1:s:1");
+      expect(await readFile(join(directory, "subtitles-0.ass"), "utf8")).toContain("0:00:00.00,0:00:01.00");
+   } finally {
+      await rm(directory, { recursive: true, force: true });
+   }
+});
 
 describe("metadata preservation", () => {
    it("recognizes FFmpeg's dynamic HDR frame and packet names", () => {

@@ -7,6 +7,20 @@ import { dispositionFlags, serializeChapters } from "./mux.ts";
 import { isMp4Container } from "./formats.ts";
 
 export const textSubtitleCodecs = new Set(["subrip", "ass", "ssa", "mov_text", "webvtt", "text"]);
+const subtitleCache = new WeakMap<ProbedSource, Map<number, string>>();
+async function sourceSubtitle(source: ProbedSource, index: number, signal?: AbortSignal): Promise<string> {
+   let cache = subtitleCache.get(source);
+   const cached = cache?.get(index);
+   if (cached !== undefined) return cached;
+   const text = await runMedia("ffmpeg", ["-v", "error", "-i", source.path, "-map", `0:${index}`, "-c:s", "ass", "-f", "ass", "-"], { signal });
+   signal?.throwIfAborted();
+   if (!cache) {
+      cache = new Map();
+      subtitleCache.set(source, cache);
+   }
+   if (text.length + [...cache.values()].reduce((sum, value) => sum + value.length, 0) <= 16 * 1024 * 1024) cache.set(index, text);
+   return text;
+}
 function assTime(value: string): number {
    const [h, m, s] = value.split(":").map(Number);
    return h! * 3600 + m! * 60 + s!;
@@ -35,7 +49,8 @@ export async function metadataInputs(
    clip: Clip,
    directory: string,
    destination: string,
-   signal?: AbortSignal
+   signal?: AbortSignal,
+   audioTracks?: number[]
 ): Promise<{ inputs: string[]; outputs: string[] }> {
    const inputs: string[] = [];
    const outputs: string[] = [];
@@ -61,9 +76,7 @@ export async function metadataInputs(
          subtitleIndex++;
          continue;
       }
-      const ass = await runMedia("ffmpeg", ["-v", "error", "-i", source.path, "-map", `0:${stream.index}`, "-c:s", "ass", "-f", "ass", "-"], {
-         signal,
-      });
+      const ass = await sourceSubtitle(source, stream.index, signal);
       const path = join(directory, `subtitles-${subtitleIndex}.ass`);
       // FFmpeg subtitle extraction starts at the input's format start time.
       await writeFile(path, trimAss(ass, clip.start, clip.end));
@@ -86,7 +99,7 @@ export async function metadataInputs(
    }
    for (const [index, stream] of source.streams.filter((item) => item.type === "attachment").entries())
       outputs.push("-map", `1:${stream.index}`, `-map_metadata:s:t:${index}`, `1:s:${stream.index}`);
-   for (const [index, stream] of source.streams.filter((item) => item.type === "audio").entries())
+   for (const [index, stream] of source.streams.filter((item) => item.type === "audio" && (!audioTracks || audioTracks.includes(item.index))).entries())
       outputs.push(`-map_metadata:s:a:${index}`, `1:s:${stream.index}`, `-disposition:a:${index}`, dispositionFlags(stream.disposition));
    const chapters = source.chapters
       .filter((chapter) => chapter.end > clip.start && chapter.start < clip.end)
@@ -94,6 +107,7 @@ export async function metadataInputs(
          start: Math.max(chapter.start, clip.start) - clip.start,
          end: Math.min(chapter.end, clip.end) - clip.start,
          title: chapter.title,
+         ...(chapter.tags ? { tags: chapter.tags } : {}),
       }));
    if (chapters.length) {
       const path = join(directory, "chapters.ffmetadata");

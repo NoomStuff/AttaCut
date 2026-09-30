@@ -24,6 +24,16 @@ function priorityTarget(document: EditDocument, time: number) {
    return priority.resolve(document, time);
 }
 describe("source-time editing", () => {
+   it("resolves committed timestamps without adding undo steps or accepting a late reply", () => {
+      const requested = trimClip(source, "a", "start", 1.25, 120);
+      const committed = editorReducer({ ...emptyEditor, document: source }, { type: "commit", document: requested });
+      const resolved = editorReducer(committed, { type: "resolve", document: requested, times: new Map([[1.25, 1.266666]]) });
+      expect(resolved.document.clips[0]!.start).toBe(1.266666);
+      expect(resolved.past).toHaveLength(1);
+      expect(editorReducer(resolved, { type: "undo" }).document).toEqual(source);
+      const newer = editorReducer(committed, { type: "commit", document: trimClip(requested, "a", "start", 2, 120) });
+      expect(editorReducer(newer, { type: "resolve", document: requested, times: new Map([[1.25, 1.266666]]) })).toBe(newer);
+   });
    it("splits, trims a gap, and undoes the whole edit without moving other clips", () => {
       const trimmed = trimClip(trimClip(source, "a", "start", 10, 120), "a", "end", 100, 120);
       const split = splitClip(trimmed, "a", 40);
@@ -134,7 +144,7 @@ describe("merge and playhead targeting", () => {
       const state = editorReducer({ ...emptyEditor, document: split }, { type: "commit", document: merged });
       expect(editorReducer(state, { type: "undo" }).document).toEqual(split);
    });
-   it("recolours a merged clip only when its new neighbour has the same base colour", () => {
+   it("keeps the surviving clip's color when merging creates matching neighbors", () => {
       const document = {
          selectedId: "b",
          clips: [
@@ -143,7 +153,7 @@ describe("merge and playhead targeting", () => {
             { id: "c", start: 20, end: 30, color: 5 },
          ],
       };
-      expect(mergeClips(document, 0).clips.map((clip) => clip.color)).toEqual([6, 5]);
+      expect(mergeClips(document, 0).clips.map((clip) => clip.color)).toEqual([0, 5]);
       expect(mergeClips({ ...document, clips: document.clips.map((clip, index) => (index === 2 ? { ...clip, color: 2 } : clip)) }, 0).clips[0]!.color).toBe(0);
    });
    it("allows a one-frame gap but rejects a removed section", () => {

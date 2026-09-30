@@ -1,6 +1,55 @@
 import { expect } from "@playwright/test";
-import { test, waitForVideo } from "./app.mjs";
+import { test, waitForPlaybackTime, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+
+test("opening constrained export dialogs preserves preferences and explicit audio choices survive restart", async ({ launchApp, profile }) => {
+   const single = resolve(profile, "single.mp4");
+   const silent = resolve(profile, "silent.mp4");
+   const ffmpeg = process.env.FFMPEG_PATH ?? resolve("resources/media", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+   for (const [path, audio] of [
+      [single, true],
+      [silent, false],
+   ]) {
+      execFileSync(ffmpeg, ["-v", "error", "-i", resolve("work/fixture.mp4"), "-map", "0:V:0", ...(audio ? ["-map", "0:a:0"] : []), "-c", "copy", path]);
+   }
+   let app = await launchApp(profile, single);
+   let page = await app.firstWindow();
+   await waitForVideo(page);
+   for (const path of [single, silent]) {
+      if (path === silent) {
+         await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), path);
+         await expect(page.locator("video")).toHaveAttribute("aria-label", "silent.mp4");
+         await waitForVideo(page);
+      }
+      await page.getByRole("button", { name: "Export", exact: true }).click();
+      const preferences = await page.evaluate(async () => (await globalThis.desktop.bootstrap()).preferences);
+      expect(preferences.exportMode).toBe("separate");
+      expect(preferences.exportAudio).toEqual({ mode: "default", sourceTrackCount: 0, tracks: [] });
+      await page.keyboard.press("Escape");
+   }
+   await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), single);
+   await expect(page.locator("video")).toHaveAttribute("aria-label", "single.mp4");
+   await waitForVideo(page);
+   await page.getByRole("button", { name: "Export", exact: true }).click();
+   await page.getByRole("switch", { name: "Export audio", exact: true }).uncheck();
+   await page.keyboard.press("Escape");
+   await expect(page.getByRole("button", { name: "Export video", exact: true })).toBeHidden();
+   const viewport = await page.locator(".timeline-viewport").boundingBox();
+   await page.mouse.click(viewport.x + viewport.width / 3, viewport.y + 36);
+   await waitForPlaybackTime(page, 6);
+   await page.keyboard.press("s");
+   await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toBeVisible();
+   await page.getByRole("button", { name: "Export", exact: true }).click();
+   await expect(page.getByRole("button", { name: "Separate clips", exact: true })).toHaveAttribute("aria-pressed", "true");
+   await page.keyboard.press("Escape");
+   await app.close();
+   app = await launchApp(profile, resolve("work/fixture.mp4"));
+   page = await app.firstWindow();
+   await waitForVideo(page);
+   await page.getByRole("button", { name: "Export", exact: true }).click();
+   await expect(page.getByRole("button", { name: "Audio tracks to export", exact: true })).toContainText("0 audio tracks");
+});
 
 test("export dialog", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
@@ -16,7 +65,7 @@ test("export dialog", async ({ launchApp, profile }) => {
    const handle = page.getByRole("slider", { name: "Clip 1 end", exact: true });
    const target = Number(await handle.getAttribute("aria-valuenow"));
    await handle.click();
-   await expect.poll(() => page.locator("video").evaluate((v) => v.currentTime)).toBeCloseTo(target, 2);
+   await expect.poll(() => page.locator("video").evaluate((v) => v.currentTime)).toBeCloseTo(target - 1 / 30, 2);
    console.log("Handle click seeks correctly:", target);
    // The forgiving seam target belongs to Merge, even when slightly off the cut.
    await page.mouse.click(bar.x + (bar.width * target) / 18 + 6, bar.y + 36);

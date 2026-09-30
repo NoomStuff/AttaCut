@@ -30,4 +30,17 @@ describe("audio selection memory", () => {
       const saved = rememberAudioSelection([track(1, "Main")], []);
       expect(resolveAudioSelection([track(3, "Main")], saved)).toEqual([]);
    });
+   it("treats an explicit single-track export selection as all audio for future sources", () => {
+      const saved = rememberAudioSelection([track(1, "Main")], [1], true);
+      expect(resolveAudioSelection([track(3, "Game"), track(4, "Mic")], saved, true)).toEqual([3, 4]);
+   });
+   it("preserves every export track when a saved subset cannot match a new layout", () => {
+      const saved = rememberAudioSelection([track(1, "Game"), track(2, "Mic")], [2]);
+      expect(resolveAudioSelection([track(3, "Main"), track(4, "Alt"), track(5, "Voice")], saved, true)).toEqual([3, 4, 5]);
+   });
+   it("keeps silent multi-track exports silent when reopening or changing the source", () => {
+      const saved = rememberAudioSelection([track(1, "Game"), track(2, "Mic")], []);
+      expect(resolveAudioSelection([track(1, "Game"), track(2, "Mic")], saved, true)).toEqual([]);
+      expect(resolveAudioSelection([track(4, "Mix"), track(5, "Voice"), track(6, "Music")], saved, true)).toEqual([]);
+   });
 });

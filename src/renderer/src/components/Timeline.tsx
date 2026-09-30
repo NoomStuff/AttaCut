@@ -1,11 +1,11 @@
 import { visibleKeyframes, zoomLength } from "../editor/timelineView";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type { EditDocument } from "../editor/model";
 import type { Clip } from "../../../shared/types";
 import { clipChanges } from "../editor/clipChanges";
 import { clipColor } from "../editor/colors";
-import { trimClip } from "../editor/model";
+import { trimClip, minClipLength } from "../editor/model";
 import type { PlaybackClock } from "../playback/clock";
 import { useClock } from "../playback/clock";
 import { clamp, formatTime } from "../../../shared/time";
@@ -30,8 +30,8 @@ interface TimelineProps {
    snapping: boolean;
    playing: boolean;
    onSelect: (id: string) => void;
-   onCommit: (document: EditDocument) => void;
-   onSeek: (time: number, preservePriority?: boolean) => void;
+   onCommit: (document: EditDocument, group?: string) => void;
+   onSeek: (time: number, preservePriority?: boolean, glide?: boolean, side?: "start" | "end") => void;
    onZoom: (percent: number, viewportWidth: number) => void;
    onTrimming: (active: boolean) => void;
 }
@@ -61,6 +61,7 @@ export function Timeline({
 }: TimelineProps) {
    const time = useClock(clock);
    const section = useRef<HTMLElement>(null);
+   const keyboardGesture = useRef<string | null>(null);
    const viewport = useRef<HTMLDivElement>(null);
    const [view, setView] = useState({ start: 0, length: duration });
    const [draft, setDraft] = useState<EditDocument | null>(null);
@@ -129,11 +130,11 @@ export function Timeline({
    // retarget snaps instead of tweening, so frame stepping stays 1:1 — unless the seek asked
    // to glide (discrete navigation such as keyframe and clip jumps), which tweens regardless.
    const drawTime = useSmoothValue(dragBoundary, {
-      ...(pointerDriven ? { follow: pointerSmoothingMs } : { duration: 170, jump: Math.max(frameStep * 1.5, 0.05), glide: () => clock.consumeGlide() }),
+      ...(pointerDriven ? { follow: pointerSmoothingMs } : { duration: 170, jump: Math.max(frameStep * 1.5, 0.05), glide: clock.getGlide }),
       snap: () => playing,
       key: dragging ? "drag:" + dragging.id + ":" + dragging.side : (scrubbing.current ?? "idle"),
    });
-   const drawEdge = drawTime;
+   const drawEdge = dragging ? drawTime : 0;
    useEffect(() => {
       const element = viewport.current!;
       const measure = () => {
@@ -190,7 +191,7 @@ export function Timeline({
          event.preventDefault();
          const element = viewport.current!;
          const { view: current, duration: total } = latest.current;
-         if (event.altKey || event.shiftKey) {
+         if (event.altKey || event.shiftKey || (!event.ctrlKey && Math.abs(event.deltaX) > Math.abs(event.deltaY))) {
             setView({
                ...current,
                start: clamp(current.start + ((event.deltaY + event.deltaX) * current.length) / 900, 0, total - current.length),
@@ -206,7 +207,11 @@ export function Timeline({
             // deltas zoom per pixel with a boost so light gestures stay responsive, capped
             // so a single event can never lurch the view.
             const magnitude = Math.abs(delta);
-            const exponent = magnitude >= 60 ? Math.sign(delta) * 0.15 * Math.min(magnitude / 100, 3) : Math.sign(delta) * Math.min(magnitude * 0.008, 0.1);
+            const exponent = event.ctrlKey
+               ? clamp(delta * 0.01, -0.2, 0.2)
+               : magnitude >= 60
+                 ? Math.sign(delta) * 0.15 * Math.min(magnitude / 100, 3)
+                 : Math.sign(delta) * Math.min(magnitude * 0.008, 0.1);
             const length = clamp(current.length * Math.exp(exponent), Math.min(0.5, total), total);
             setView({ length, start: clamp(current.start + fraction * (current.length - length), 0, total - length) });
          }
@@ -214,56 +219,65 @@ export function Timeline({
       sectionElement.addEventListener("wheel", wheel, { passive: false });
       return () => sectionElement.removeEventListener("wheel", wheel);
    }, []);
-   const cancel = () => {
+   const cancel = useCallback(() => {
       const current = drag.current;
       drag.current = null;
       draftRef.current = null;
       setDraft(null);
       if (current) onTrimming(false);
       if (current?.target.hasPointerCapture(current.pointerId)) current.target.releasePointerCapture(current.pointerId);
-   };
+   }, [onTrimming]);
    useEffect(() => {
       const escape = (event: KeyboardEvent) => {
          if (event.key === "Escape") cancel();
       };
       window.addEventListener("keydown", escape);
       return () => window.removeEventListener("keydown", escape);
-   }, []);
-   const pointAt = (clientX: number) => {
-      const rect = viewport.current!.getBoundingClientRect();
-      // Map against the drawn view so picks land where the eye sees them, even mid-tween.
-      return clamp(latestDrawn.current.start + ((clientX - rect.left) / rect.width) * latestDrawn.current.length, 0, duration);
-   };
-   const x = (point: number) => `${((point - drawn.start) / drawn.length) * 100}%`;
-   const startDrag = (event: ReactPointerEvent<HTMLButtonElement>, id: string, side: "start" | "end") => {
-      if (event.button !== 0) return;
-      event.stopPropagation();
-      event.preventDefault();
-      if (globalThis.document.activeElement instanceof HTMLElement) globalThis.document.activeElement.blur();
-      drag.current = { pointerId: event.pointerId, lastClientX: event.clientX, original: document, id, side, target: event.currentTarget };
-      event.currentTarget.setPointerCapture(event.pointerId);
-      // Report before seeking: the drag pins the playhead onto the boundary being edited.
-      onTrimming(true);
-      onSelect(id);
-      const clip = document.clips.find((item) => item.id === id)!;
-      onSeek(clip[side]);
-   };
-   const applyDrag = (clientX: number) => {
-      const current = drag.current;
-      if (!current) return;
-      current.lastClientX = clientX;
-      const time = resolveBoundary(current.original, current.id, current.side, pointAt(clientX), {
-         duration,
-         viewLength: drawn.length,
-         frameStep,
-         snapping,
-         keyframes,
-      });
-      const next = trimClip(current.original, current.id, current.side, time, duration);
-      draftRef.current = next;
-      setDraft(next);
-      onSeek(next.clips.find((clip) => clip.id === current.id)![current.side]);
-   };
+   }, [cancel]);
+   const pointAt = useCallback(
+      (clientX: number) => {
+         const rect = viewport.current!.getBoundingClientRect();
+         // Map against the drawn view so picks land where the eye sees them, even mid-tween.
+         return clamp(latestDrawn.current.start + ((clientX - rect.left) / rect.width) * latestDrawn.current.length, 0, duration);
+      },
+      [duration]
+   );
+   const x = useCallback((point: number) => `${((point - drawn.start) / drawn.length) * 100}%`, [drawn.start, drawn.length]);
+   const startDrag = useCallback(
+      (event: ReactPointerEvent<HTMLButtonElement>, id: string, side: "start" | "end") => {
+         if (event.button !== 0) return;
+         event.stopPropagation();
+         event.preventDefault();
+         if (globalThis.document.activeElement instanceof HTMLElement) globalThis.document.activeElement.blur();
+         drag.current = { pointerId: event.pointerId, lastClientX: event.clientX, original: document, id, side, target: event.currentTarget };
+         event.currentTarget.setPointerCapture(event.pointerId);
+         // Report before seeking: the drag pins the playhead onto the boundary being edited.
+         onTrimming(true);
+         onSelect(id);
+         const clip = document.clips.find((item) => item.id === id)!;
+         onSeek(clip[side], true, false, side);
+      },
+      [document, onTrimming, onSelect, onSeek]
+   );
+   const applyDrag = useCallback(
+      (clientX: number) => {
+         const current = drag.current;
+         if (!current) return;
+         current.lastClientX = clientX;
+         const time = resolveBoundary(current.original, current.id, current.side, pointAt(clientX), {
+            duration,
+            viewLength: drawn.length,
+            frameStep,
+            snapping,
+            keyframes,
+         });
+         const next = trimClip(current.original, current.id, current.side, time, duration);
+         draftRef.current = next;
+         setDraft(next);
+         onSeek(next.clips.find((clip) => clip.id === current.id)![current.side], true, false, current.side);
+      },
+      [pointAt, duration, drawn.length, frameStep, snapping, keyframes, onSeek]
+   );
    const applyPan = (clientX: number) => {
       const active = panning.current;
       if (!active) return;
@@ -273,76 +287,78 @@ export function Timeline({
          start: clamp(active.start - ((clientX - active.x) * active.length) / width, 0, duration - active.length),
       });
    };
-   const moveDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
-      const current = drag.current;
-      if (!current || current.pointerId !== event.pointerId) return;
-      applyDrag(event.clientX);
-   };
-   const endDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
-      if (drag.current?.pointerId !== event.pointerId) return;
-      const current = drag.current;
-      // Apply the release point if decoding skipped the final move event.
-      if (event.clientX !== current.lastClientX) applyDrag(event.clientX);
-      const next = draftRef.current;
-      drag.current = null;
-      draftRef.current = null;
-      setDraft(null);
-      onTrimming(false);
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-      if (next) onCommit(next);
-      else onSeek(current.original.clips.find((clip) => clip.id === current.id)![current.side], true);
-   };
+   const moveDrag = useCallback(
+      (event: ReactPointerEvent<HTMLButtonElement>) => {
+         const current = drag.current;
+         if (!current || current.pointerId !== event.pointerId) return;
+         applyDrag(event.clientX);
+      },
+      [applyDrag]
+   );
+   const endDrag = useCallback(
+      (event: ReactPointerEvent<HTMLButtonElement>) => {
+         if (drag.current?.pointerId !== event.pointerId) return;
+         const current = drag.current;
+         // Apply the release point if decoding skipped the final move event.
+         if (event.clientX !== current.lastClientX) applyDrag(event.clientX);
+         const next = draftRef.current;
+         drag.current = null;
+         draftRef.current = null;
+         setDraft(null);
+         onTrimming(false);
+         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+         if (next) onCommit(next);
+         else onSeek(current.original.clips.find((clip) => clip.id === current.id)![current.side], true, false, current.side);
+      },
+      [applyDrag, onTrimming, onCommit, onSeek]
+   );
    const rulerStep = RULER_STEPS.find((step) => step * pxPerSecond >= 100) ?? RULER_STEPS.at(-1)!;
    const minorStep = rulerStep / 2;
    const minorSpacing = minorStep * pxPerSecond;
    const minorOpacity = clamp((minorSpacing - 50) / 50, 0, 1);
    // Labels near the centered time chip would be occluded by it, so they yield to the chip.
    const chipHalf = chipWidth / 2 + 10;
-   const underChip = (point: number) => Math.abs(point - (drawn.start + drawn.length / 2)) * pxPerSecond < chipHalf;
-   const tickAlign = (point: number) => {
-      const percent = ((point - drawn.start) / drawn.length) * 100;
-      return percent < 2 ? " edge-start" : percent > 98 ? " edge-end" : "";
-   };
    // The ruler and clip track are memoized subtrees: during playback only the playhead and
    // time chip re-render each frame, and a drag re-renders the track through the drawEdge dep.
-   const ruler = useMemo(
-      () => {
-         const rulerMarks = (() => {
-            if (pxPerSecond <= 0) return { major: [], minor: [] as number[] };
-            const first = Math.ceil((drawn.start - 0.0001) / rulerStep) * rulerStep;
-            const major: number[] = [];
-            for (let point = first; point <= drawn.start + drawn.length; point += rulerStep) major.push(+point.toFixed(6));
-            const minor: number[] = [];
-            if (minorOpacity > 0) {
-               const minorFirst = Math.ceil((drawn.start - 0.0001) / minorStep) * minorStep;
-               for (let point = minorFirst; point <= drawn.start + drawn.length; point += minorStep) {
-                  if (Math.abs(point / rulerStep - Math.round(point / rulerStep)) > 0.001) minor.push(+point.toFixed(6));
-               }
+   const ruler = useMemo(() => {
+      const underChip = (point: number) => Math.abs(point - (drawn.start + drawn.length / 2)) * pxPerSecond < chipHalf;
+      const tickAlign = (point: number) => {
+         const percent = ((point - drawn.start) / drawn.length) * 100;
+         return percent < 2 ? " edge-start" : percent > 98 ? " edge-end" : "";
+      };
+      const rulerMarks = (() => {
+         if (pxPerSecond <= 0) return { major: [], minor: [] as number[] };
+         const first = Math.ceil((drawn.start - 0.0001) / rulerStep) * rulerStep;
+         const major: number[] = [];
+         for (let point = first; point <= drawn.start + drawn.length; point += rulerStep) major.push(+point.toFixed(6));
+         const minor: number[] = [];
+         if (minorOpacity > 0) {
+            const minorFirst = Math.ceil((drawn.start - 0.0001) / minorStep) * minorStep;
+            for (let point = minorFirst; point <= drawn.start + drawn.length; point += minorStep) {
+               if (Math.abs(point / rulerStep - Math.round(point / rulerStep)) > 0.001) minor.push(+point.toFixed(6));
             }
-            return { major, minor };
-         })();
-         return (
-            <div className="timeline-ruler" aria-hidden="true">
-               {rulerMarks.major.map((point) => (
-                  <span key={point} className={`ruler-tick major${tickAlign(point)}`} style={{ left: `${Math.round((point - drawn.start) * pxPerSecond)}px` }}>
-                     {!underChip(point) && <em>{formatTime(point, rulerStep < 1 ? 2 : 0)}</em>}
-                  </span>
-               ))}
-               {rulerMarks.minor.map((point) => (
-                  <span
-                     key={point}
-                     className={`ruler-tick minor${tickAlign(point)}`}
-                     style={{ left: `${Math.round((point - drawn.start) * pxPerSecond)}px`, opacity: minorOpacity }}
-                  >
-                     {!underChip(point) && <em>{formatTime(point, minorStep < 1 ? 2 : 0)}</em>}
-                  </span>
-               ))}
-            </div>
-         );
-      },
-      // eslint: the tickAlign/underChip helpers derive from the listed values
-      [pxPerSecond, rulerStep, minorStep, minorOpacity, drawn.start, drawn.length, chipHalf]
-   );
+         }
+         return { major, minor };
+      })();
+      return (
+         <div className="timeline-ruler" aria-hidden="true">
+            {rulerMarks.major.map((point) => (
+               <span key={point} className={`ruler-tick major${tickAlign(point)}`} style={{ left: `${Math.round((point - drawn.start) * pxPerSecond)}px` }}>
+                  {!underChip(point) && <em>{formatTime(point, rulerStep < 1 ? 2 : 0)}</em>}
+               </span>
+            ))}
+            {rulerMarks.minor.map((point) => (
+               <span
+                  key={point}
+                  className={`ruler-tick minor${tickAlign(point)}`}
+                  style={{ left: `${Math.round((point - drawn.start) * pxPerSecond)}px`, opacity: minorOpacity }}
+               >
+                  {!underChip(point) && <em>{formatTime(point, minorStep < 1 ? 2 : 0)}</em>}
+               </span>
+            ))}
+         </div>
+      );
+   }, [pxPerSecond, rulerStep, minorStep, minorOpacity, drawn.start, drawn.length, chipHalf]);
    const track = useMemo(
       () => (
          <div className="timeline-track">
@@ -416,17 +432,18 @@ export function Timeline({
                      </span>
                      {(snapping || tickExit) &&
                         keyframeView.ticks
-                           .filter((point) => point > clip.start && point < clip.end)
+                           .filter((point) => point > start && point < end)
                            .map((point) => {
                               // The pop wave travels out from the playhead at toggle time.
                               const delay = pop && pxPerSecond > 0 ? Math.round(Math.min((Math.abs(point - pop.time) * pxPerSecond) / 2400, 0.5) * 1000) : null;
                               return (
                                  <i
                                     key={point}
+                                    data-time={point}
                                     className={`keyframe-tick${pop ? " pop" : ""}${!snapping && tickExit ? " leaving" : ""}`}
                                     style={
                                        {
-                                          left: `${((point - clip.start) / (clip.end - clip.start)) * 100}%`,
+                                          left: `${((point - start) / (end - start)) * 100}%`,
                                           opacity: keyframeView.opacity,
                                           "--kf-o": keyframeView.opacity,
                                           ...(delay !== null ? { "--pop-delay": `${delay}ms` } : {}),
@@ -446,15 +463,19 @@ export function Timeline({
                                  : (visible.clips[index + 1]?.start ?? Infinity) - clip.end <= frameStep
                            }
                            aria-label={`Clip ${index + 1} ${side}`}
-                           aria-valuemin={0}
-                           aria-valuemax={duration}
+                           aria-valuemin={
+                              side === "start" ? (visible.clips[index - 1]?.end ?? 0) : Math.min(clip.end, clip.start + minClipLength(0, frameStep))
+                           }
+                           aria-valuemax={
+                              side === "end" ? (visible.clips[index + 1]?.start ?? duration) : Math.max(clip.start, clip.end - minClipLength(0, frameStep))
+                           }
                            aria-valuenow={clip[side]}
                            aria-valuetext={formatTime(clip[side])}
                            onPointerDown={(event) => startDrag(event, clip.id, side)}
                            onClick={(event) => {
                               if (event.detail === 0) {
                                  onSelect(clip.id);
-                                 onSeek(clip[side], true);
+                                 onSeek(clip[side], true, false, side);
                               }
                            }}
                            onPointerMove={moveDrag}
@@ -464,6 +485,12 @@ export function Timeline({
                               if (drag.current) cancel();
                            }}
                            data-press-ignore
+                           onKeyUp={() => {
+                              keyboardGesture.current = null;
+                           }}
+                           onBlur={() => {
+                              keyboardGesture.current = null;
+                           }}
                            onKeyDown={(event) => {
                               if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && !event.altKey && !event.ctrlKey && !event.metaKey) {
                                  event.preventDefault();
@@ -478,8 +505,9 @@ export function Timeline({
                                     step: event.shiftKey ? 1 : frameStep,
                                  });
                                  const next = trimClip(document, clip.id, side, target, duration);
-                                 onCommit(next);
-                                 onSeek(next.clips.find((item) => item.id === clip.id)![side], true);
+                                 keyboardGesture.current ??= crypto.randomUUID();
+                                 onCommit(next, keyboardGesture.current);
+                                 onSeek(next.clips.find((item) => item.id === clip.id)![side], true, false, side);
                               }
                            }}
                         >
@@ -491,8 +519,6 @@ export function Timeline({
             })}
          </div>
       ),
-      // eslint: the handlers inside derive from these values; while dragging, the drawEdge
-      // entry re-renders the track each frame so the dragged clip glides with the pointer
       [
          visible,
          presence,
@@ -502,7 +528,6 @@ export function Timeline({
          pop,
          tickExit,
          pxPerSecond,
-         drawn.start,
          drawn.length,
          frameStep,
          duration,
@@ -510,7 +535,14 @@ export function Timeline({
          onSelect,
          onCommit,
          onSeek,
-         dragging ? drawEdge : 0,
+         dragging,
+         drawEdge,
+         keyframes,
+         cancel,
+         startDrag,
+         moveDrag,
+         endDrag,
+         x,
       ]
    );
    return (

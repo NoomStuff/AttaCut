@@ -47,7 +47,33 @@ function NavDropdownItems({
    // Subscribed only while mounted, so closed menus never tick with the clock.
    useClock(clock);
    return (
-      <div className={`dropdown${closing ? " closing" : ""}`} role="menu">
+      <div
+         className={`dropdown${closing ? " closing" : ""}`}
+         role="menu"
+         onKeyDown={(event) => {
+            const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+            const index = items.indexOf(document.activeElement as HTMLButtonElement);
+            const target =
+               event.key === "Home"
+                  ? items[0]
+                  : event.key === "End"
+                    ? items.at(-1)
+                    : event.key === "ArrowDown"
+                      ? items[(index + 1) % items.length]
+                      : event.key === "ArrowUp"
+                        ? items[(index - 1 + items.length) % items.length]
+                        : null;
+            if (target) {
+               event.preventDefault();
+               target.focus();
+            }
+            if (event.key === "Escape") {
+               event.preventDefault();
+               close();
+               (event.currentTarget.parentElement?.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement | null)?.focus();
+            }
+         }}
+      >
          {sections.map((section, index) => (
             <Fragment key={index}>
                {index > 0 && <div className="dropdown-divider" role="separator" />}

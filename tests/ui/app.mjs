@@ -5,21 +5,8 @@ import { mkdir } from "node:fs/promises";
 export const appEnv = { ...process.env };
 delete appEnv.ELECTRON_RUN_AS_NODE;
 
-// Replace an ipcMain invoke handler with a wrapper around the original implementation,
-// so specs can hold, count, or reshape main-process replies without reaching into
-// Electron's private handler map from every test. Wrappers must be closure-free; they
-// travel as source text because Electron cannot serialize function arguments.
-export async function wrapIpcHandler(app, channel, wrapper) {
-   await app.evaluate(
-      ({ ipcMain }, { channel, source }) => {
-         const original = ipcMain._invokeHandlers.get(channel);
-         if (!original) throw new Error(`No handler registered for ${channel}`);
-         ipcMain.removeHandler(channel);
-         const restored = new Function(`return (${source})`)();
-         ipcMain.handle(channel, (event, request) => restored(original, event, request));
-      },
-      { channel, source: wrapper.toString() }
-   );
+export async function configureIpc(app, channel, rule) {
+   await app.evaluate((_electron, { channel, rule }) => globalThis.attacutTestIpc.configure(channel, rule), { channel, rule });
 }
 
 export async function waitForVideo(page) {
@@ -68,7 +55,7 @@ export const test = base.extend({
          const app = await electron.launch({
             args: [...(process.env.ATTACUT_EXECUTABLE ? [] : ["."]), ...(process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : [])],
             ...(process.env.ATTACUT_EXECUTABLE ? { executablePath: process.env.ATTACUT_EXECUTABLE } : {}),
-            env: { ...appEnv, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: file },
+            env: { ...appEnv, ATTACUT_TESTING: "1", ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: file },
          });
          apps.add(app);
          app.process().stdout?.on("data", (data) => logs.push(String(data)));

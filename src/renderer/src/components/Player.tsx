@@ -2,13 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import type { RefObject } from "react";
 import type { Clip, MediaSource } from "../../../shared/types";
 import type { PlaybackClock } from "../playback/clock";
-import { useClock } from "../playback/clock";
+import { useFrameTime } from "../playback/clock";
 import { insideClip } from "../editor/model";
 import { selectNativeAudio } from "../playback/audio";
 import type { PlaybackController } from "../playback/controller";
 import type { PlaybackSeeker } from "../playback/seeker";
 import { nextKeptTime } from "../playback/ranges";
 import { useExitValue } from "../lib/motion";
+import { presentationTime } from "../playback/presentation";
 
 export function Player({
    source,
@@ -22,6 +23,7 @@ export function Player({
    muted,
    onPlaying,
    onFailure,
+   onAudioFallback,
    playWhenReady,
    waitForPlay,
    preparing,
@@ -42,6 +44,7 @@ export function Player({
    muted: boolean;
    onPlaying: (playing: boolean) => void;
    onFailure: () => void;
+   onAudioFallback: () => void;
    playWhenReady: boolean;
    waitForPlay: boolean;
    preparing: boolean;
@@ -129,6 +132,17 @@ export function Player({
    useEffect(() => seeker.attach(videoRef.current!), [seeker, videoRef]);
    useEffect(() => {
       const video = videoRef.current!;
+      if (!video.requestVideoFrameCallback) return;
+      let callback = 0;
+      const presented: VideoFrameRequestCallback = (_now, metadata) => {
+         if (video.currentSrc === url) clock.displayFrame(url, metadata.mediaTime);
+         callback = video.requestVideoFrameCallback(presented);
+      };
+      callback = video.requestVideoFrameCallback(presented);
+      return () => video.cancelVideoFrameCallback(callback);
+   }, [url, clock, videoRef]);
+   useEffect(() => {
+      const video = videoRef.current!;
       let frame = 0;
       const update = () => {
          if (!video.paused && video.readyState >= 2 && !video.seeking && !seeker.pending) {
@@ -164,9 +178,9 @@ export function Player({
    useEffect(() => {
       if (videoRef.current) {
          videoRef.current.volume = volume;
-         videoRef.current.muted = muted;
+         videoRef.current.muted = muted || !audioIndices.length;
       }
-   }, [volume, muted, videoRef]);
+   }, [volume, muted, videoRef, audioIndices.length]);
    useEffect(() => {
       if (videoRef.current && audioIndices.length === 1) selectNativeAudio(videoRef.current, source, audioIndices);
    }, [source, audioIndices, videoRef]);
@@ -178,9 +192,10 @@ export function Player({
             src={url}
             preload="auto"
             playsInline
+            muted={muted || !audioIndices.length}
             aria-label={source.name}
-            onPlay={() => onPlaying(true)}
             onPlaying={() => {
+               onPlaying(true);
                setWaitingForPlayback(false);
                revealFrame();
             }}
@@ -213,10 +228,23 @@ export function Player({
                   return;
                }
                if (videoRef.current) {
-                  const target = Math.min(clock.get(), source.duration);
+                  const resolved = clock.getResolved();
+                  const target = Math.min(resolved === null ? clock.get() : presentationTime(resolved), source.duration);
                   if (Math.abs(videoRef.current.currentTime - target) > 0.00001) videoRef.current.currentTime = target;
                }
-               if (videoRef.current && audioIndices.length === 1) selectNativeAudio(videoRef.current, source, audioIndices);
+               if (
+                  videoRef.current &&
+                  audioIndices.length === 1 &&
+                  !selectNativeAudio(videoRef.current, source, audioIndices) &&
+                  playback.get().phase === "source"
+               ) {
+                  const tracks = source.streams.filter((stream) => stream.type === "audio");
+                  const defaultTrack = tracks.find((track) => track.disposition["default"] === 1) ?? tracks[0];
+                  if (defaultTrack && audioIndices[0] !== defaultTrack.index) {
+                     onAudioFallback();
+                     return;
+                  }
+               }
                if (videoRef.current && playWhenReady) void videoRef.current.play().catch(onFailure);
             }}
             onDoubleClick={onFullscreen}
@@ -233,7 +261,7 @@ export function Player({
    );
 }
 function ExcludedHint({ clock, clips, duration, trimming }: { clock: PlaybackClock; clips: Clip[]; duration: number; trimming: boolean }) {
-   const time = useClock(clock);
+   const time = useFrameTime(clock);
    const included = insideClip(clips, time, duration);
    // While a handle drag pins the playhead onto a boundary, the draft is not yet the document.
    return <div className={`player-excluded ${included || trimming ? "hidden" : ""}`}>Not included in export</div>;

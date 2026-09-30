@@ -3,6 +3,10 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { resolve, join, sep } from "node:path";
+import { canReuseMediaVerification } from "./media-verification";
+
+const [receiptFlag, receipt, ...extra] = process.argv.slice(2);
+if (receiptFlag && (receiptFlag !== "--media-receipt" || !receipt || extra.length)) throw new Error("Usage: verify-package.ts [--media-receipt <path>]");
 
 const base =
    process.platform === "win32"
@@ -11,7 +15,11 @@ const base =
         ? `release/mac${process.arch === "arm64" ? "-arm64" : ""}/AttaCut.app/Contents`
         : `release/linux${process.arch === "arm64" ? "-arm64" : ""}-unpacked`;
 // On Windows the product exe is the native splash launcher; the tests attach to Electron itself.
-const executable = resolve(base, process.platform === "win32" ? "AttaCut-app.exe" : process.platform === "darwin" ? "MacOS/AttaCut" : "attacut");
+const hasLauncher = process.platform === "win32" && existsSync(resolve(base, "AttaCut-app.exe"));
+const executable = resolve(
+   base,
+   process.platform === "win32" ? (hasLauncher ? "AttaCut-app.exe" : "AttaCut.exe") : process.platform === "darwin" ? "MacOS/AttaCut" : "attacut"
+);
 const resources = resolve(base, process.platform === "darwin" ? "Resources" : "resources", "media");
 const extension = process.platform === "win32" ? ".exe" : "";
 if (!existsSync(executable)) throw new Error(`Packaged app missing: ${executable}`);
@@ -61,8 +69,11 @@ const env = {
    FFPROBE_PATH: join(resources, `ffprobe${extension}`),
    ATTACUT_EXECUTABLE: executable,
 };
-if (process.platform === "win32") await smokeLauncher();
-execFileSync(process.execPath, ["run", "test:media"], { stdio: "inherit", env });
+if (hasLauncher) await smokeLauncher();
+const reusable = receipt ? await canReuseMediaVerification(receipt, process.cwd(), env.FFMPEG_PATH, env.FFPROBE_PATH) : false;
+if (reusable) console.log("Identical source, dependencies and media tools already passed the full suite. Running bundled-media smoke and packaged UI.");
+else console.log("Running the full bundled-media suite.");
+execFileSync(process.execPath, reusable ? ["tests/media/packaged-smoke.ts"] : ["run", "test:media"], { stdio: "inherit", env });
 const args = [
    "x",
    "--no-install",
