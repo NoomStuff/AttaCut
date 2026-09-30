@@ -1,4 +1,5 @@
 import { app, dialog, ipcMain, net, shell, type BrowserWindow } from "electron";
+import { isPackagedApp } from "./identity.ts";
 import { IpcTestAdapter } from "./ipc-test-adapter";
 import { appFailure } from "./failure";
 import type { IpcResult } from "../shared/failure";
@@ -41,7 +42,7 @@ export function registerIpc({
    const updates = new UpdateManager(window);
    const frameOutputs = new Set<string>();
    const getSource = (id: string) => sourceSession.get(id);
-   const testing = !app.isPackaged && process.env["ATTACUT_TESTING"] === "1" ? new IpcTestAdapter() : null;
+   const testing = !isPackagedApp() && process.env["ATTACUT_TESTING"] === "1" ? new IpcTestAdapter() : null;
    if (testing) Object.defineProperty(globalThis, "attacutTestIpc", { value: testing });
    function handle<K extends keyof IpcCalls>(channel: K, action: (value: IpcRequest<K>) => IpcCalls[K]["response"] | Promise<IpcCalls[K]["response"]>): void {
       ipcMain.handle(channel, async (event, value: unknown): Promise<IpcResult<IpcCalls[K]["response"]>> => {
@@ -71,7 +72,7 @@ export function registerIpc({
       };
    });
    handle("update:check", async () => {
-      if (!app.isPackaged) return null;
+      if (!isPackagedApp()) return null;
       try {
          const update = await fetchAvailableUpdate(app.getVersion(), (url, init) => net.fetch(url, init));
          return update ? updates.offer(update) : null;
@@ -216,7 +217,7 @@ export function registerIpc({
       return shell.openExternal(url.href);
    });
    handle("notices:open", async () => {
-      const path = app.isPackaged ? join(process.resourcesPath, "THIRD_PARTY_NOTICES.md") : resolve(currentDirectory, "../../THIRD_PARTY_NOTICES.md");
+      const path = isPackagedApp() ? join(process.resourcesPath, "THIRD_PARTY_NOTICES.md") : resolve(currentDirectory, "../../THIRD_PARTY_NOTICES.md");
       if (!existsSync(path)) throw new Error("The third-party notices file is missing from this installation.");
       const failure = await shell.openPath(path);
       if (failure) throw new Error(failure);

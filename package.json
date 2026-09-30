@@ -1,6 +1,7 @@
 {
    "name": "attacut",
-   "version": "0.14.0",
+   "desktopName": "attacut.desktop",
+   "version": "0.14.1",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -146,6 +147,7 @@
          "category": "public.app-category.video"
       },
       "linux": {
+         "syncDesktopName": true,
          "icon": "build/icon.png",
          "target": [
             "AppImage"

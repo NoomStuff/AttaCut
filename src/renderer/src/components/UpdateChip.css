@@ -44,7 +44,7 @@
 .update-chip-icon {
    position: absolute;
    inset: 0 auto 0 0;
-   width: 25px;
+   width: 23px;
    display: grid;
    place-items: center;
    font-size: 11px;

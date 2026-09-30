@@ -25,6 +25,9 @@ module.exports = async function afterPack(context) {
    const launcherExe = join(appOutDir, `${context.packager.appInfo.productFilename}.exe`);
    if (!existsSync(electronExe)) throw new Error(`Packaged executable missing: ${electronExe}`);
    renameSync(electronExe, renamedExe);
+   // afterPack runs before builder edits the product exe. The renamed runtime needs
+   // its own resource pass or Task Manager and file properties keep Electron's identity.
+   await context.packager.signAndEditResources(renamedExe, context.arch, appOutDir, "AttaCut");
    execFileSync(
       csc,
       [

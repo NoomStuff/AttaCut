@@ -14,6 +14,12 @@ using System.IO;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using System.Reflection;
+
+[assembly: AssemblyTitle("AttaCut")]
+[assembly: AssemblyDescription("AttaCut")]
+[assembly: AssemblyProduct("AttaCut")]
+[assembly: AssemblyCompany("NoomStuff")]
 
 internal sealed class Splash : Form
 {

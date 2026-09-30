@@ -8,6 +8,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { windowsDevExecutable } from "./windows-dev-identity";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const splashFolder = join(root, "work", "splash");
@@ -43,6 +44,7 @@ async function compileSplash(): Promise<string | null> {
          "/nologo",
          "/target:winexe",
          `/out:${splashExe}`,
+         `/win32icon:${join(root, "build", "icon.ico")}`,
          "/r:System.Windows.Forms.dll",
          "/r:System.Drawing.dll",
          splashSource,
@@ -54,6 +56,7 @@ async function compileSplash(): Promise<string | null> {
 }
 
 const helperExe = await compileSplash();
+const executable = await windowsDevExecutable(root);
 let helper: ChildProcess | null = null;
 try {
    if (helperExe) {
@@ -66,7 +69,11 @@ try {
    const electron = spawn("bunx", ["electron-vite", "dev"], {
       stdio: "inherit",
       shell: process.platform === "win32",
-      env: helper ? { ...process.env, ATTACUT_SPLASH_SIGNAL: signalPath } : process.env,
+      env: {
+         ...process.env,
+         ...(helper ? { ATTACUT_SPLASH_SIGNAL: signalPath } : {}),
+         ...(executable ? { ELECTRON_EXEC_PATH: executable } : {}),
+      },
    });
    const exitCode: Promise<number | null> = new Promise((resolveExit) => {
       electron.on("exit", (code) => resolveExit(code));

@@ -1,5 +1,6 @@
-import { app, Menu, type BrowserWindow } from "electron";
+import { Menu, type BrowserWindow } from "electron";
 import { IpcEvents } from "../shared/ipc.ts";
+import { isPackagedApp } from "./identity.ts";
 
 export function installMenu(window: BrowserWindow): void {
    const item = (label: string, id: string) => ({ label, click: () => window.webContents.send(IpcEvents.command, id) });
@@ -42,7 +43,7 @@ export function installMenu(window: BrowserWindow): void {
             item("Zoom out", "zoomOut"),
             item("Fit timeline", "fit"),
             { role: "togglefullscreen" },
-            ...(!app.isPackaged ? [{ role: "toggleDevTools" as const }] : []),
+            ...(!isPackagedApp() ? [{ role: "toggleDevTools" as const }] : []),
          ],
       },
       {

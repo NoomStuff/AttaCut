@@ -11,7 +11,7 @@ import { videoExtensions } from "./media/formats.ts";
 import { prunePreviews } from "./media/preview.ts";
 import { IpcEvents } from "../shared/ipc.ts";
 import { installMenu } from "./menu.ts";
-import { windowIcon, registerWindowsIdentity } from "./identity.ts";
+import { windowIcon, registerWindowsIdentity, isPackagedApp } from "./identity.ts";
 import { registerIpc } from "./ipc.ts";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
@@ -81,7 +81,7 @@ async function start(): Promise<void> {
          appIconPath: icon,
          appIconIndex: 0,
          relaunchDisplayName: "AttaCut",
-         relaunchCommand: app.isPackaged ? `"${relaunchExe}"` : `"${process.execPath}" "${app.getAppPath()}"`,
+         relaunchCommand: isPackagedApp() ? `"${relaunchExe}"` : `"${process.execPath}" "${app.getAppPath()}"`,
       });
    }
    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));

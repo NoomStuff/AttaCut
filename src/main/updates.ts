@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AvailableUpdate } from "../shared/types.ts";
 import { app, net, type BrowserWindow } from "electron";
+import { isPackagedApp } from "./identity.ts";
 import { createHash } from "node:crypto";
 import { open, rename, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -59,7 +60,7 @@ export async function fetchAvailableUpdate(
 }
 
 export function updateMode(): AvailableUpdate["mode"] {
-   if (!app.isPackaged) return "releases";
+   if (!isPackagedApp()) return "releases";
    if (process.platform === "win32")
       return process.env["PORTABLE_EXECUTABLE_FILE"] ? "download" : existsSync(join(process.resourcesPath, "app-update.yml")) ? "automatic" : "releases";
    if (process.platform === "linux") return process.env["APPIMAGE"] && existsSync(join(process.resourcesPath, "app-update.yml")) ? "automatic" : "releases";

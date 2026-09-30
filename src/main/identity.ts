@@ -5,12 +5,17 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
+// Electron infers isPackaged from the executable name. Our branded dev runtime still
+// loads the project through default_app, so use that flag to retain development behavior.
+export function isPackagedApp(): boolean {
+   return app.isPackaged && !process.defaultApp;
+}
 
 // Use the same assets for native windows and Windows shell entries in every build.
 export function windowIcon(): string | undefined {
    if (process.platform === "darwin") return undefined;
    const name = process.platform === "win32" ? "icon.ico" : "icon.png";
-   const icon = app.isPackaged ? join(process.resourcesPath, "icons", name) : resolve(currentDirectory, "../../build", name);
+   const icon = isPackagedApp() ? join(process.resourcesPath, "icons", name) : resolve(currentDirectory, "../../build", name);
    return existsSync(icon) ? icon : undefined;
 }
 export function registerWindowsIdentity(): void {

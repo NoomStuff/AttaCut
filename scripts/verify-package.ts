@@ -23,6 +23,29 @@ const executable = resolve(
 const resources = resolve(base, process.platform === "darwin" ? "Resources" : "resources", "media");
 const extension = process.platform === "win32" ? ".exe" : "";
 if (!existsSync(executable)) throw new Error(`Packaged app missing: ${executable}`);
+if (process.platform === "win32") {
+   // Check both processes. The launcher can look correct while the runtime still says Electron.
+   for (const file of new Set([executable, resolve(base, "AttaCut.exe")])) {
+      const metadata = JSON.parse(
+         execFileSync(
+            "powershell",
+            [
+               "-NoProfile",
+               "-Command",
+               `$v = (Get-Item -LiteralPath '${file.replaceAll("'", "''")}').VersionInfo; $v | Select-Object FileDescription,ProductName,CompanyName,InternalName,OriginalFilename | ConvertTo-Json -Compress`,
+            ],
+            { encoding: "utf8" }
+         )
+      ) as Record<string, string>;
+      if (
+         metadata["FileDescription"] !== "AttaCut" ||
+         metadata["ProductName"] !== "AttaCut" ||
+         Object.values(metadata).some((value) => /electron/i.test(value))
+      ) {
+         throw new Error(`Unbranded Windows executable: ${file}: ${JSON.stringify(metadata)}`);
+      }
+   }
+}
 
 // The splash launcher fronts the real exe for users, and no Playwright spec drives it
 // (Electron tooling cannot attach through it), so its chain gets a direct smoke here:
