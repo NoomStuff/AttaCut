@@ -14,7 +14,7 @@ This app should combine accurate, efficient cutting with a compact interface tha
 
 ### Key principles
 
-- **Protect originals explicitly**: The source file is never modified. Editing mistakes should be reversible.
+- **Protect originals explicitly**: The source file is never modified during the editing process. Editing mistakes should be reversible.
 - **Define unacceptable compromises**: Do not silently shift cuts, discard tracks or metadata, or re-encode an entire long clip to make an export succeed. Explain limitations in a brief and simple manner so non-technical users can grasp it instantly.
 - **Separate preview from output**. Preview settings do not change exported content. Export changes require an explicit choice.
 
@@ -34,4 +34,4 @@ Re-encoding a small section near a boundary is acceptable when needed for accura
 
 Pushing to main with a new version number in `package.json` is what triggers a release via GitHub Actions. Bump it appropriately for the changes made (not every change would need a new version), follow ups should not bump again unless pushes to main have been made since. Don't blindly push without permission from the user.
 
-Always run `bun run format` and `bun run verify` on the final files after a turn. For changes to export, playback, packaging, or release workflows, run `bun run verify:release` too. Fix failures before pushing. After a version bump, watch to make sure the release is successful, if it fails you must resolve the issue and push a fix version.
+Always run `bun run format` and `bun run verify` after a turn with many file edits. For changes to export, playback, packaging, or release workflows, run `bun run verify:release` too. Fix failures before pushing. After a version bump, watch to make sure the release is successful, if it fails you must resolve the issue and push a fix version.
