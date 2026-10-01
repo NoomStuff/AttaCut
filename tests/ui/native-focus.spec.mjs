@@ -75,4 +75,10 @@ test("native minimize, restore and activation", async ({ launchApp, profile }) =
    const before = await page.locator("video").evaluate((video) => video.currentTime);
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await page.waitForFunction((before) => document.querySelector("video").currentTime > before + 0.3, before);
+   await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
+   await page.waitForFunction(() => document.fullscreenElement?.tagName === "VIDEO");
+   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
+   await page.locator("video").dblclick();
+   await page.waitForFunction(() => !document.fullscreenElement);
+   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
 });

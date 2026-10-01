@@ -115,16 +115,21 @@ test("fullscreen preserves background presentation", async ({ launchApp, profile
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
+   await page.getByRole("button", { name: "Play", exact: true }).click();
    await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
    await page.waitForFunction(() => document.fullscreenElement?.tagName === "VIDEO");
+   const before = await page.locator("video").evaluate((video) => video.currentTime);
+   await page.waitForFunction((before) => document.querySelector("video").currentTime > before + 0.3, before);
    if (process.env.ATTACUT_TEST_VISIBLE !== "1") {
       expect(
          await app.evaluate(({ BrowserWindow }) => {
             const window = BrowserWindow.getAllWindows()[0];
-            return process.platform === "linux" ? !window.isVisible() : window.getOpacity() === 0 && !window.isFocused();
+            return !window.isFocused() && (process.platform === "linux" ? !window.isVisible() : window.getOpacity() === 0);
          })
       ).toBe(true);
    }
+   await page.locator("video").dblclick();
+   await page.waitForFunction(() => !document.fullscreenElement);
 });
 
 test("compact layout keeps transport controls within the window", async ({ launchApp, profile }) => {

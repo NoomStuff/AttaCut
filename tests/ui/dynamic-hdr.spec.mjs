@@ -1,16 +1,10 @@
 import { expect } from "@playwright/test";
-import { test, waitForVideo, mediaBinary } from "./app.mjs";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { test, waitForVideo } from "./app.mjs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 test("real HDR10+ boundaries explain refusal and disable export", async ({ launchApp, profile }) => {
-   await promisify(execFile)("bun", ["tests/media/dynamic-hdr.ts"], {
-      windowsHide: true,
-      env: { ...process.env, FFMPEG_PATH: mediaBinary("ffmpeg"), FFPROBE_PATH: mediaBinary("ffprobe") },
-   });
-   const path = resolve("work/dynamic-hdr/hdr10plus.mp4");
+   const path = resolve("tests/media/fixtures/hdr10plus.mp4");
    const original = await readFile(path);
    const app = await launchApp(profile, path);
    const page = await app.firstWindow();

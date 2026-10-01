@@ -51,12 +51,18 @@ async function start(): Promise<void> {
    const storageReady = storage.load();
    await app.whenReady();
    const icon = windowIcon();
+   const backgroundLinuxTest =
+      process.platform === "linux" &&
+      process.env["ATTACUT_TESTING"] === "1" &&
+      process.env["ATTACUT_HIDDEN"] === "1" &&
+      process.env["ATTACUT_NATIVE_SMOKE"] !== "1";
    const window = new BrowserWindow({
       width: 1360,
       height: 880,
       minWidth: 800,
       minHeight: 560,
       show: false,
+      ...(backgroundLinuxTest ? { focusable: false, skipTaskbar: true } : {}),
       backgroundColor: "#17191c",
       title: "AttaCut",
       ...(icon ? { icon } : {}),
@@ -71,6 +77,9 @@ async function start(): Promise<void> {
       },
    });
    appWindow = window;
+   // GTK shows a hidden window when HTML fullscreen changes its native state.
+   // Re-hide it without suppressing the fullscreen API or native transition.
+   if (backgroundLinuxTest) window.on("show", () => window.hide());
    // Silence the device output without changing the renderer's mute/volume state.
    if (process.env["ATTACUT_TESTING"] === "1") window.webContents.setAudioMuted(true);
    const testing = !isPackagedApp() && process.env["ATTACUT_TESTING"] === "1" ? new IpcTestAdapter() : null;

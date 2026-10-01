@@ -79,8 +79,25 @@ for (const changed of [true, false])
       }, profile);
       const existing = join(profile, "preserved.mp4");
       await writeFile(existing, "existing video");
-      if (changed) await writeFile(source, "changed");
-      else await rm(source);
+      // Windows can retain the decoder's file handle after the initial frame.
+      // Stop that reader while keeping the real source and export plan in app state.
+      await page.locator("video").evaluate((video) => {
+         video.pause();
+         video.removeAttribute("src");
+         video.load();
+      });
+      await expect
+         .poll(async () => {
+            try {
+               if (changed) await writeFile(source, "changed");
+               else await rm(source);
+               return true;
+            } catch (error) {
+               if (error.code === "EBUSY" || error.code === "EPERM") return false;
+               throw error;
+            }
+         })
+         .toBe(true);
       await page.evaluate((id) => globalThis.desktop.startExport(id), plan.id);
       await expect(page.getByText("Export failed", { exact: true })).toBeVisible();
       await expect(page.getByRole("alert")).toContainText(/reopen|can't be found|no such file/i);
