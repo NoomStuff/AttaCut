@@ -6,6 +6,22 @@ test("kept playback", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
+   // Record transient playback intervals in the renderer. A slow runner can miss
+   // a correct gap crossing before its next Playwright poll reaches the page.
+   await page.evaluate(() => {
+      globalThis.playbackSamples = [];
+      const video = document.querySelector("video");
+      const record = () => {
+         if (!video.seeking && !video.paused) globalThis.playbackSamples.push(video.currentTime);
+         if (globalThis.playbackSamples.length > 4096) globalThis.playbackSamples.shift();
+      };
+      video.addEventListener("timeupdate", record);
+      const tick = () => {
+         record();
+         globalThis.requestAnimationFrame(tick);
+      };
+      globalThis.requestAnimationFrame(tick);
+   });
    const video = page.locator("video");
    const bar = await page.locator(".timeline-viewport").boundingBox();
    const clickTime = (time) => page.mouse.click(bar.x + (bar.width * time) / 18, bar.y + 36);
@@ -17,6 +33,14 @@ test("kept playback", async ({ launchApp, profile }) => {
          },
          { start, end, paused }
       );
+   const observedAt = (start) =>
+      page.waitForFunction((start) => globalThis.playbackSamples.some((time) => time >= start - 0.001 && time <= start + 0.5), start);
+   const play = async () => {
+      await page.evaluate(() => {
+         globalThis.playbackSamples = [];
+      });
+      await page.getByRole("button", { name: "Play", exact: true }).click();
+   };
    const trim = async (start, end) => {
       for (const [name, time] of [
          ["start", start],
@@ -42,18 +66,18 @@ test("kept playback", async ({ launchApp, profile }) => {
    // Paused inspection of gaps stays put. Play moves to the next kept range.
    await clickTime(4);
    await at(4, 4.01, true);
-   await page.getByRole("button", { name: "Play", exact: true }).click();
-   await at(6);
+   await play();
+   await observedAt(6);
    await page.getByRole("button", { name: "Pause", exact: true }).click();
 
    // Natural playback crosses both gaps and stops exactly at the final kept end.
    await clickTime(2.8);
-   await page.getByRole("button", { name: "Play", exact: true }).click();
-   await at(6);
-   await at(11);
+   await play();
+   await observedAt(6);
+   await observedAt(11);
    await at(13 - 1 / 30, 13, true);
-   await page.getByRole("button", { name: "Play", exact: true }).click();
-   await at(1);
+   await play();
+   await observedAt(1);
    await page.getByRole("button", { name: "Pause", exact: true }).click();
 
    await page.getByRole("button", { name: "Playback settings", exact: true }).click();

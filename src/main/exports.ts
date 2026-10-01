@@ -53,8 +53,10 @@ export class ExportService {
    private runningPlan: StoredPlan | null = null;
    private completion: Promise<void> = Promise.resolve();
    private emit: (job: ExportJob) => void;
-   constructor(emit: (job: ExportJob) => void) {
+   private readonly beforeItem: ((signal: AbortSignal) => Promise<void>) | undefined;
+   constructor(emit: (job: ExportJob) => void, beforeItem?: (signal: AbortSignal) => Promise<void>) {
       this.emit = emit;
+      this.beforeItem = beforeItem;
    }
    get running(): boolean {
       return this.job?.running ?? false;
@@ -280,6 +282,8 @@ export class ExportService {
          };
          this.emit(structuredClone(job));
          try {
+            await this.beforeItem?.(signal);
+            signal.throwIfAborted();
             if (stored.approval?.createDirectory) await mkdir(stored.plan.directory, { recursive: true });
             await protectSource(stored.source.path, item.outputPath, !!stored.approval?.replaceSource && item.outputPath === stored.plan.sourcePath);
             const cuts = stored.analyses.get(item.id)!;

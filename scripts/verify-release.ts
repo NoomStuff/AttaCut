@@ -11,7 +11,7 @@ const env = { ...process.env, ...(await provisionMedia()), CI: "true" };
 run(["run", "verify"], env);
 const fingerprint = await mediaVerificationFingerprint(process.cwd(), env.FFMPEG_PATH!, env.FFPROBE_PATH!);
 run(["run", "test:media"], env);
-run(["x", "--no-install", "playwright", "test"], env);
+run(["x", "--no-install", "playwright", "test", "--project=ui", "--project=playback"], env);
 run(["run", process.platform === "win32" ? "dist:win:all" : process.platform === "darwin" ? "dist:mac:all" : "dist"], {
    ...env,
    CSC_IDENTITY_AUTO_DISCOVERY: "false",

@@ -13,6 +13,7 @@ export function JobProgress({
    onError,
    onRetry,
    retryAvailable,
+   onReopen,
 }: {
    job: ExportJob;
    closing: boolean;
@@ -20,6 +21,7 @@ export function JobProgress({
    onError: (value: string) => void;
    onRetry: (value: ExportJob) => void;
    retryAvailable: boolean;
+   onReopen: () => void;
 }) {
    const [hideSuccess, setHideSuccess] = useState(false);
    const [hideFailures, setHideFailures] = useState(false);
@@ -133,6 +135,7 @@ export function JobProgress({
                   ))}
                </div>
                <div className="job-actions">
+                  {failures.some((item) => item.failure?.code === "source-changed") && <Button onClick={onReopen}>Reopen source</Button>}
                   <Button
                      disabled={!retryAvailable || !failures.some((item) => item.failure?.retryable !== false)}
                      title={

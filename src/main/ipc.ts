@@ -1,6 +1,6 @@
 import { app, dialog, ipcMain, net, shell, type BrowserWindow } from "electron";
 import { isPackagedApp } from "./identity.ts";
-import { IpcTestAdapter } from "./ipc-test-adapter";
+import type { IpcTestAdapter } from "./ipc-test-adapter";
 import { appFailure } from "./failure";
 import type { IpcResult } from "../shared/failure";
 import { existsSync } from "node:fs";
@@ -30,6 +30,7 @@ export function registerIpc({
    takeInitialFile,
    onFlushed,
    onApplyUpdate,
+   testing = null,
 }: {
    window: BrowserWindow;
    storage: Storage;
@@ -38,11 +39,11 @@ export function registerIpc({
    takeInitialFile: () => string | null;
    onFlushed: () => void;
    onApplyUpdate: (install: () => void) => void;
+   testing?: IpcTestAdapter | null;
 }): void {
    const updates = new UpdateManager(window);
    const frameOutputs = new Set<string>();
    const getSource = (id: string) => sourceSession.get(id);
-   const testing = !isPackagedApp() && process.env["ATTACUT_TESTING"] === "1" ? new IpcTestAdapter() : null;
    if (testing) Object.defineProperty(globalThis, "attacutTestIpc", { value: testing });
    function handle<K extends keyof IpcCalls>(channel: K, action: (value: IpcRequest<K>) => IpcCalls[K]["response"] | Promise<IpcCalls[K]["response"]>): void {
       ipcMain.handle(channel, async (event, value: unknown): Promise<IpcResult<IpcCalls[K]["response"]>> => {

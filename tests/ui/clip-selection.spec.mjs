@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { expect } from "@playwright/test";
-import { test, waitForVideo } from "./app.mjs";
+import { test, waitForPlaybackTime, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 
 test("clip selection", async ({ launchApp, profile }) => {
@@ -10,7 +10,7 @@ test("clip selection", async ({ launchApp, profile }) => {
    const seek = async (time) => {
       const bar = await page.locator(".timeline-viewport").boundingBox();
       await page.mouse.click(bar.x + (bar.width * time) / 18, bar.y + 36);
-      await page.waitForTimeout(200);
+      await waitForPlaybackTime(page, time);
    };
    const ranges = () => page.locator(".clip-range:not(.exiting)");
    const selected = () => page.locator(".clip-range.selected:not(.exiting)");
@@ -56,12 +56,9 @@ test("clip selection", async ({ launchApp, profile }) => {
    await page.getByRole("slider", { name: "Clip 1 end", exact: true }).focus();
    await seek(10);
    await page.keyboard.press("ArrowRight");
-   await page.waitForTimeout(250);
-   const navigated = await page.locator("video").evaluate((video) => video.currentTime);
-   assert.ok(Math.abs(navigated - 11) < 0.05, `Expected 11 seconds after mouse + keyboard navigation, got ${navigated}`);
+   await waitForPlaybackTime(page, 11);
    await page.keyboard.press(".");
-   await page.waitForTimeout(250);
-   assert.ok((await page.locator("video").evaluate((video) => video.currentTime)) > 11);
+   await expect.poll(() => page.locator("video").evaluate((video) => video.currentTime)).toBeCloseTo(11 + 1 / 30, 4);
    // Toggle uses normal Add semantics; Undo restores the original trimmed range.
    await seek(12);
    await page.keyboard.press("d");

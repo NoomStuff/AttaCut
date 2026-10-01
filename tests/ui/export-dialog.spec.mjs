@@ -1,17 +1,19 @@
 import { expect } from "@playwright/test";
-import { test, waitForPlaybackTime, waitForVideo } from "./app.mjs";
+import { mediaBinary, test, waitForPlaybackTime, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
 test("opening constrained export dialogs preserves preferences and explicit audio choices survive restart", async ({ launchApp, profile }) => {
    const single = resolve(profile, "single.mp4");
    const silent = resolve(profile, "silent.mp4");
-   const ffmpeg = process.env.FFMPEG_PATH ?? resolve("resources/media", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+   const ffmpeg = mediaBinary("ffmpeg");
    for (const [path, audio] of [
       [single, true],
       [silent, false],
    ]) {
-      execFileSync(ffmpeg, ["-v", "error", "-i", resolve("work/fixture.mp4"), "-map", "0:V:0", ...(audio ? ["-map", "0:a:0"] : []), "-c", "copy", path]);
+      execFileSync(ffmpeg, ["-v", "error", "-i", resolve("work/fixture.mp4"), "-map", "0:V:0", ...(audio ? ["-map", "0:a:0"] : []), "-c", "copy", path], {
+         windowsHide: true,
+      });
    }
    let app = await launchApp(profile, single);
    let page = await app.firstWindow();
@@ -22,6 +24,7 @@ test("opening constrained export dialogs preserves preferences and explicit audi
          await expect(page.locator("video")).toHaveAttribute("aria-label", "silent.mp4");
          await waitForVideo(page);
       }
+      await expect(page.getByRole("button", { name: "Preview audio tracks", exact: true })).toBeDisabled();
       await page.getByRole("button", { name: "Export", exact: true }).click();
       const preferences = await page.evaluate(async () => (await globalThis.desktop.bootstrap()).preferences);
       expect(preferences.exportMode).toBe("separate");
@@ -51,7 +54,7 @@ test("opening constrained export dialogs preserves preferences and explicit audi
    await expect(page.getByRole("button", { name: "Audio tracks to export", exact: true })).toContainText("0 audio tracks");
 });
 
-test("export dialog", async ({ launchApp, profile }) => {
+test("seam merge targeting and handle seeking", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
@@ -80,6 +83,17 @@ test("export dialog", async ({ launchApp, profile }) => {
    await expect(page.locator("[data-command=split]")).toBeEnabled();
    await page.keyboard.press("s");
    await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toHaveAttribute("aria-valuenow", String(target));
+});
+
+test("export names, selection and destination confirmations persist", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const bar = await page.locator(".timeline-viewport").boundingBox();
+   await page.mouse.click(bar.x + bar.width / 3, bar.y + 36);
+   await waitForPlaybackTime(page, 6);
+   await page.keyboard.press("s");
+   await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toBeVisible();
    await page.getByRole("button", { name: "Export", exact: true }).click();
    await page.getByRole("button", { name: "Single Video", exact: true }).click();
    await page.getByLabel("Combined filename", { exact: true }).fill("retained");

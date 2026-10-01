@@ -2,9 +2,6 @@
 import { expect } from "@playwright/test";
 import { test, waitForPlaybackTime, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
-import { existsSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-// Prefer the packaged binary when it has been bundled; fall back to PATH for dev runs.
 
 test("time fields keep readable precision and align to source frames without another edit", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
@@ -120,26 +117,7 @@ test("keyframe ticks stay at their source position while a clip edge follows a d
    await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", "2");
 });
 
-test("timeline", async ({ launchApp, profile }) => {
-   const ffmpeg =
-      process.env.FFMPEG_PATH ??
-      (existsSync(resolve("resources/media", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"))
-         ? resolve("resources/media", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg")
-         : "ffmpeg");
-   for (const audio of [true, false]) {
-      execFileSync(ffmpeg, [
-         "-v",
-         "error",
-         "-i",
-         resolve("work/named-audio.mp4"),
-         "-map",
-         "0:v:0",
-         ...(audio ? ["-map", "0:a:0"] : []),
-         "-c",
-         "copy",
-         resolve(profile, audio ? "single.mp4" : "silent.mp4"),
-      ]);
-   }
+test("time fields and editing preserve active playback", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/named-audio.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
@@ -187,6 +165,14 @@ test("timeline", async ({ launchApp, profile }) => {
    await page.keyboard.press("ArrowRight");
    expect(await page.getByRole("button", { name: "Play", exact: true }).evaluate((button) => button.matches(":focus-visible"))).toBe(false);
    await expect(video).toHaveJSProperty("paused", true);
+});
+
+test("timeline zoom and pan preserve the playhead", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/named-audio.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const video = page.locator("video");
+   const bar = await page.locator(".timeline-viewport").boundingBox();
    await page.getByRole("button", { name: "Zoom in", exact: true }).click();
    await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("125%");
    await expect(page.getByRole("slider", { name: "Pan timeline", exact: true })).toHaveCount(0);
@@ -219,6 +205,26 @@ test("timeline", async ({ launchApp, profile }) => {
    await expect(page.locator(".timeline-pan-arrow.right")).toHaveCSS("opacity", "0");
    await page.getByRole("button", { name: "Fit timeline", exact: true }).click();
    await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("100%");
+});
+
+test("excluded-end feedback and default edit pause", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/named-audio.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const video = page.locator("video");
+   const bar = await page.locator(".timeline-viewport").boundingBox();
+   const seek = async (time) => {
+      if (time === 18) {
+         await page.mouse.click(bar.x + bar.width - 2, bar.y + 36);
+      } else {
+         await page.mouse.click(bar.x + (bar.width * time) / 18, bar.y + 36);
+      }
+      await waitForPlaybackTime(page, time);
+   };
+   await seek(6);
+   await page.keyboard.press("s");
+   await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toBeVisible();
+   const end = page.getByRole("textbox", { name: "Clip end", exact: true });
    // Position picks map against the drawn view, which is still chasing the fit for ~240ms.
    await page.waitForTimeout(300);
    await seek(18);
@@ -242,27 +248,4 @@ test("timeline", async ({ launchApp, profile }) => {
    await page.setViewportSize({ width: 800, height: 560 });
    const full = await page.getByRole("button", { name: "Fullscreen video", exact: true }).boundingBox();
    expect(full.x + full.width).toBeLessThanOrEqual(800);
-   for (const audio of [true, false]) {
-      await app.evaluate(
-         ({ dialog, BrowserWindow }, path) => {
-            dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
-            BrowserWindow.getAllWindows()[0].webContents.send("app:command", "open");
-         },
-         resolve(profile, audio ? "single.mp4" : "silent.mp4")
-      );
-      await expect(page.locator(".title-filename")).toHaveText(audio ? "single.mp4" : "silent.mp4");
-      const selector = page.getByRole("button", { name: "Preview audio tracks", exact: true });
-      // The picker stays mounted but disabled when there is nothing to choose between.
-      await expect(selector).toHaveCount(1);
-      await expect(selector).toBeDisabled();
-      await page.getByRole("button", { name: "Export", exact: true }).click();
-      const exportAudio = page.getByRole("switch", { name: "Export audio", exact: true });
-      if (audio) await expect(exportAudio).toBeChecked();
-      else await expect(exportAudio).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Audio tracks to export", exact: true })).toHaveCount(0);
-      await page.keyboard.press("Escape");
-   }
-   console.log(
-      "PASS playback preservation/default pause, unchanged time fields, named tracks, zoom %, fit, middle/Alt/arrows pan, edge fades, shortcut focus, end inclusion, compact controls"
-   );
 });

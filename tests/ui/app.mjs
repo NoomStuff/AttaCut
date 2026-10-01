@@ -1,9 +1,18 @@
 import { _electron as electron, expect, test as base } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 
 // Some shells run Electron as their Node runtime; the app itself must launch normally.
 export const appEnv = { ...process.env };
 delete appEnv.ELECTRON_RUN_AS_NODE;
+
+export function mediaBinary(name) {
+   const configured = process.env[name === "ffmpeg" ? "FFMPEG_PATH" : "FFPROBE_PATH"];
+   if (configured) return configured;
+   const bundled = resolve("resources/media", process.platform === "win32" ? `${name}.exe` : name);
+   return existsSync(bundled) ? bundled : name;
+}
 
 export async function configureIpc(app, channel, rule) {
    await app.evaluate((_electron, { channel, rule }) => globalThis.attacutTestIpc.configure(channel, rule), { channel, rule });
@@ -33,8 +42,9 @@ export async function waitForVideo(page) {
 export function waitForPlaybackTime(page, time) {
    return page.waitForFunction((target) => {
       const current = document.querySelector("video")?.currentTime;
-      const displayed = Number(document.querySelector(".timeline-time time")?.textContent?.split(":").at(-1));
-      return Math.abs(current - target) < 0.05 && Math.abs(displayed - target) < 0.05;
+      const text = document.querySelector(".timeline-time time")?.textContent;
+      const displayed = text ? text.split(":").reduce((seconds, part) => seconds * 60 + Number(part), 0) : NaN;
+      return Math.abs(current - target) < 0.05 && Math.abs(displayed - target) < 0.05 && !document.querySelector("video")?.seeking;
    }, time);
 }
 
@@ -55,7 +65,13 @@ export const test = base.extend({
          const app = await electron.launch({
             args: [...(process.env.ATTACUT_EXECUTABLE ? [] : ["."]), ...(process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : [])],
             ...(process.env.ATTACUT_EXECUTABLE ? { executablePath: process.env.ATTACUT_EXECUTABLE } : {}),
-            env: { ...appEnv, ATTACUT_TESTING: "1", ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: file },
+            env: {
+               ...appEnv,
+               ATTACUT_TESTING: "1",
+               ATTACUT_HIDDEN: process.env.ATTACUT_TEST_VISIBLE === "1" ? "0" : "1",
+               ATTACUT_USER_DATA: profile,
+               ATTACUT_OPEN_FILE: file,
+            },
          });
          apps.add(app);
          app.process().stdout?.on("data", (data) => logs.push(String(data)));
@@ -65,6 +81,20 @@ export const test = base.extend({
          page.setDefaultTimeout(15000);
          page.on("pageerror", (error) => errors.push(error.message));
          page.on("console", (message) => logs.push(`[renderer ${message.type()}] ${message.text()}\n`));
+         // Playwright sends input directly to Chromium; OS foreground focus is unnecessary.
+         if (process.env.ATTACUT_TEST_VISIBLE === "1") await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show());
+         else if (process.platform === "win32" || process.platform === "darwin") {
+            // Native hidden windows can stop compositing paused video frames even
+            // with backgroundThrottling disabled. Keep a transparent, inactive
+            // window rendering, without a taskbar entry or native mouse hit target.
+            await app.evaluate(({ BrowserWindow }) => {
+               const window = BrowserWindow.getAllWindows()[0];
+               window.setOpacity(0);
+               window.setIgnoreMouseEvents(true);
+               window.setSkipTaskbar(true);
+               window.showInactive();
+            });
+         }
          // A BrowserWindow also exists when its page fails to load. Main-process-only
          // checks must not pass against that empty window and hang while closing it.
          try {
@@ -75,8 +105,6 @@ export const test = base.extend({
             apps.delete(app);
             throw error;
          }
-         // Keyboard shortcuts need the same active window that a user would have.
-         await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show());
          return app;
       });
       if (testInfo.status !== testInfo.expectedStatus || errors.length) {

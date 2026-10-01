@@ -1,3 +1,4 @@
+import { expectAudioMatches, expectCopiedFrameMatches, expectFrameMatches, inspectMedia } from "./media-checks.mjs";
 import { expect } from "@playwright/test";
 import { test, waitForPlaybackTime, waitForVideo } from "./app.mjs";
 import { resolve, join } from "node:path";
@@ -6,15 +7,9 @@ import { mkdir, readdir } from "node:fs/promises";
 test("export workflow", async ({ launchApp, profile }) => {
    const output = join(profile, "exports");
    await mkdir(output);
-   let app = await launchApp(profile, resolve("work/fixture.mp4"));
-   let page = await app.firstWindow();
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
    const waitForTime = (time) => waitForPlaybackTime(page, time);
-   await waitForVideo(page);
-   await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
-   await page.waitForFunction(() => document.fullscreenElement?.tagName === "VIDEO");
-   await app.close();
-   app = await launchApp(profile, resolve("work/fixture.mp4"));
-   page = await app.firstWindow();
    await waitForVideo(page);
    const scrub = await page.evaluate(async () => {
       const sourceId = decodeURIComponent(new globalThis.URL(document.querySelector("video").currentSrc).pathname.replace(/^\//, ""));
@@ -59,6 +54,7 @@ test("export workflow", async ({ launchApp, profile }) => {
    await handle.focus();
    await handle.press("ArrowRight");
    await expect(handle).toHaveAttribute("aria-valuenow", "10");
+   const frameTime = await page.locator("video").evaluate((video) => video.currentTime);
    await page.getByRole("button", { name: "Export current frame", exact: true }).click();
    await page.getByRole("dialog", { name: "Export current frame", exact: true }).waitFor();
    await expect(page.locator(".frame-thumbnail")).toBeVisible();
@@ -68,10 +64,18 @@ test("export workflow", async ({ launchApp, profile }) => {
    await page.getByRole("button", { name: "Export frame", exact: true }).click();
    await page.getByRole("status").filter({ hasText: "Frame exported" }).waitFor();
    expect(await readdir(output)).toContain("test-frame.png");
+   await expectFrameMatches(resolve("work/fixture.mp4"), frameTime, join(output, "test-frame.png"));
    await page.getByRole("textbox", { name: "Frame filename", exact: true }).fill("next-frame");
    await expect(page.getByRole("status").filter({ hasText: "Frame exported" })).toHaveCount(0);
    await expect(page.getByRole("button", { name: "Show file", exact: true })).toHaveCount(0);
    await page.keyboard.press("Escape");
+   await page.getByRole("slider", { name: "Preview volume", exact: true }).fill("0.2");
+   await page.getByRole("button", { name: "Mute preview", exact: true }).click();
+   await expect(page.locator("video")).toHaveJSProperty("muted", true);
+   await page.getByRole("button", { name: "Playback settings", exact: true }).click();
+   await page.getByRole("switch", { name: "Play kept clips only" }).check();
+   await page.keyboard.press("Escape");
+   await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
    await page.getByRole("button", { name: "Export", exact: true }).click();
    await page.getByRole("button", { name: "Single Video", exact: true }).click();
    await page.getByLabel("Save to", { exact: true }).fill(output);
@@ -82,7 +86,51 @@ test("export workflow", async ({ launchApp, profile }) => {
    await page.getByRole("button", { name: "Export video", exact: true }).click();
    await page.getByText("Export complete", { exact: true }).waitFor({ timeout: 60000 });
    expect(await readdir(output)).toContain("joined.mp4");
+   const joined = join(output, "joined.mp4");
+   const media = await inspectMedia(joined);
+   expect(Number(media.format.duration)).toBeCloseTo(13.2, 1);
+   expect(media.streams.filter((stream) => stream.codec_type === "audio")).toHaveLength(2);
+   for (const [original, result] of [
+      [0.5, 0.5],
+      [6.7, 6.7],
+      [10.5, 7.7],
+      [15.5, 12.7],
+   ])
+      await expectFrameMatches(resolve("work/fixture.mp4"), original, joined, result);
    await page.getByRole("button", { name: "Dismiss export status", exact: true }).click();
+   for (const [original, result] of [
+      [1, 1],
+      [11, 8.2],
+   ])
+      await expectCopiedFrameMatches(resolve("work/fixture.mp4"), original, joined, result);
+   for (const track of [0, 1])
+      for (const [original, result] of [
+         [1, 1],
+         [11, 8.2],
+      ])
+         await expectAudioMatches(resolve("work/fixture.mp4"), original, joined, result, track);
+});
+
+test("fullscreen preserves background presentation", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
+   await page.waitForFunction(() => document.fullscreenElement?.tagName === "VIDEO");
+   if (process.env.ATTACUT_TEST_VISIBLE !== "1") {
+      expect(
+         await app.evaluate(({ BrowserWindow }) => {
+            const window = BrowserWindow.getAllWindows()[0];
+            return process.platform === "linux" ? !window.isVisible() : window.getOpacity() === 0 && !window.isFocused();
+         })
+      ).toBe(true);
+   }
+});
+
+test("compact layout keeps transport controls within the window", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
    await page.setViewportSize({ width: 800, height: 560 });
    await expect.poll(() => page.evaluate(() => [globalThis.innerWidth, globalThis.innerHeight])).toEqual([800, 560]);
    await expect
@@ -97,5 +145,4 @@ test("export workflow", async ({ launchApp, profile }) => {
          return volume.x + volume.width;
       })
       .toBeLessThanOrEqual(800);
-   console.log("PASS compact UI, scrubbing, boundary navigation, multi-track audio, snapping, frame export, merged export, and 800x560 layout");
 });

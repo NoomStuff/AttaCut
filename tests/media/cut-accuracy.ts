@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
-import { mkdir, rm, readFile, stat } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { probeSource } from "../../src/main/media/probe.ts";
 import { analyzeCut, exportCut } from "../../src/main/media/cut.ts";
 import { runMedia } from "../../src/main/media/process.ts";
@@ -120,10 +119,4 @@ for (const [start, end] of [
    );
 }
 assert.equal((await stat(path)).mtimeMs, before.mtimeMs, "Original was not modified");
-console.log(
-   "Media regression checks passed.",
-   createHash("sha256")
-      .update(await readFile("src/main/media/cut.ts"))
-      .digest("hex")
-      .slice(0, 12)
-);
+console.log("Media regression checks passed.");

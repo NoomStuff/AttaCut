@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { test, waitForVideo } from "./app.mjs";
+import { test, waitForPlaybackTime, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 
 test("shortcuts", async ({ launchApp, profile }) => {
@@ -9,7 +9,7 @@ test("shortcuts", async ({ launchApp, profile }) => {
    const seek = async (time) => {
       const bar = await page.locator(".timeline-viewport").boundingBox();
       await page.mouse.click(bar.x + (bar.width * time) / 18, bar.y + 36);
-      await page.waitForTimeout(150);
+      await waitForPlaybackTime(page, time);
    };
    await seek(6);
    await page.keyboard.press("s");
@@ -40,12 +40,10 @@ test("shortcuts", async ({ launchApp, profile }) => {
    await expect(page.getByRole("slider", { name: "Clip 2 end", exact: true })).toHaveAttribute("aria-valuenow", /12/);
    await seek(10);
    await page.keyboard.press(".");
-   await page.waitForTimeout(200);
-   const after = await page.locator("video").evaluate((video) => video.currentTime);
-   expect(after).toBeGreaterThan(10);
-   expect(after).toBeLessThan(10.1);
+   await waitForPlaybackTime(page, 10 + 1 / 30);
+   await expect.poll(() => page.locator("video").evaluate((video) => video.currentTime)).toBeCloseTo(10 + 1 / 30, 4);
    await page.keyboard.press(",");
-   await page.waitForTimeout(100);
-   expect(await page.locator("video").evaluate((video) => video.currentTime)).toBeCloseTo(10, 3);
+   await waitForPlaybackTime(page, 10);
+   await expect.poll(() => page.locator("video").evaluate((video) => video.currentTime)).toBeCloseTo(10, 4);
    console.log("Shortcut and merge workflow passed");
 });

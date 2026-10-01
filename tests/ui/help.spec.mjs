@@ -13,8 +13,17 @@ test("help", async ({ launchApp, profile }) => {
    const help = page.getByRole("dialog", { name: "Help", exact: true });
    await help.waitFor();
    await expect(help.getByRole("tab", { name: "Introduction" })).toHaveAttribute("aria-selected", "true");
-   for (const tab of ["Introduction", "Getting started", "Clips and gaps", "Cutting losslessly", "Export"]) {
-      await help.getByRole("tab", { name: tab }).click();
+   for (const [name, heading] of [
+      ["Introduction", "What is this thing?"],
+      ["Getting started", "Good to know"],
+      ["Clips and gaps", "Your toolbox"],
+      ["Cutting losslessly", "Why this matters"],
+      ["Export", "Saving your clips"],
+   ]) {
+      const tab = help.getByRole("tab", { name, exact: true });
+      await tab.click();
+      await expect(tab).toHaveAttribute("aria-selected", "true");
+      await expect(help.getByRole("heading", { name: heading, exact: true })).toBeVisible();
    }
    await expect(help.getByRole("heading", { name: "When encoding needs your approval" })).toBeVisible();
    await page.screenshot({ path: "work/audio-scrub-playground/export-help.png" });

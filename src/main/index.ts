@@ -13,6 +13,7 @@ import { IpcEvents } from "../shared/ipc.ts";
 import { installMenu } from "./menu.ts";
 import { windowIcon, registerWindowsIdentity, isPackagedApp } from "./identity.ts";
 import { registerIpc } from "./ipc.ts";
+import { IpcTestAdapter } from "./ipc-test-adapter";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 if (process.env["ATTACUT_USER_DATA"]) app.setPath("userData", process.env["ATTACUT_USER_DATA"]);
@@ -25,7 +26,7 @@ let pendingFile = process.env["ATTACUT_OPEN_FILE"] ?? fileArgument(process.argv.
 const receiveFile = (path: string | null) => {
    if (path && rendererReady && appWindow && !appWindow.isDestroyed()) appWindow.webContents.send(IpcEvents.openFile, path);
    else if (path) pendingFile = path;
-   if (appWindow && !appWindow.isDestroyed()) {
+   if (appWindow && !appWindow.isDestroyed() && process.env["ATTACUT_HIDDEN"] !== "1") {
       if (appWindow.isMinimized()) appWindow.restore();
       appWindow.show();
       appWindow.focus();
@@ -65,12 +66,20 @@ async function start(): Promise<void> {
          sandbox: true,
          contextIsolation: true,
          nodeIntegration: false,
+         // Hidden test windows must still decode video and run animation callbacks.
+         ...(process.env["ATTACUT_TESTING"] === "1" && process.env["ATTACUT_HIDDEN"] === "1" ? { backgroundThrottling: false } : {}),
       },
    });
    appWindow = window;
-   const exportsService = new ExportService((job) => {
-      if (!window.isDestroyed()) window.webContents.send(IpcEvents.jobProgress, job);
-   });
+   // Silence the device output without changing the renderer's mute/volume state.
+   if (process.env["ATTACUT_TESTING"] === "1") window.webContents.setAudioMuted(true);
+   const testing = !isPackagedApp() && process.env["ATTACUT_TESTING"] === "1" ? new IpcTestAdapter() : null;
+   const exportsService = new ExportService(
+      (job) => {
+         if (!window.isDestroyed()) window.webContents.send(IpcEvents.jobProgress, job);
+      },
+      testing ? (signal) => testing.invoke("test:export-item", () => undefined, signal) : undefined
+   );
    if (process.platform === "win32" && icon) {
       // Taskbar relaunches must show the splash too, so they go through the launcher
       // whenever it fronts the renamed Electron executable.
@@ -94,7 +103,10 @@ async function start(): Promise<void> {
    const presentWindow = () => {
       if (presented) return;
       presented = true;
-      if (process.env["ATTACUT_HIDDEN"] !== "1") window.show();
+      if (process.env["ATTACUT_HIDDEN"] !== "1") {
+         if (process.env["ATTACUT_TESTING"] === "1" && process.env["ATTACUT_TEST_INACTIVE"] === "1") window.showInactive();
+         else window.show();
+      }
       registerWindowsIdentity();
       // The dev launcher's native splash watches for this file and closes itself.
       const splashSignal = process.env["ATTACUT_SPLASH_SIGNAL"];
@@ -192,6 +204,7 @@ async function start(): Promise<void> {
    });
    installMenu(window);
    registerIpc({
+      testing,
       window,
       storage,
       sourceSession,

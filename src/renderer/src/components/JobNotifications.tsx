@@ -9,12 +9,14 @@ export function JobNotifications({
    onDismiss,
    onError,
    onRetry,
+   onReopen,
 }: {
    jobs: ExportJob[];
    currentJob: ExportJob | null;
    onDismiss: (id: string) => void;
    onError: (message: string) => void;
    onRetry: (job: ExportJob) => void;
+   onReopen: () => void;
 }) {
    const root = useRef<HTMLElement>(null);
    const scroll = useRef<HTMLDivElement>(null);
@@ -126,6 +128,7 @@ export function JobNotifications({
                            onDismiss={() => onDismiss(job.id)}
                            onError={onError}
                            onRetry={onRetry}
+                           onReopen={onReopen}
                            retryAvailable={currentJob?.id === job.id && !currentJob.running}
                         />
                      </div>

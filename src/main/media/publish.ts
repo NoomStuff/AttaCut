@@ -47,7 +47,10 @@ export async function removeTemporary(path: string): Promise<void> {
 }
 
 export async function protectSource(source: string, destination: string, replaceSource = false): Promise<boolean> {
-   const original = await stat(source);
+   const original = await stat(source).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") throw new Error("The original file changed. Reopen it before exporting.");
+      throw error;
+   });
    const output = await stat(destination).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return null;
       throw error;

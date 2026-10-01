@@ -2,7 +2,7 @@ import { expect } from "@playwright/test";
 import { test, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 
-test("partial export shows separate success and error cards", async ({ launchApp, profile }) => {
+test("injected progress renders separate success and error cards", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);

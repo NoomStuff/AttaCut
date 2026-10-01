@@ -767,6 +767,7 @@ export default function App() {
                      <EmptyState onImport={() => void choose()} loading={loading} mac={mac} />
                   )}
                   <JobNotifications
+                     onReopen={() => void choose()}
                      jobs={notifications}
                      currentJob={job}
                      onDismiss={(id) => setNotifications((current) => current.filter((item) => item.id !== id))}

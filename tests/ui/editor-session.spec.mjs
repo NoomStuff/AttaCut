@@ -1,11 +1,15 @@
+import { expectCopiedFrameMatches, expectFrameMatches } from "./media-checks.mjs";
 import { expect } from "@playwright/test";
-import { test, waitForVideo } from "./app.mjs";
+import { mediaBinary, test, waitForVideo } from "./app.mjs";
 import { resolve, join } from "node:path";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
-test("editor session", async ({ launchApp, profile }) => {
+test("edit, export and restore the selected ranges", async ({ launchApp, profile }) => {
    const output = join(profile, "exports");
    await mkdir(output);
+   const original = await readFile(resolve("work/fixture.mp4"));
    const application = await launchApp(profile, resolve("work/fixture.mp4"));
    let page = await application.firstWindow();
    await page.getByRole("slider", { name: "Clip 1 start", exact: true }).waitFor();
@@ -49,30 +53,31 @@ test("editor session", async ({ launchApp, profile }) => {
    await expect(exportButton).toBeEnabled({ timeout: 20000 });
    await exportButton.click();
    await page.getByText("Export complete", { exact: true }).waitFor({ timeout: 30000 });
-   expect((await readdir(output)).filter((name) => name.endsWith(".mp4"))).toHaveLength(2);
+   const outputs = (await readdir(output)).filter((name) => name.endsWith(".mp4")).sort();
+   expect(outputs).toEqual(["fixture (1).mp4", "fixture (2).mp4"]);
+   for (const [index, name] of outputs.entries()) {
+      const { stdout } = await promisify(execFile)(
+         mediaBinary("ffprobe"),
+         ["-v", "error", "-show_entries", "format=duration:stream=codec_type", "-of", "json", join(output, name)],
+         { windowsHide: true }
+      );
+      const media = JSON.parse(stdout);
+      const beginning = [1.3, 10.2][index];
+      const copiedOffset = [3, 2.5][index];
+      await expectCopiedFrameMatches(resolve("work/fixture.mp4"), beginning + copiedOffset, join(output, name), copiedOffset);
+      for (const offset of [0.5, [8.4, 4.5][index] - 0.5])
+         await expectFrameMatches(resolve("work/fixture.mp4"), beginning + offset, join(output, name), offset);
+      expect(Number(media.format.duration)).toBeCloseTo([8.4, 4.5][index], 1);
+      expect(media.streams.filter((stream) => stream.codec_type === "audio")).toHaveLength(2);
+      expect(media.streams.filter((stream) => stream.codec_type === "video")).toHaveLength(1);
+   }
+   expect(await readFile(resolve("work/fixture.mp4"))).toEqual(original);
    await page.getByRole("button", { name: "Dismiss export status" }).click();
-   await page.getByRole("button", { name: "Playback settings" }).click();
-   await page.getByRole("switch", { name: "Play kept clips only" }).check();
-   await page.getByRole("tab", { name: "Keyboard shortcuts" }).click();
-   await page.getByRole("button", { name: "Change S for Split at playhead" }).click();
-   await page.keyboard.press("x");
-   await page.getByRole("button", { name: "Save binding" }).click();
-   await page.getByRole("button", { name: "Change X for Split at playhead" }).waitFor();
-   await page.getByRole("tab", { name: "General", exact: true }).click();
-   await page.getByRole("button", { name: "Light theme", exact: true }).click();
-   await expect(page.getByRole("button", { name: "Light theme", exact: true })).toHaveAttribute("aria-pressed", "true");
-   await page.getByRole("button", { name: "Close panel", exact: true }).click();
-   await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
-   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 640));
-   const playBox = await page.getByRole("button", { name: "Play", exact: true }).boundingBox();
-   expect(playBox.y + playBox.height).toBeLessThanOrEqual(640);
-   console.log("UI passed: seeking, trim, split, cancelled drag, undo/redo, actual export, shortcuts, themes, and 960×640 layout.");
    await application.close();
    const restored = await launchApp(profile, "");
    page = await restored.firstWindow();
    await expect
       .poll(async () => Number(await page.getByRole("slider", { name: "Clip 2 start", exact: true }).getAttribute("aria-valuenow")))
       .toBeCloseTo(10.2, 6);
-   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
    console.log("Session restoration passed.");
 });

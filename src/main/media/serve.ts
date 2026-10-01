@@ -5,7 +5,12 @@ import { Readable } from "node:stream";
 
 /** Video seeking needs explicit byte ranges; a plain file fetch can expose an empty seekable range. */
 export async function serveMedia(path: string, request: Request): Promise<Response> {
-   const { size } = await stat(path);
+   const info = await stat(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+   });
+   if (!info?.isFile()) return new Response(null, { status: 404 });
+   const { size } = info;
    const mime: Record<string, string> = {
       ".mp4": "video/mp4",
       ".m4v": "video/mp4",
@@ -35,6 +40,7 @@ export async function serveMedia(path: string, request: Request): Promise<Respon
    }
    headers.set("Content-Length", String(end - start + 1));
    if (request.method === "HEAD") return new Response(null, { status: range ? 206 : 200, headers });
+   if (size === 0) return new Response(null, { status: 200, headers });
    const stream = createReadStream(path, { start, end });
    const abort = () => stream.destroy();
    request.signal.addEventListener("abort", abort, { once: true });

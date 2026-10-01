@@ -5,6 +5,33 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+test("background testing keeps device audio silent while input and decoded frames work", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const presentation = () =>
+      app.evaluate(({ BrowserWindow }) => {
+         const window = BrowserWindow.getAllWindows()[0];
+         return { visible: window.isVisible(), opacity: window.getOpacity(), focused: window.isFocused(), muted: window.webContents.isAudioMuted() };
+      });
+   const expected =
+      process.env.ATTACUT_TEST_VISIBLE === "1"
+         ? { muted: true }
+         : { ...(process.platform === "linux" ? { visible: false } : { opacity: 0 }), focused: false, muted: true };
+   expect(await presentation()).toMatchObject(expected);
+   await page.getByRole("button", { name: "Play", exact: true }).click();
+   await page.waitForFunction(() => {
+      const video = document.querySelector("video");
+      return video.currentTime > 0.3 && video.getVideoPlaybackQuality().totalVideoFrames > 0;
+   });
+   await page.getByRole("button", { name: "Pause", exact: true }).click();
+   await page.keyboard.press("m");
+   await expect(page.locator("video")).toHaveJSProperty("muted", true);
+   await page.keyboard.press("m");
+   await expect(page.locator("video")).toHaveJSProperty("muted", false);
+   expect(await presentation()).toMatchObject(expected);
+});
+
 test("local diagnostics save through the real bridge without recording filenames", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
@@ -93,6 +120,14 @@ test("a second process preserves active cache files and forwards file opens", as
    await promisify(execFile)(executable, [...args, resolve("work/fixture.mkv")], options);
    await expect(page.locator(".title-filename")).toContainText("fixture.mkv");
    expect(app.windows()).toHaveLength(1);
+   if (process.env.ATTACUT_TEST_VISIBLE !== "1") {
+      expect(
+         await app.evaluate(({ BrowserWindow }) => {
+            const window = BrowserWindow.getAllWindows()[0];
+            return process.platform === "linux" ? !window.isVisible() : window.getOpacity() === 0 && !window.isFocused();
+         })
+      ).toBe(true);
+   }
 });
 
 test("desktop failures retain their code and diagnostics through the preload bridge", async ({ launchApp, profile }) => {

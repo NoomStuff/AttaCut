@@ -1,30 +1,29 @@
 import { expect } from "@playwright/test";
 import { test, waitForVideo } from "./app.mjs";
-import { resolve, basename } from "node:path";
-import { readFile, writeFile, readdir } from "node:fs/promises";
+import { basename } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 
-test("format playback", async ({ launchApp, profile }) => {
-   const formats = JSON.parse(await readFile("work/formats/results.json", "utf8"));
-   const files = await readdir("work/formats");
-   const application = await launchApp(profile, resolve("work/formats/h264.mp4"));
-   const results = [];
-   const page = await application.firstWindow();
-   await waitForVideo(page);
-   for (const format of formats) {
-      // Test exports too: these exercise the exact codec joins users will open later.
-      const paths = files
-         .filter(
-            (file) =>
-               (file.startsWith(`${format.name}.`) || file.startsWith(`${format.name}-1.25-8.75-cut.`)) &&
-               /\.(mp4|mov|mkv|webm|avi|wmv|flv|mpg|ts|mts|m2ts|3gp|3g2|dv|ogv|divx)$/.test(file)
-         )
-         .map((file) => resolve("work/formats", file));
-      expect(paths).toHaveLength(2);
-      for (const path of paths) {
-         await application.evaluate(({ dialog }, filePath) => {
-            dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
-         }, path);
-         await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:command", "open"));
+const formats = existsSync("work/formats/results.json") ? JSON.parse(readFileSync("work/formats/results.json", "utf8")) : [];
+test("format manifest is present and contains successful fixtures", async () => {
+   expect(formats.length, "Run bun run test:media before playback checks").toBeGreaterThan(0);
+   expect(formats.every((format) => format.passed && format.source && format.output)).toBe(true);
+});
+for (const format of formats) {
+   test(`format playback: ${format.name}`, async ({ launchApp, profile }) => {
+      test.setTimeout(120000);
+      expect(format.passed).toBe(true);
+      const paths = [format.source, format.output];
+      expect(paths.every((path) => path && existsSync(path))).toBe(true);
+      const application = await launchApp(profile, paths[0]);
+      const page = await application.firstWindow();
+      await waitForVideo(page);
+      for (const [index, path] of paths.entries()) {
+         if (index > 0) {
+            await application.evaluate(({ dialog }, filePath) => {
+               dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
+            }, path);
+            await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:command", "open"));
+         }
          const video = page.getByLabel(basename(path), { exact: true });
          await video.waitFor();
          await page.waitForFunction(() => {
@@ -45,9 +44,7 @@ test("format playback", async ({ launchApp, profile }) => {
             await expect(page.getByRole("button", { name: "Export video", exact: true })).toBeEnabled();
             await page.keyboard.press("Escape");
          }
-         results.push({ name: basename(path), playback: "ready" });
          console.log("PASS", basename(path));
       }
-   }
-   await writeFile("work/formats/playback-results.json", JSON.stringify(results, null, 2));
-});
+   });
+}

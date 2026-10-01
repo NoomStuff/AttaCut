@@ -7,7 +7,13 @@ import { preparePreview } from "../../src/main/media/preview.ts";
 
 const source = await probeSource(resolve("work/fixture.mp4"));
 const directory = await mkdtemp(resolve("work/job-test-"));
-const service = new ExportService(() => {});
+let cancelOnProgress = true;
+const service = new ExportService((job) => {
+   if (cancelOnProgress && job.items.some((item) => item.stage === "encoding" && item.progress > 0)) {
+      cancelOnProgress = false;
+      service.cancel();
+   }
+});
 const plan = await service.plan(source, {
    sourceId: source.id,
    directory,
@@ -17,8 +23,9 @@ const plan = await service.plan(source, {
    ],
 });
 const job = service.start(plan.id);
-setTimeout(() => service.cancel(), 150);
+
 await service.waitForIdle();
+assert.equal(cancelOnProgress, false, "Cancellation was triggered by real encoder progress");
 assert.ok(service.current!.items.every((item) => item.status === "cancelled"));
 assert.deepEqual(await readdir(directory), [], "Cancellation removes unfinished files");
 // A file appearing after planning must survive the attempted export.
@@ -34,8 +41,12 @@ assert.ok(!finalNames.some((name) => name.startsWith(".attacut-")));
 const previewFolder = join(directory, "previews");
 const controller = new AbortController();
 const audioIndices = source.streams.filter((stream) => stream.type === "audio").map((stream) => stream.index);
-const preview = preparePreview(source, previewFolder, audioIndices, true, { signal: controller.signal });
-setTimeout(() => controller.abort(), 100);
+const preview = preparePreview(source, previewFolder, audioIndices, true, {
+   signal: controller.signal,
+   onProgress: (value) => {
+      if (value > 0) controller.abort();
+   },
+});
 await assert.rejects(preview);
 assert.deepEqual(await readdir(previewFolder), [], "Cancelled preview removes its temporary files");
 const ready = await preparePreview(source, previewFolder, [2], true, {});

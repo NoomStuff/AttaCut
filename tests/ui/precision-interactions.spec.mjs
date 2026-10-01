@@ -39,15 +39,21 @@ test("Alt accompanies split and undo, and clip numbers fade across the compact t
    await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
    await page.mouse.down();
    await expect(endSlider).toHaveClass(/dragging/);
-   await page.mouse.move(bar.x + 24, end.y + end.height / 2);
-   await page.waitForFunction(() => {
-      const clip = document.querySelector('.clip-range[data-compact="true"]');
-      const label = clip?.querySelector(".clip-number");
-      const opacity = label && Number(window.getComputedStyle(label).opacity);
-      return opacity > 0 && opacity < 1;
+   await page.evaluate(() => {
+      window.clipNumberFaded = false;
+      const sample = () => {
+         const clip = document.querySelector('.clip-range[data-compact="true"]');
+         const label = clip?.querySelector(".clip-number");
+         const opacity = label && Number(window.getComputedStyle(label).opacity);
+         if (opacity > 0 && opacity < 1) window.clipNumberFaded = true;
+         if (opacity !== 0) window.requestAnimationFrame(sample);
+      };
+      window.requestAnimationFrame(sample);
    });
+   await page.mouse.move(bar.x + 24, end.y + end.height / 2);
    const label = page.locator(".clip-range:not(.leaving) .clip-number");
    await expect.poll(() => label.evaluate((el) => window.getComputedStyle(el).opacity)).toBe("0");
+   expect(await page.evaluate(() => window.clipNumberFaded)).toBe(true);
    await page.mouse.move(bar.x + 70, end.y + end.height / 2);
    await expect.poll(() => label.evaluate((el) => window.getComputedStyle(el).opacity)).toBe("1");
    await page.mouse.up();

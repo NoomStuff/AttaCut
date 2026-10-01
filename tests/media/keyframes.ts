@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { indexedSampleTimes } from "../../src/main/media/mp4-index.ts";
 import { indexedMkvKeyframes } from "../../src/main/media/mkv-index.ts";
 import { packetsAround, probeSource, sourceKeyframes } from "../../src/main/media/probe.ts";
 import { resolveFrameTime } from "../../src/shared/frames.ts";
 import { ffmpegBase, runMedia } from "../../src/main/media/process.ts";
-const files = (await readdir("work/formats"))
-   .filter((name) => /\.(mp4|mov|mkv|webm|mk3d)$/.test(name) && !name.includes("-cut."))
-   .map((name) => resolve("work/formats", name));
+const manifest: { passed: boolean; source: string }[] = JSON.parse(await readFile("work/formats/results.json", "utf8"));
+const files = manifest.filter((entry) => entry.passed && /\.(mp4|mov|mkv|webm|mk3d)$/.test(entry.source)).map((entry) => entry.source);
 files.push(resolve("work/details/rotated.mov"));
 if (process.env["ATTACUT_MEDIA_FILE"]) files.push(process.env["ATTACUT_MEDIA_FILE"]);
 for (const path of files) {

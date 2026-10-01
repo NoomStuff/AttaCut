@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { runMedia, ffmpegBase } from "../../src/main/media/process.ts";
 import { probeSource } from "../../src/main/media/probe.ts";
@@ -219,7 +219,7 @@ const fixtures: Fixture[] = [
    { name: "cover", extension: ".mp4", video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0", "-crf", "18"], cover: true },
 ];
 const selected = process.env["ATTACUT_FORMATS"]?.split(",");
-const outcomes: { name: string; passed: boolean; details: string }[] = [];
+const outcomes: { name: string; passed: boolean; details: string; source?: string; output?: string }[] = [];
 interface Frame {
    time: number;
    hash: string;
@@ -272,9 +272,8 @@ async function frames(path: string): Promise<Frame[]> {
 for (const fixture of fixtures.filter((item) => !selected || selected.includes(item.name))) {
    try {
       const path = join(folder, fixture.name + fixture.extension);
-      try {
-         await readFile(path);
-      } catch {
+      // Always regenerate: recipes and tool builds must never reuse stale media.
+      {
          await runMedia("ffmpeg", [
             ...ffmpegBase,
             "-f",
@@ -402,7 +401,13 @@ for (const fixture of fixtures.filter((item) => !selected || selected.includes(i
          }
          detail += `${actual.length} frames/${copies} copied; `;
       }
-      outcomes.push({ name: fixture.name, passed: true, details: detail });
+      outcomes.push({
+         name: fixture.name,
+         passed: true,
+         details: detail,
+         source: path,
+         output: join(folder, `${fixture.name}-1.25-8.75-cut${outputExtension(source)}`),
+      });
       console.log("PASS", fixture.name, detail);
    } catch (error) {
       const details = error instanceof Error ? error.message : String(error);

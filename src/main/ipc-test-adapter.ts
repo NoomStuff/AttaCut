@@ -30,21 +30,32 @@ export class IpcTestAdapter {
    ready(channel: string): boolean {
       return this.completed.has(channel);
    }
-   private async wait(name: string | undefined): Promise<void> {
+   private async wait(name: string | undefined, signal?: AbortSignal): Promise<void> {
       if (name)
-         await new Promise<void>((resolve) => {
+         await new Promise<void>((resolve, reject) => {
+            signal?.throwIfAborted();
             const waiting = this.gates.get(name) ?? new Set<() => void>();
-            waiting.add(resolve);
+            const release = () => {
+               signal?.removeEventListener("abort", abort);
+               resolve();
+            };
+            const abort = () => {
+               waiting.delete(release);
+               if (!waiting.size) this.gates.delete(name);
+               reject(new Error("Cancelled"));
+            };
+            waiting.add(release);
             this.gates.set(name, waiting);
+            signal?.addEventListener("abort", abort, { once: true });
          });
    }
-   async invoke<T>(channel: string, action: () => T | Promise<T>): Promise<T> {
+   async invoke<T>(channel: string, action: () => T | Promise<T>, signal?: AbortSignal): Promise<T> {
       this.calls.set(channel, this.count(channel) + 1);
       const rule = this.rules.get(channel) ?? {};
-      await this.wait(rule.before);
+      await this.wait(rule.before, signal);
       let result: unknown = rule.previewSuffix === undefined ? await action() : this.sourceUrl + rule.previewSuffix;
       if (rule.rememberUrl) this.sourceUrl = (result as { url: string }).url;
-      await this.wait(rule.after);
+      await this.wait(rule.after, signal);
       if (rule.patch) result = { ...(result as object), ...rule.patch };
       if (rule.unsupportedAudio) {
          const source = result as { streams: { type: string; codec: string }[] };

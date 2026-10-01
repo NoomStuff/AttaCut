@@ -1,12 +1,13 @@
 import { expect } from "@playwright/test";
 import { test, waitForVideo } from "./app.mjs";
-import { copyFile, stat } from "node:fs/promises";
+import { copyFile, readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 test("source replacement is explicit and reopens the exported video", async ({ launchApp, profile }) => {
    const source = join(profile, "source.mp4");
    await copyFile(resolve("work/fixture.mp4"), source);
    const originalSize = (await stat(source)).size;
+   const originalContent = await readFile(source);
    const app = await launchApp(profile, source);
    const page = await app.firstWindow();
    await waitForVideo(page);
@@ -35,8 +36,16 @@ test("source replacement is explicit and reopens the exported video", async ({ l
    await sourceConflict.hover();
    await expect(sourceConflict.locator(".export-conflict-tooltip")).toBeVisible();
    const icon = page.locator(".export-name-input .export-conflict-indicator");
+   await icon.evaluate((element) => {
+      globalThis.conflictStates = [];
+      const observer = new globalThis.MutationObserver((records) => {
+         for (const record of records) globalThis.conflictStates.push(record.oldValue);
+         globalThis.conflictStates.push(element.dataset.state);
+      });
+      observer.observe(element, { attributes: true, attributeFilter: ["data-state"], attributeOldValue: true });
+   });
    await filename.fill("unused-export-name");
-   await expect(icon).toHaveAttribute("data-state", "leaving");
+   await page.waitForFunction(() => globalThis.conflictStates.includes("leaving"));
    await filename.fill("source");
    await expect(icon).toHaveAttribute("data-state", "visible");
    await expect(sourceConflict).toHaveAttribute("data-state", "visible");
@@ -44,6 +53,7 @@ test("source replacement is explicit and reopens the exported video", async ({ l
    await expect(page.getByRole("dialog", { name: "Replace source video?", exact: true })).toBeVisible();
    await expect(page.getByRole("button", { name: "Replace source and export", exact: true })).toBeDisabled();
    expect((await stat(source)).size).toBe(originalSize);
+   expect(await readFile(source)).toEqual(originalContent);
    await page.getByRole("checkbox", { name: "I understand this replaces the original video" }).check();
    await page.getByRole("button", { name: "Replace source and export", exact: true }).click();
    await expect(page.getByText("Export complete", { exact: true })).toBeVisible({ timeout: 60000 });

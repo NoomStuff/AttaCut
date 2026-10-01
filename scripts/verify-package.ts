@@ -34,7 +34,7 @@ if (process.platform === "win32") {
                "-Command",
                `$v = (Get-Item -LiteralPath '${file.replaceAll("'", "''")}').VersionInfo; $v | Select-Object FileDescription,ProductName,CompanyName,InternalName,OriginalFilename | ConvertTo-Json -Compress`,
             ],
-            { encoding: "utf8" }
+            { encoding: "utf8", windowsHide: true }
          )
       ) as Record<string, string>;
       if (
@@ -56,31 +56,52 @@ async function smokeLauncher(): Promise<void> {
    if (!existsSync(launcher)) throw new Error(`Splash launcher missing: ${launcher}`);
    const profile = mkdtempSync(join(tmpdir(), "attacut-launcher-"));
    if (!resolve(profile).startsWith(resolve(tmpdir()) + sep)) throw new Error("Refusing to remove a profile outside the temp directory");
-   const child = spawn(launcher, [], { cwd: base, env: { ...process.env, ATTACUT_USER_DATA: profile }, stdio: "ignore" });
+   const child = spawn(launcher, [], {
+      cwd: base,
+      env: { ...process.env, ATTACUT_TESTING: "1", ATTACUT_TEST_INACTIVE: "1", ATTACUT_HIDDEN: "0", ATTACUT_OPEN_FILE: "", ATTACUT_USER_DATA: profile },
+      stdio: "ignore",
+      windowsHide: true,
+   });
+   if (!child.pid) throw new Error("Launcher smoke failed: could not start the launcher");
+   // Only inspect and close the runtime started by this launcher. An unrelated
+   // AttaCut window on the user's desktop must never satisfy or be closed by this test.
+   const ownedRuntime = `Get-CimInstance Win32_Process -Filter "ParentProcessId = ${child.pid} AND Name = 'AttaCut-app.exe'"`;
+   let runtimePid: number | null = null;
+   const exited = new Promise<number>((resolveExit, reject) => {
+      child.once("exit", (exitCode) => resolveExit(exitCode ?? 1));
+      child.once("error", reject);
+   });
    try {
       const deadline = Date.now() + 30_000;
       let visible = false;
       while (Date.now() < deadline && !visible) {
-         const { stdout } = await run("powershell", [
-            "-NoProfile",
-            "-Command",
-            "[bool](Get-Process -Name 'AttaCut-app' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle })",
-         ]);
-         visible = stdout.trim() === "True";
+         const { stdout } = await run(
+            "powershell",
+            [
+               "-NoProfile",
+               "-Command",
+               `${ownedRuntime} | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue } | Where-Object { $_.MainWindowTitle } | Select-Object -ExpandProperty Id`,
+            ],
+            { windowsHide: true }
+         );
+         runtimePid = Number(stdout.trim()) || null;
+         visible = runtimePid !== null;
          if (!visible) await new Promise((resolve) => setTimeout(resolve, 200));
       }
       if (!visible) throw new Error("Launcher smoke failed: no app window appeared within 30s");
-      await run("powershell", [
-         "-NoProfile",
-         "-Command",
-         "Get-Process -Name 'AttaCut-app' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle } | ForEach-Object { $_.CloseMainWindow() } | Out-Null",
-      ]);
-      const code = await Promise.race([
-         new Promise<number>((resolveExit) => child.on("exit", (exitCode) => resolveExit(exitCode ?? 1))),
-         new Promise<number>((resolveExit) => setTimeout(() => resolveExit(-1), 15_000)),
-      ]);
+      await run(
+         "powershell",
+         ["-NoProfile", "-Command", `Get-Process -Id ${runtimePid} -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() } | Out-Null`],
+         { windowsHide: true }
+      );
+      const code = await Promise.race([exited, new Promise<number>((resolveExit) => setTimeout(() => resolveExit(-1), 15_000))]);
       if (code !== 0) throw new Error(`Launcher smoke failed: exited with ${code}`);
    } finally {
+      await run(
+         "powershell",
+         ["-NoProfile", "-Command", `${ownedRuntime} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`],
+         { windowsHide: true }
+      );
       if (child.exitCode === null) child.kill();
       rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
    }

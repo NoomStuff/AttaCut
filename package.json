@@ -1,7 +1,7 @@
 {
    "name": "attacut",
    "desktopName": "attacut.desktop",
-   "version": "0.15.0",
+   "version": "0.15.1",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -31,9 +31,10 @@
       "dist:linux": "bun scripts/package-app.ts dist linux",
       "test": "vitest run",
       "test:media": "bun tests/media/run.ts",
+      "test:native": "bun scripts/native-smoke.ts",
       "test:ui": "bun tests/create-fixtures.ts && bun run build && playwright test --project=ui",
       "test:playback": "bun run test:media && bun run build && playwright test --project=playback",
-      "test:all": "bun run test && bun run test:media && bun run build && playwright test"
+      "test:all": "bun run test && bun run test:media && bun run build && playwright test --project=ui --project=playback"
    },
    "build": {
       "appId": "dev.attacut.app",
