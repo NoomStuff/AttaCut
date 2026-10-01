@@ -77,9 +77,14 @@ async function start(): Promise<void> {
       },
    });
    appWindow = window;
-   // GTK shows a hidden window when HTML fullscreen changes its native state.
-   // Re-hide it without suppressing the fullscreen API or native transition.
-   if (backgroundLinuxTest) window.on("show", () => window.hide());
+   // Linux fullscreen shows the native widget directly, bypassing the window's
+   // show event. Hide after the fullscreen transition without suppressing it.
+   if (backgroundLinuxTest) {
+      const hide = () => window.hide();
+      window.on("show", hide);
+      window.webContents.on("enter-html-full-screen", hide);
+      window.webContents.on("leave-html-full-screen", hide);
+   }
    // Silence the device output without changing the renderer's mute/volume state.
    if (process.env["ATTACUT_TESTING"] === "1") window.webContents.setAudioMuted(true);
    const testing = !isPackagedApp() && process.env["ATTACUT_TESTING"] === "1" ? new IpcTestAdapter() : null;

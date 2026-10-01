@@ -54,7 +54,7 @@ The development work gate is absent from packaged apps. It pauses between export
 
 ## Desktop interference
 
-Routine app tests are invisible and mute device output without changing the app's own mute/volume state or exported audio. Windows/macOS use zero opacity, showInactive, no taskbar entry and ignored native mouse input. Linux uses a hidden, non-focusable window and immediately hides native show events, including GTK fullscreen transitions. Background throttling is disabled. A fully hidden Windows trial stalled paused video and animation rendering, so keeping the invisible native window rendering preserves the checks' effectiveness.
+Routine app tests are invisible and mute device output without changing the app's own mute/volume state or exported audio. Windows/macOS use zero opacity, showInactive, no taskbar entry and ignored native mouse input. Linux uses a hidden, non-focusable window and immediately hides native show events and HTML fullscreen entry/exit events. Background throttling is disabled. A fully hidden Windows trial stalled paused video and animation rendering, so keeping the invisible native window rendering preserves the checks' effectiveness.
 
 Second-instance opens do not raise a background test window. Background and fullscreen checks verify that presentation stays invisible and unfocused while decoded playback and document keyboard input work. ATTACUT_TEST_VISIBLE=1 enables visible debugging, still with muted device output.
 
@@ -73,3 +73,5 @@ Release CI exposed a Linux GTK fullscreen show event after the Windows run. Back
 Intel macOS CI also exposed an encoder capability assumption. HDR10+ now uses a small authored fixture with its regeneration recipe, so the test checks detection and preservation policy without requiring optional HDR10+ encoding support.
 
 Windows CI caught a decoder-held file handle during source removal. That test now releases the preview reader after creating its real export plan and waits for the external mutation before asserting refusal and recovery.
+
+Electron Linux fullscreen calls its native widget directly and bypasses the BrowserWindow show event. The guard also listens to HTML fullscreen entry and exit, after the native transition. Fullscreen assertions report visibility, focus, opacity and native state separately.

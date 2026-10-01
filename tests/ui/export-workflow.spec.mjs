@@ -124,9 +124,9 @@ test("fullscreen preserves background presentation", async ({ launchApp, profile
       expect(
          await app.evaluate(({ BrowserWindow }) => {
             const window = BrowserWindow.getAllWindows()[0];
-            return !window.isFocused() && (process.platform === "linux" ? !window.isVisible() : window.getOpacity() === 0);
+            return { visible: window.isVisible(), opacity: window.getOpacity(), focused: window.isFocused(), fullscreen: window.isFullScreen() };
          })
-      ).toBe(true);
+      ).toMatchObject(process.platform === "linux" ? { visible: false, focused: false } : { opacity: 0, focused: false });
    }
    await page.locator("video").dblclick();
    await page.waitForFunction(() => !document.fullscreenElement);
