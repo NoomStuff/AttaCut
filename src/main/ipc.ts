@@ -4,8 +4,11 @@ import type { IpcTestAdapter } from "./ipc-test-adapter";
 import { appFailure } from "./failure";
 import type { IpcResult } from "../shared/failure";
 import { existsSync } from "node:fs";
-import { join, resolve, dirname } from "node:path";
-import { writeFile } from "node:fs/promises";
+import { join, resolve, dirname, basename } from "node:path";
+import { stat, writeFile } from "node:fs/promises";
+import type { SavedSession } from "../shared/types";
+import { projectExtension, projectExtensions, projectHasChanges, discardProjectChanges } from "../shared/project";
+import { readProject, projectSourcePaths, validateProjectSource, writeProject, updateProjectSource } from "./project-document";
 import { diagnosticReport, recordDiagnostic, recordAssessment, protectDiagnosticDestination } from "./diagnostics";
 import { runMedia } from "./media/process";
 import { publishOutput } from "./media/publish";
@@ -37,13 +40,39 @@ export function registerIpc({
    sourceSession: SourceSession;
    exportsService: ExportService;
    takeInitialFile: () => string | null;
-   onFlushed: () => void;
+   onFlushed: (proceed?: boolean) => void;
    onApplyUpdate: (install: () => void) => void;
    testing?: IpcTestAdapter | null;
 }): void {
    const updates = new UpdateManager(window);
    const frameOutputs = new Set<string>();
+   let openSequence = 0;
    const getSource = (id: string) => sourceSession.get(id);
+   const confirmProject = async (session: SavedSession): Promise<"save" | "discard" | "cancel"> => {
+      if (!projectHasChanges(session)) return "discard";
+      const { response } = await dialog.showMessageBox(window, {
+         type: "question",
+         message: `Save changes to "${basename(session.project!.path)}"?`,
+         buttons: ["Save", "Don't save", "Cancel"],
+         defaultId: 0,
+         cancelId: 2,
+      });
+      return (["save", "discard", "cancel"] as const)[response] ?? "cancel";
+   };
+   const saveProject = async (session: SavedSession, saveAs: boolean): Promise<SavedSession | null> => {
+      let path = saveAs ? undefined : session.project?.path;
+      if (!path) {
+         const result = await dialog.showSaveDialog(window, {
+            title: "Save project",
+            defaultPath:
+               session.project?.path ?? join(dirname(session.path), `${basename(session.path, sourceSession.current?.extension)}.${projectExtension}`),
+            filters: [{ name: "AttaCut project", extensions: projectExtensions }],
+         });
+         if (result.canceled || !result.filePath) return null;
+         path = result.filePath;
+      }
+      return writeProject(path, session);
+   };
    if (testing) Object.defineProperty(globalThis, "attacutTestIpc", { value: testing });
    function handle<K extends keyof IpcCalls>(channel: K, action: (value: IpcRequest<K>) => IpcCalls[K]["response"] | Promise<IpcCalls[K]["response"]>): void {
       ipcMain.handle(channel, async (event, value: unknown): Promise<IpcResult<IpcCalls[K]["response"]>> => {
@@ -51,7 +80,14 @@ export function registerIpc({
          try {
             if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error("Invalid application request.");
             const request = ipcRequestSchemas[channel].parse(value) as IpcRequest<K>;
-            const result = await (testing ? testing.invoke(channel, () => action(request)) : action(request));
+            const opening = channel === "source:open" || channel === "project:open" || channel === "source:close";
+            const sequence = opening ? ++openSequence : null;
+            if (opening) sourceSession.cancelOpening();
+            const run = () => {
+               if (sequence !== null && sequence !== openSequence) throw new Error("Cancelled");
+               return action(request);
+            };
+            const result = await (testing ? testing.invoke(channel, run) : run());
             recordDiagnostic(channel, performance.now() - started);
             return { ok: true, value: result };
          } catch (error) {
@@ -88,10 +124,12 @@ export function registerIpc({
    });
    handle("source:choose", async () => {
       const result = await dialog.showOpenDialog(window, {
-         title: "Import video",
+         title: "Open video or project",
          properties: ["openFile"],
          filters: [
+            { name: "Videos and AttaCut projects", extensions: [...videoExtensions, ...projectExtensions] },
             { name: "Video", extensions: videoExtensions },
+            { name: "AttaCut project", extensions: projectExtensions },
             { name: "All files", extensions: ["*"] },
          ],
       });
@@ -104,6 +142,65 @@ export function registerIpc({
       window.setTitle(`${source.name} — AttaCut`);
       return source;
    });
+   handle("project:open", async (path) => {
+      const sequence = openSequence;
+      const ensureCurrent = () => {
+         if (sequence !== openSequence) throw new Error("Cancelled");
+      };
+      const project = await readProject(path);
+      ensureCurrent();
+      let sourcePath: string | undefined;
+      let changed = false;
+      for (const candidate of projectSourcePaths(path, project)) {
+         const info = await stat(candidate).catch((error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return null;
+            throw error;
+         });
+         if (!info) continue;
+         if (info.isFile() && info.size === project.session.size && info.mtimeMs === project.session.modified) {
+            sourcePath = candidate;
+            break;
+         }
+         changed = true;
+      }
+      if (!sourcePath) {
+         ensureCurrent();
+         const { response } = await dialog.showMessageBox(window, {
+            type: "question",
+            message: changed ? "The original video has changed." : "The original video couldn't be found.",
+            detail: `Locate "${basename(project.session.path)}" to restore the saved clips.`,
+            buttons: ["Locate video", "Cancel"],
+            defaultId: 0,
+            cancelId: 1,
+         });
+         ensureCurrent();
+         if (response !== 0) return null;
+         const result = await dialog.showOpenDialog(window, {
+            title: "Locate original video",
+            properties: ["openFile"],
+            filters: [
+               { name: "Video", extensions: videoExtensions },
+               { name: "All files", extensions: ["*"] },
+            ],
+         });
+         ensureCurrent();
+         if (result.canceled || !result.filePaths[0]) return null;
+         sourcePath = result.filePaths[0];
+      }
+      const saved = project.session;
+      const info = await stat(sourcePath);
+      validateProjectSource(saved, { size: info.size, modified: info.mtimeMs });
+      ensureCurrent();
+      const source = await sourceSession.open(sourcePath, async (media) => {
+         validateProjectSource(saved, media);
+         await updateProjectSource(path, project, media.path);
+      });
+      exportsService.cancelPlanning();
+      frameOutputs.clear();
+      return { source, session: { ...saved, path: source.path, project: { path: resolve(path), savedClips: saved.clips } } };
+   });
+   handle("project:save", ({ session, saveAs }) => saveProject(session, saveAs));
+   handle("project:confirm", confirmProject);
    handle("source:close", () => {
       sourceSession.close();
       exportsService.cancelPlanning();
@@ -136,10 +233,36 @@ export function registerIpc({
    handle("export:cancel-analysis", () => exportsService.cancelAnalysis());
    handle("state:flush", async (value) => {
       const snapshot = value;
-      storage.preferences = snapshot.preferences;
-      storage.session = snapshot.session;
-      await storage.save();
-      onFlushed();
+      try {
+         if (snapshot.cancelClose) {
+            onFlushed(false);
+            return;
+         }
+         if (snapshot.closing && snapshot.session && projectHasChanges(snapshot.session)) {
+            const decision = await confirmProject(snapshot.session);
+            if (decision === "cancel") {
+               onFlushed(false);
+               return;
+            }
+            if (decision === "save") {
+               const saved = await saveProject(snapshot.session, false);
+               if (!saved) {
+                  onFlushed(false);
+                  return;
+               }
+               snapshot.session = saved;
+            } else {
+               snapshot.session = discardProjectChanges(snapshot.session);
+            }
+         }
+         storage.preferences = snapshot.preferences;
+         storage.session = snapshot.session;
+         await storage.save();
+         onFlushed();
+      } catch (error) {
+         onFlushed(false);
+         throw error;
+      }
    });
    handle("frame:export", async (value) => {
       const request = value;

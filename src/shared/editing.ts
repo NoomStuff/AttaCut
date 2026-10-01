@@ -28,6 +28,15 @@ export const savedSessionSchema = z
       ...savedDocumentShape,
       past: z.array(savedDocumentSchema).max(undoLimit).default([]),
       future: z.array(savedDocumentSchema).max(undoLimit).default([]),
+      project: z
+         .object({
+            path: z.string().min(1),
+            savedClips: z
+               .array(clipSchema)
+               .max(500)
+               .refine((clips) => savedDocumentInvariant({ clips, selectedId: null }), "Saved project clips are inconsistent."),
+         })
+         .optional(),
    })
    .refine(savedDocumentInvariant, "Saved clips are inconsistent.");
 export type SavedSession = z.infer<typeof savedSessionSchema>;

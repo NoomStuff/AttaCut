@@ -1,7 +1,7 @@
 {
    "name": "attacut",
    "desktopName": "attacut.desktop",
-   "version": "0.15.3",
+   "version": "0.16.0",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -49,6 +49,24 @@
          "package.json"
       ],
       "fileAssociations": [
+         {
+            "ext": [
+               "attacut"
+            ],
+            "name": "AttaCut.Project",
+            "description": "AttaCut project",
+            "role": "Editor",
+            "rank": "Owner"
+         },
+         {
+            "ext": [
+               "atc"
+            ],
+            "name": "AttaCut.ProjectFallback",
+            "description": "AttaCut project",
+            "role": "Editor",
+            "rank": "Alternate"
+         },
          {
             "ext": [
                "mp4",

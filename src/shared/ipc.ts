@@ -9,6 +9,9 @@ interface IpcResponses {
    "update:restart": void;
    "source:choose": string | null;
    "source:open": Result<"openSource">;
+   "project:open": Result<"openProject">;
+   "project:save": Result<"saveProject">;
+   "project:confirm": Result<"confirmProject">;
    "source:close": void;
    "source:keyframes": number[];
    "source:frame-time": number;
@@ -44,6 +47,7 @@ export const IpcEvents = {
    jobProgress: "export:progress",
    updateStatus: "update:status",
    flush: "app:flush",
+   flushStarted: "app:flush-started",
    openFile: "app:open-file",
    command: "app:command",
    windowAction: "window:action",

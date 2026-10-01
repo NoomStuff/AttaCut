@@ -133,7 +133,7 @@ test("a second process preserves active cache files and forwards file opens", as
 test("desktop failures retain their code and diagnostics through the preload bridge", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();
-   await page.getByRole("button", { name: "Import video", exact: true }).waitFor();
+   await page.getByRole("button", { name: "Open file", exact: true }).waitFor();
    const failure = await page.evaluate(async () => {
       try {
          await globalThis.desktop.frameTime("missing-source", 0, 0);

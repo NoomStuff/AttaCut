@@ -32,11 +32,16 @@ export class SourceSession {
       if (!this.source || this.source.id !== id) throw new Error("Reopen the source video.");
       return this.source;
    }
-   async open(path: string): Promise<ProbedSource> {
+   cancelOpening(): void {
+      this.opening.abort();
+   }
+   async open(path: string, validate?: (source: ProbedSource) => void | Promise<void>): Promise<ProbedSource> {
       this.opening.abort();
       const controller = new AbortController();
       this.opening = controller;
       const source = await probeSource(path, controller.signal);
+      controller.signal.throwIfAborted();
+      await validate?.(source);
       controller.signal.throwIfAborted();
       this.release();
       this.source = source;

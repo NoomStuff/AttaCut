@@ -62,6 +62,10 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
             <ul>
                <li>Your latest recording and its cuts are remembered, so restarting AttaCut restores your edit.</li>
                <li>
+                  Use Save project or <Shortcut command="saveProject" /> to keep an edit in an .attacut file. Open that file to reopen the video and clips.
+                  Systems that limit extensions to three characters can use .atc instead. Project files reference the original video, so keep it too.
+               </li>
+               <li>
                   Play normally runs through the whole recording. The "Play kept clips only" setting skips the gaps, so playback shows only what will be
                   exported. You can also use <Shortcut command="preview" /> to preview only the current clip.
                </li>

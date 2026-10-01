@@ -6,7 +6,8 @@ describe("multiple command bindings", () => {
    it("keeps shortcuts usable with the chosen held modifier without overriding explicit or standard bindings", () => {
       expect(commandForBinding("Shift+S", {}, "Shift")).toBe("split");
       expect(commandForBinding("Shift+.", {}, "Shift")).toBe("nextKeyframe");
-      expect(commandForBinding("Mod+S", {}, "Mod")).toBe("split");
+      expect(commandForBinding("Mod+S", {}, "Mod")).toBe("saveProject");
+      expect(commandForBinding("Mod+Shift+S", {})).toBe("saveProjectAs");
       expect(commandForBinding("Mod+Z", {}, "Mod")).toBe("undo");
       expect(commandForBinding("Ctrl+S", {}, "Ctrl")).toBe("split");
       expect(commandForBinding("Mod+C", {}, "Mod")).toBeUndefined();

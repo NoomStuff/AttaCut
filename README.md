@@ -28,6 +28,14 @@ If you just want to use the app you can grab the latest version from the [releas
 
 Portable and installer versions are available.
 
+## Save an edit
+
+Use Save project in the File menu or Ctrl+S to save an `.attacut` file. On macOS, use Cmd+S. Save project as saves a separate copy. Systems that limit file extensions to three characters can use `.atc` instead.
+
+Open a project file or drop it onto AttaCut to reopen its video, clips, colors, and undo history. The project references the original video, so keep that video too.
+
+Projects store relative and absolute video paths. AttaCut tries the relative path first, then the saved absolute path, and updates changed references after loading. If neither path finds the original, you can locate it.
+
 ---
 
 ## For developers

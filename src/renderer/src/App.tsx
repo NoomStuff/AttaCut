@@ -1,11 +1,13 @@
 import { usePlayback } from "./playback/usePlayback";
 import { NavDropdown } from "./components/NavDropdown";
 import { sessionFor } from "./editor/session";
+import { isProjectPath, projectHasChanges, discardProjectChanges } from "../../shared/project";
 import { usePersistence } from "./editor/persistence";
 import { useFrameBoundaries } from "./editor/frameBoundaries";
 import { useAppearance } from "./lib/appearance";
 import { useDesktopLifecycle } from "./lib/desktopLifecycle";
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { flushSync } from "react-dom";
 import type { MediaSource, ExportJob, SavedSession } from "../../shared/types";
 import { primaryVideo } from "../../shared/media";
 import { defaultPreferences } from "../../shared/defaults";
@@ -90,6 +92,19 @@ export default function App() {
    /** Errors interrupt work and deserve the red banner; warnings only explain a recoverable state. */
    const showError = useCallback((message: string | null) => setError(message === null ? null : { text: message, tone: "error" }), []);
    const [restore, setRestore] = useState<SavedSession | null>(null);
+   const [project, setProject] = useState<SavedSession["project"]>();
+   const projectRef = useRef(project);
+   projectRef.current = project;
+   const [savingProject, setSavingProject] = useState(false);
+   const savingRef = useRef(false);
+   const pendingProjectSave = useRef<Promise<boolean> | null>(null);
+   const projectSession = sessionFor(source, editor, null, project);
+   const projectDirty = projectSession ? projectHasChanges(projectSession) : false;
+   const projectName = project?.path.replaceAll("\\", "/").split("/").at(-1);
+   useEffect(() => {
+      const name = projectName ?? source?.name;
+      void window.desktop.setWindowTitle(name ? `${projectDirty ? "* " : ""}${name} - AttaCut` : "AttaCut").catch(() => {});
+   }, [source, projectName, projectDirty]);
    const {
       playing,
       setPlaying,
@@ -195,10 +210,56 @@ export default function App() {
    // call flushes the outgoing source's session before another one loads, so restoring
    // always sees the latest edit.
    const saveCurrent = async () => {
-      const snapshot = sessionFor(source, editor, null);
+      const snapshot = sessionFor(source, editor, null, projectRef.current);
       if (snapshot) await window.desktop.saveSession(snapshot);
    };
-   const openPath = async (path: string, saved?: SavedSession, playbackAudio = preferences.playbackAudio) => {
+   const saveProjectSnapshot = async (saveAs = false): Promise<boolean> => {
+      const snapshot = sessionFor(source, editor, null, project);
+      if (!snapshot || savingRef.current) return false;
+      savingRef.current = true;
+      setSavingProject(true);
+      try {
+         const saved = await window.desktop.saveProject(snapshot, saveAs);
+         if (!saved) return false;
+         if (sourceRef.current?.id === source?.id) {
+            await window.desktop.saveSession(saved);
+            flushSync(() => {
+               setProject(saved.project);
+               setSavingProject(false);
+            });
+         }
+         return true;
+      } catch (value) {
+         showError(errorText(value));
+         return false;
+      } finally {
+         savingRef.current = false;
+         setSavingProject(false);
+      }
+   };
+   const saveProject = (saveAs = false): Promise<boolean> => {
+      if (pendingProjectSave.current) return Promise.resolve(false);
+      const saving = saveProjectSnapshot(saveAs);
+      pendingProjectSave.current = saving;
+      void saving.finally(() => {
+         pendingProjectSave.current = null;
+      });
+      return saving;
+   };
+   const confirmProject = async (): Promise<boolean> => {
+      if (savingRef.current) return false;
+      const snapshot = sessionFor(source, editor, null, project);
+      if (!snapshot || !projectHasChanges(snapshot)) return true;
+      try {
+         const decision = await window.desktop.confirmProject(snapshot);
+         return decision === "save" ? saveProject() : decision === "discard";
+      } catch (value) {
+         showError(errorText(value));
+         return false;
+      }
+   };
+   const openPath = async (path: string, saved?: SavedSession, playbackAudio = preferences.playbackAudio, confirm = true) => {
+      if (confirm && !(await confirmProject())) return;
       const sequence = ++openSequence.current;
       playback.invalidate();
       setLoading(true);
@@ -210,13 +271,20 @@ export default function App() {
       try {
          await saveCurrent();
          if (sequence !== openSequence.current) return;
-         const media = await window.desktop.openSource(path);
+         const loaded = isProjectPath(path) ? await window.desktop.openProject(path) : null;
+         if (isProjectPath(path) && !loaded) return;
+         const media = loaded?.source ?? (await window.desktop.openSource(path));
+         saved = loaded?.session ?? saved;
          if (sequence !== openSequence.current) return;
-         const validSaved = saved && saved.size === media.size && saved.modified === media.modified && saved.clips.every((item) => item.end <= media.duration);
+         const validSaved =
+            saved && saved.size === media.size && saved.modified === media.modified && saved.clips.every((item) => item.end <= media.duration)
+               ? saved
+               : undefined;
          if (saved && !validSaved) setError({ text: "The original file was changed. Your timeline was reset.", tone: "warning" });
          videoRef.current?.pause();
          scrubber.reset();
          setSource(media);
+         setProject(validSaved?.project);
          sourceRef.current = media;
          seeker.configure((time, direction) => {
             const clips = documentRef.current.clips;
@@ -237,9 +305,9 @@ export default function App() {
          if (needsAudioPreview) void preparePreview(media, selectedAudio);
          dispatch({
             type: "load",
-            document: validSaved ? { clips: saved.clips, selectedId: saved.selectedId } : newDocument(media.duration),
-            past: validSaved ? saved.past : [],
-            future: validSaved ? saved.future : [],
+            document: validSaved ? { clips: validSaved.clips, selectedId: validSaved.selectedId } : newDocument(media.duration),
+            past: validSaved ? validSaved.past : [],
+            future: validSaved ? validSaved.future : [],
          });
          setFitToken((value) => value + 1);
          setZoomRequest((value) => ({ id: value.id + 1, direction: 0 }));
@@ -282,7 +350,9 @@ export default function App() {
       setPanel(null);
       setExportHelp(false);
       setError(null);
-      setRestore(keepRecovery ? sessionFor(source, editor, restore) : null);
+      const snapshot = sessionFor(source, editor, restore, projectRef.current);
+      setRestore(keepRecovery && snapshot ? discardProjectChanges(snapshot) : null);
+      setProject(undefined);
       void window.desktop.closeSource().catch((value) => showError(errorText(value)));
       setLoading(false);
       videoRef.current?.pause();
@@ -321,8 +391,8 @@ export default function App() {
          setVersion(data.version);
          setRestore(data.session);
          setReady(true);
-         if (data.initialFile) await openPath(data.initialFile, undefined, data.preferences.playbackAudio);
-         else if (data.session) await openPath(data.session.path, data.session, data.preferences.playbackAudio);
+         if (data.initialFile) await openPath(data.initialFile, undefined, data.preferences.playbackAudio, false);
+         else if (data.session) await openPath(data.session.path, data.session, data.preferences.playbackAudio, false);
          if (!signal.aborted && data.warning) {
             const warning = data.warning;
             setError((current) => current ?? { text: warning, tone: "error" });
@@ -340,14 +410,15 @@ export default function App() {
          replacingSourceId.current = null;
          const current = sourceRef.current;
          if (!current || current.id !== updated.sourceId) return;
-         if (updated.items.some((item) => item.status === "completed" && item.outputPath === current.path)) void openPath(current.path);
+         if (updated.items.some((item) => item.status === "completed" && item.outputPath === current.path))
+            void openPath(current.path, undefined, preferences.playbackAudio, false);
          else playback.source(current);
       },
       onOpenFile: (path) => {
          void openPath(path);
       },
    });
-   usePersistence({ source, editor, restore, preferences, ready, setError: showError });
+   usePersistence({ source, editor, restore, project, pendingProjectSave, preferences, ready, setError: showError });
    const alignResolvedBoundary = useCallback(
       (times: Map<number, number>) => {
          const requested = clock.get();
@@ -492,9 +563,21 @@ export default function App() {
          feedback: () => (currentClip() ? "delete" : "add"),
       },
       open: {
-         enabled: () => ready,
+         enabled: () => ready && !savingProject,
          run: () => {
             void choose();
+         },
+      },
+      saveProject: {
+         enabled: () => !!source && !loading && !savingProject && !trimming,
+         run: () => {
+            void saveProject();
+         },
+      },
+      saveProjectAs: {
+         enabled: () => !!source && !loading && !savingProject && !trimming,
+         run: () => {
+            void saveProject(true);
          },
       },
       export: {
@@ -585,7 +668,14 @@ export default function App() {
       zoomOut: { enabled: available, run: () => setZoomRequest((value) => ({ id: value.id + 1, direction: -1 })) },
       settings: { enabled: () => ready, run: () => setPanel("settings") },
       shortcuts: { enabled: () => ready, run: () => setPanel("shortcuts") },
-      closeProject: { enabled: () => !!source || loading, run: closeProject },
+      closeProject: {
+         enabled: () => (!!source || loading) && !savingProject,
+         run: () => {
+            void confirmProject().then((proceed) => {
+               if (proceed) closeProject();
+            });
+         },
+      },
       quit: { enabled: () => true, run: () => window.desktop.windowAction("close") },
       releases: {
          enabled: () => ready,
@@ -613,7 +703,7 @@ export default function App() {
       preferences.holdToSnap === "none" ? false : preferences.holdToSnap === "Control" ? (mac ? "Ctrl" : "Mod") : preferences.holdToSnap
    );
    const menuSections: Record<string, CommandId[][]> = {
-      File: [["open", "frame", "export"], ["closeProject"], ["quit"]],
+      File: [["open"], ["frame", "export"], ["saveProject", "saveProjectAs", "closeProject"], ["quit"]],
       Edit: [["undo", "redo"], ["split", "merge"], ["setStart", "setEnd", "add", "delete"], ["preview"], ["settings"]],
       View: [["zoomIn", "zoomOut", "fit"]],
       Help: [["help", "shortcuts"], ["releases", "about"], ["reset"]],
@@ -646,7 +736,10 @@ export default function App() {
                </div>
                <span className="app-name">AttaCut</span>
                <span className="title-separator">/</span>
-               <span className="title-filename">{source?.name ?? "New cut"}</span>
+               <span className="title-filename" title={projectDirty ? "Unsaved project changes" : project?.path}>
+                  {projectDirty ? "* " : ""}
+                  {projectName ?? source?.name ?? "New cut"}
+               </span>
                <AppUpdate ready={ready} onError={showError} />
                {!mac && (
                   <div className="window-controls">
@@ -913,7 +1006,7 @@ export default function App() {
             {draggingFile && (
                <div className="drop-overlay">
                   <FontAwesomeIcon icon={faFolderOpen} />
-                  <span>Drop to Import video</span>
+                  <span>Drop to open a video or project</span>
                </div>
             )}
          </div>

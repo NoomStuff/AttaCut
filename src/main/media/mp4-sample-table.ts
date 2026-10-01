@@ -104,6 +104,7 @@ export async function indexedSampleTimes(source: ProbedSource, signal?: AbortSig
               }))
             : [];
          let editOffset = 0;
+         let mediaOffset = 0;
          const edts = child(data, track, "edts");
          const elst = edts && child(data, edts, "elst");
          if (elst) {
@@ -119,7 +120,8 @@ export async function indexedSampleTimes(source: ProbedSource, signal?: AbortSig
                const mediaTime = wide ? Number(data.readBigInt64BE(p + 8)) : data.readInt32BE(p + 4);
                if (data.readInt16BE(p + (wide ? 16 : 8)) !== 1 || data.readInt16BE(p + (wide ? 18 : 10)) !== 0) return null;
                if (mediaTime === -1 && mediaEdits === 0) editOffset += duration / movieScale;
-               else if (mediaTime >= 0 && mediaEdits++ === 0) editOffset -= mediaTime / scale;
+               // Keep the edit shift in media-timescale units so the final division stays exact.
+               else if (mediaTime >= 0 && mediaEdits++ === 0) mediaOffset = mediaTime;
                else return null;
             }
          }
@@ -152,7 +154,7 @@ export async function indexedSampleTimes(source: ProbedSource, signal?: AbortSig
                ts += timing[ti++]!.count;
             }
             while (composition[ci] && sample >= cs + composition[ci]!.count) cs += composition[ci++]!.count;
-            const point = (time + (sample - ts) * timing[ti]!.delta + (composition[ci]?.delta ?? 0)) / scale + editOffset - source.startOffset;
+            const point = (time + (sample - ts) * timing[ti]!.delta + (composition[ci]?.delta ?? 0) - mediaOffset) / scale + editOffset - source.startOffset;
             if (point >= -0.000001 && point <= source.duration) {
                const stored = Math.max(0, point);
                if (isKey && !(allKeys && wantFrames)) keys[storedKeys++] = stored;

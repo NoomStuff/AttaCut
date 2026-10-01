@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { savedSessionSchema } from "../shared/types";
 import type { SavedSession } from "../shared/types";
 
-/** One recovery document. Portable projects can use the same edit schema later. */
+/** One recovery document, including the project's last explicitly saved clips. */
 export class RecoveryDocument {
    private valid = false;
    private unreadable = false;

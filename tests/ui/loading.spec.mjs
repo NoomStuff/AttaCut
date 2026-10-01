@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 test("opening shows a skeleton, then permits editing while preview loads", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();
-   await page.getByRole("button", { name: "Import video", exact: true }).first().waitFor();
+   await page.getByRole("button", { name: "Open file", exact: true }).first().waitFor();
    // Hold the real probe result so the transient opening state can be inspected reliably.
    await configureIpc(app, "source:open", { after: "opening", patch: { url: "media://source/delayed-preview" } });
    await configureIpc(app, "preview:prepare", { before: "preview" });
@@ -58,7 +58,7 @@ test("opening shows a skeleton, then permits editing while preview loads", async
 test("a stalled seek keeps the decoded preview visible through both fades", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();
-   await page.getByRole("button", { name: "Import video", exact: true }).waitFor();
+   await page.getByRole("button", { name: "Open file", exact: true }).waitFor();
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
    await waitForVideo(page);
    await expect(page.locator(".player-stage video.frame-ready")).toBeVisible();
@@ -96,7 +96,7 @@ test("a stalled seek keeps the decoded preview visible through both fades", asyn
 test("a prepared preview replaces the source frame without a blank flash", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();
-   await page.getByRole("button", { name: "Import video", exact: true }).waitFor();
+   await page.getByRole("button", { name: "Open file", exact: true }).waitFor();
    await configureIpc(app, "source:open", { rememberUrl: true, unsupportedAudio: true });
    await configureIpc(app, "preview:prepare", { before: "preview", previewSuffix: "?preview=1" });
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));

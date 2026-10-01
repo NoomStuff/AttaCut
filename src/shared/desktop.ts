@@ -32,6 +32,9 @@ export interface DesktopApi {
    onUpdateStatus(listener: (status: UpdateStatus) => void): () => void;
    chooseSource(): Promise<string | null>;
    openSource(path: string): Promise<MediaSource>;
+   openProject(path: string): Promise<{ source: MediaSource; session: SavedSession } | null>;
+   saveProject(session: SavedSession, saveAs?: boolean): Promise<SavedSession | null>;
+   confirmProject(session: SavedSession): Promise<"save" | "discard" | "cancel">;
    closeSource(): Promise<void>;
    filePath(file: File): string;
    chooseDirectory(current: string): Promise<string | null>;
@@ -47,8 +50,9 @@ export interface DesktopApi {
    frameTime(sourceId: string, time: number, direction: -1 | 0 | 1): Promise<number>;
    cancelExportPlanning(): Promise<void>;
    cancelExportAnalysis(): Promise<void>;
-   flushState(value: { preferences: Preferences; session: SavedSession | null }): Promise<void>;
+   flushState(value: { preferences: Preferences; session: SavedSession | null; closing?: boolean; cancelClose?: boolean }): Promise<void>;
    onFlush(listener: () => void): () => void;
+   flushStarted(): void;
    onOpenFile(listener: (path: string) => void): () => void;
    exportFrame(request: FrameRequest): Promise<string>;
    planExport(request: PlanRequest): Promise<ExportPlan>;

@@ -1,6 +1,8 @@
 import { createContext, useEffect, useRef } from "react";
 export const commandDefinitions = {
-   open: { label: "Import video", bindings: ["Mod+O"], group: "File" },
+   open: { label: "Open file", bindings: ["Mod+O"], group: "File" },
+   saveProject: { label: "Save project", bindings: ["Mod+S"], group: "File" },
+   saveProjectAs: { label: "Save project as", bindings: ["Mod+Shift+S"], group: "File" },
    export: { label: "Export", bindings: ["Mod+E"], group: "File" },
    frame: { label: "Export current frame", bindings: ["Mod+Shift+E"], group: "File" },
    closeProject: { label: "Close project", bindings: [], group: "File" },

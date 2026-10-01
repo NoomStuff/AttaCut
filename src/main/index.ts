@@ -8,6 +8,7 @@ import { ExportService } from "./exports.ts";
 import { Storage } from "./storage.ts";
 import { serveMedia } from "./media/serve.ts";
 import { videoExtensions } from "./media/formats.ts";
+import { projectExtensions } from "../shared/project";
 import { prunePreviews } from "./media/preview.ts";
 import { IpcEvents } from "../shared/ipc.ts";
 import { installMenu } from "./menu.ts";
@@ -21,7 +22,7 @@ const ownsInstance = app.requestSingleInstanceLock();
 let appWindow: BrowserWindow | null = null;
 let rendererReady = false;
 const fileArgument = (args: string[]): string | null =>
-   args.find((arg) => videoExtensions.some((extension) => arg.toLowerCase().endsWith(`.${extension}`)) && existsSync(arg)) ?? null;
+   args.find((arg) => [...videoExtensions, ...projectExtensions].some((extension) => arg.toLowerCase().endsWith(`.${extension}`)) && existsSync(arg)) ?? null;
 let pendingFile = process.env["ATTACUT_OPEN_FILE"] ?? fileArgument(process.argv.slice(1));
 const receiveFile = (path: string | null) => {
    if (path && rendererReady && appWindow && !appWindow.isDestroyed()) appWindow.webContents.send(IpcEvents.openFile, path);
@@ -157,7 +158,14 @@ async function start(): Promise<void> {
    let confirmedClose = false;
    let applyUpdate: (() => void) | null = null;
    let closing = false;
-   let resolveFlush: (() => void) | null = null;
+   let resolveFlush: ((proceed: boolean) => void) | null = null;
+   let flushTimer: ReturnType<typeof setTimeout> | null = null;
+   ipcMain.on(IpcEvents.flushStarted, (event) => {
+      if (event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame && flushTimer) {
+         clearTimeout(flushTimer);
+         flushTimer = null;
+      }
+   });
    window.on("close", (event) => {
       if (confirmedClose) return;
       event.preventDefault();
@@ -181,17 +189,23 @@ async function start(): Promise<void> {
             await exportsService.waitForIdle();
          }
          if (rendererReady && !window.webContents.isDestroyed()) {
-            await new Promise<void>((resolve, reject) => {
-               const timer = setTimeout(() => {
+            const proceed = await new Promise<boolean>((resolve, reject) => {
+               flushTimer = setTimeout(() => {
+                  flushTimer = null;
                   resolveFlush = null;
                   reject(new Error("The editor did not finish saving. Try closing again."));
                }, 10000);
-               resolveFlush = () => {
-                  clearTimeout(timer);
-                  resolve();
+               resolveFlush = (proceed) => {
+                  if (flushTimer) clearTimeout(flushTimer);
+                  flushTimer = null;
+                  resolve(proceed);
                };
                window.webContents.send(IpcEvents.flush);
             });
+            if (!proceed) {
+               applyUpdate = null;
+               return;
+            }
          }
          await storage.flush();
          confirmedClose = true;
@@ -229,8 +243,8 @@ async function start(): Promise<void> {
          pendingFile = null;
          return file;
       },
-      onFlushed: () => {
-         resolveFlush?.();
+      onFlushed: (proceed = true) => {
+         resolveFlush?.(proceed);
          resolveFlush = null;
       },
       onApplyUpdate: (install) => {

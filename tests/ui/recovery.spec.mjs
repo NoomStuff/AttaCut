@@ -31,7 +31,7 @@ test("a delayed open result cannot replace the newer project", async ({ launchAp
    test.skip(!!process.env.ATTACUT_EXECUTABLE, "Development fault injection");
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();
-   await page.getByRole("button", { name: "Import video", exact: true }).waitFor();
+   await page.getByRole("button", { name: "Open file", exact: true }).waitFor();
    await configureIpc(app, "source:open", { after: "old-open" });
    await open(app, resolve("work/fixture.mp4"));
    await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.waiting("old-open"))).toBe(true);
@@ -60,7 +60,7 @@ test("restart with a missing source explains the problem and allows a new import
    const restored = await launchApp(profile, "");
    const next = await restored.firstWindow();
    await expect(next.getByRole("status")).toContainText("can't be found");
-   await expect(next.getByRole("button", { name: "Import video", exact: true })).toBeEnabled();
+   await expect(next.getByRole("button", { name: "Open file", exact: true })).toBeEnabled();
    await open(restored, resolve("work/fixture.mp4"));
    await waitForVideo(next);
    await expect(next.locator(".title-filename")).toHaveText("fixture.mp4");

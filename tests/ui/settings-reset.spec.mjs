@@ -4,7 +4,7 @@ import { test } from "./app.mjs";
 test("shortcut search focus and reset confirmation", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();
-   await expect(page.getByRole("button", { name: "Import video", exact: true })).toBeVisible();
+   await expect(page.getByRole("button", { name: "Open file", exact: true })).toBeVisible();
    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(800, 560));
    // The settings command ignores keys until bootstrap finished; the overlay clearing is the
    // ready signal. Without this wait a cold runner drops the shortcut below.
@@ -22,10 +22,10 @@ test("shortcut search focus and reset confirmation", async ({ launchApp, profile
    await search.click();
    await expect(search).toHaveCSS("box-shadow", "none");
 
-   const importBindings = page.getByRole("button", { name: /^Change .* for Import video$/ });
+   const importBindings = page.getByRole("button", { name: /^Change .* for Open file$/ });
    const defaults = await importBindings.count();
-   await page.getByRole("button", { name: "Add binding for Import video" }).click();
-   await page.getByRole("button", { name: "Record binding for Import video" }).press("ControlOrMeta+Alt+9");
+   await page.getByRole("button", { name: "Add binding for Open file" }).click();
+   await page.getByRole("button", { name: "Record binding for Open file" }).press("ControlOrMeta+Alt+9");
    await page.getByRole("button", { name: "Save binding" }).click();
    await expect(importBindings).toHaveCount(defaults + 1);
 
@@ -45,7 +45,7 @@ test("shortcut search focus and reset confirmation", async ({ launchApp, profile
 test("settings keeps its layout while closing", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();
-   await page.getByRole("button", { name: "Import video", exact: true }).waitFor();
+   await page.getByRole("button", { name: "Open file", exact: true }).waitFor();
    await page.keyboard.press("ControlOrMeta+,");
    const initial = await page.locator(".settings-modal").evaluate((dialog) => dialog.getBoundingClientRect().width);
    await page.evaluate(() => {

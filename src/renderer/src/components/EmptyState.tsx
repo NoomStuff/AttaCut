@@ -41,9 +41,9 @@ export function EmptyState({ onImport, loading, mac }: { onImport: () => void; l
             </span>
          </div>
          <h1>Cut your clips, move on.</h1>
-         <p>Drag & drop or import a video file.</p>
+         <p>Drag & drop or open a video or AttaCut project.</p>
          <Button command="open" shortcut="" icon={faFolderOpen} variant="primary" onClick={onImport} disabled={loading} tooltip={false}>
-            Import video <FontAwesomeIcon icon={faArrowRight} />
+            Open file <FontAwesomeIcon icon={faArrowRight} />
          </Button>
          {shortcut && (
             <span className="empty-shortcut">

@@ -36,7 +36,7 @@ test("native menu callbacks route import and editing commands to the renderer", 
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
       const command = Menu.getApplicationMenu()
          .items.flatMap((item) => item.submenu?.items ?? [])
-         .find((item) => item.label.startsWith("Import video"));
+         .find((item) => item.label.startsWith("Open file"));
       command.click(command, BrowserWindow.getAllWindows()[0], {});
    }, resolve("work/fixture.mkv"));
    await expect(page.locator(".title-filename")).toHaveText("fixture.mkv");
@@ -46,7 +46,7 @@ test("native menu callbacks route import and editing commands to the renderer", 
 test("dropped filesystem files use the preload path bridge", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();
-   await page.getByRole("button", { name: "Import video", exact: true }).waitFor();
+   await page.getByRole("button", { name: "Open file", exact: true }).waitFor();
    await page.evaluate(() => {
       const input = document.createElement("input");
       input.type = "file";

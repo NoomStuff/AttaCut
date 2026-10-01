@@ -18,6 +18,18 @@ vi.mock("./media/scrub-audio.ts", () => ({
 vi.mock("./media/preview.ts", () => ({ preparePreview: vi.fn(), leasePreview: vi.fn(), releasePreview: vi.fn() }));
 afterEach(() => vi.clearAllMocks());
 describe("source lifetime", () => {
+   it("preserves the current source when a project fails validation", async () => {
+      const session = new SourceSession("unused-preview-directory");
+      await session.open("a");
+      await expect(
+         session.open("b", () => {
+            throw new Error("Saved clips do not match");
+         })
+      ).rejects.toThrow("Saved clips do not match");
+      expect(session.current?.path).toBe("a");
+      expect([...session.mediaPaths.keys()]).toEqual(["a"]);
+      session.dispose();
+   });
    it("does not adopt a source whose probe finishes after the workspace closes", async () => {
       const session = new SourceSession("unused-preview-directory");
       let finish!: (source: ProbedSource) => void;

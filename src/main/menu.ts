@@ -8,10 +8,13 @@ export function installMenu(window: BrowserWindow): void {
       {
          label: "File",
          submenu: [
-            item("Import video…", "open"),
-            item("Export current frame…", "frame"),
-            item("Export…", "export"),
+            item("Open file…", "open"),
             { type: "separator" },
+            item("Export…", "export"),
+            item("Export current frame…", "frame"),
+            { type: "separator" },
+            item("Save project", "saveProject"),
+            item("Save project as…", "saveProjectAs"),
             item("Close project", "closeProject"),
             { type: "separator" },
             item("Quit AttaCut", "quit"),
