@@ -266,8 +266,11 @@ async function start(): Promise<void> {
       }
       if (value === "close") window.close();
       // Fullscreen takes over the whole screen; the custom player controls stay in-window.
+      // On Linux, entering or leaving fullscreen maps a hidden window directly, bypassing
+      // the show event; keep background test windows invisible through the transition.
       if (value === "enterFullscreen") window.setFullScreen(true);
       if (value === "exitFullscreen") window.setFullScreen(false);
+      if (backgroundLinuxTest && (value === "enterFullscreen" || value === "exitFullscreen")) window.hide();
    });
    if (process.env["ELECTRON_RENDERER_URL"]) await window.loadURL(process.env["ELECTRON_RENDERER_URL"]);
    else await window.loadURL("app://editor/index.html");
