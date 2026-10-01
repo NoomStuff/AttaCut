@@ -75,3 +75,7 @@ Intel macOS CI also exposed an encoder capability assumption. HDR10+ now uses a 
 Windows CI caught a decoder-held file handle during source removal. That test now releases the preview reader after creating its real export plan and waits for the external mutation before asserting refusal and recovery.
 
 Electron Linux fullscreen calls its native widget directly and bypasses the BrowserWindow show event. The guard also listens to HTML fullscreen entry and exit, after the native transition. Fullscreen assertions report visibility, focus, opacity and native state separately.
+
+Animation checks use an explicit no-preference motion setting instead of inheriting desktop accessibility settings. The compact clip/undo case also runs with reduced motion, checking the same editing and final visibility behavior while allowing the intended immediate transitions.
+
+The test-only motion follow-up passed formatting, lint, type checking, build, 188 unit tests and 93 UI/playback checks without retries. The 0.15.3 release passed every package target and published all eight downloads.

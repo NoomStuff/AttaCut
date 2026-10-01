@@ -9,55 +9,58 @@ const waitForFrame = (page, time) =>
       return video && !video.seeking && Math.abs(video.currentTime - target) < 0.00001;
    }, time);
 
-test("Alt accompanies split and undo, and clip numbers fade across the compact threshold", async ({ launchApp, profile }) => {
-   const app = await launchApp(profile, resolve("work/fixture.mp4"));
-   const page = await app.firstWindow();
-   await waitForVideo(page);
-   const magnet = page.getByRole("button", { name: "Snap to keyframes", exact: true });
-   await magnet.click();
-   await expect(page.locator(".keyframe-tick").first()).toBeVisible();
-   await magnet.click();
-   const bar = await page.locator(".timeline-viewport").boundingBox();
-   await page.mouse.click(bar.x + (bar.width * 3.2) / 18, bar.y + 36);
-   await waitForFrame(page, 3.2);
-   await page.keyboard.down("Alt");
-   await page.keyboard.press("s");
-   const second = page.getByRole("slider", { name: "Clip 2 start", exact: true });
-   await expect.poll(async () => Number(await second.getAttribute("aria-valuenow"))).toBeCloseTo(4, 6);
-   await page.keyboard.press(process.platform === "darwin" ? "Meta+z" : "Control+z");
-   await expect(second).toHaveCount(0);
-   await page.keyboard.up("Alt");
-   const endSlider = page.getByRole("slider", { name: "Clip 1 end", exact: true });
-   await expect(endSlider).toHaveAttribute("aria-valuenow", "18");
-   await expect
-      .poll(async () => {
-         const bounds = await endSlider.boundingBox();
-         return bounds.x + bounds.width;
-      })
-      .toBeCloseTo(bar.x + bar.width, 0);
-   const end = await endSlider.boundingBox();
-   await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
-   await page.mouse.down();
-   await expect(endSlider).toHaveClass(/dragging/);
-   await page.evaluate(() => {
-      window.clipNumberFaded = false;
-      const sample = () => {
-         const clip = document.querySelector('.clip-range[data-compact="true"]');
-         const label = clip?.querySelector(".clip-number");
-         const opacity = label && Number(window.getComputedStyle(label).opacity);
-         if (opacity > 0 && opacity < 1) window.clipNumberFaded = true;
-         if (opacity !== 0) window.requestAnimationFrame(sample);
-      };
-      window.requestAnimationFrame(sample);
+for (const reducedMotion of ["no-preference", "reduce"])
+   test("Alt split, undo and compact clip numbers with " + reducedMotion, async ({ launchApp, profile }) => {
+      const app = await launchApp(profile, resolve("work/fixture.mp4"));
+      const page = await app.firstWindow();
+      await page.emulateMedia({ reducedMotion });
+      await waitForVideo(page);
+      const magnet = page.getByRole("button", { name: "Snap to keyframes", exact: true });
+      await magnet.click();
+      await expect(page.locator(".keyframe-tick").first()).toBeVisible();
+      await magnet.click();
+      const bar = await page.locator(".timeline-viewport").boundingBox();
+      await page.mouse.click(bar.x + (bar.width * 3.2) / 18, bar.y + 36);
+      await waitForFrame(page, 3.2);
+      await page.keyboard.down("Alt");
+      await page.keyboard.press("s");
+      const second = page.getByRole("slider", { name: "Clip 2 start", exact: true });
+      await expect.poll(async () => Number(await second.getAttribute("aria-valuenow"))).toBeCloseTo(4, 6);
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+z" : "Control+z");
+      await expect(second).toHaveCount(0);
+      await page.keyboard.up("Alt");
+      const endSlider = page.getByRole("slider", { name: "Clip 1 end", exact: true });
+      await expect(endSlider).toHaveAttribute("aria-valuenow", "18");
+      await expect
+         .poll(async () => {
+            const bounds = await endSlider.boundingBox();
+            return bounds.x + bounds.width;
+         })
+         .toBeCloseTo(bar.x + bar.width, 0);
+      const end = await endSlider.boundingBox();
+      await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
+      await page.mouse.down();
+      await expect(endSlider).toHaveClass(/dragging/);
+      if (reducedMotion === "no-preference")
+         await page.evaluate(() => {
+            window.clipNumberFaded = false;
+            const sample = () => {
+               const clip = document.querySelector('.clip-range[data-compact="true"]');
+               const label = clip?.querySelector(".clip-number");
+               const opacity = label && Number(window.getComputedStyle(label).opacity);
+               if (opacity > 0 && opacity < 1) window.clipNumberFaded = true;
+               if (opacity !== 0) window.requestAnimationFrame(sample);
+            };
+            window.requestAnimationFrame(sample);
+         });
+      await page.mouse.move(bar.x + 24, end.y + end.height / 2);
+      const label = page.locator(".clip-range:not(.leaving) .clip-number");
+      await expect.poll(() => label.evaluate((el) => window.getComputedStyle(el).opacity)).toBe("0");
+      if (reducedMotion === "no-preference") expect(await page.evaluate(() => window.clipNumberFaded)).toBe(true);
+      await page.mouse.move(bar.x + 70, end.y + end.height / 2);
+      await expect.poll(() => label.evaluate((el) => window.getComputedStyle(el).opacity)).toBe("1");
+      await page.mouse.up();
    });
-   await page.mouse.move(bar.x + 24, end.y + end.height / 2);
-   const label = page.locator(".clip-range:not(.leaving) .clip-number");
-   await expect.poll(() => label.evaluate((el) => window.getComputedStyle(el).opacity)).toBe("0");
-   expect(await page.evaluate(() => window.clipNumberFaded)).toBe(true);
-   await page.mouse.move(bar.x + 70, end.y + end.height / 2);
-   await expect.poll(() => label.evaluate((el) => window.getComputedStyle(el).opacity)).toBe("1");
-   await page.mouse.up();
-});
 
 test("Alt snapping is temporary, follows a scrub, and releases on blur", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));

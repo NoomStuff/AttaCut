@@ -78,6 +78,8 @@ export const test = base.extend({
          app.process().stderr?.on("data", (data) => logs.push(String(data)));
          app.on("close", () => apps.delete(app));
          const page = await app.firstWindow();
+         // Animation assertions must not depend on the desktop accessibility setting.
+         await page.emulateMedia({ reducedMotion: "no-preference" });
          page.setDefaultTimeout(15000);
          page.on("pageerror", (error) => errors.push(error.message));
          page.on("console", (message) => logs.push(`[renderer ${message.type()}] ${message.text()}\n`));
