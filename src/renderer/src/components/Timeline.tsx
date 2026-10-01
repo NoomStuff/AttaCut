@@ -1,11 +1,11 @@
-import { visibleKeyframes, zoomLength } from "../editor/timelineView";
+import { frameLevelActive, quantizeToFrame, visibleKeyframes, zoomLength } from "../editor/timelineView";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type { EditDocument } from "../editor/model";
 import type { Clip } from "../../../shared/types";
 import { clipChanges } from "../editor/clipChanges";
 import { clipColor } from "../editor/colors";
-import { trimClip, minClipLength } from "../editor/model";
+import { trimClip, minClipLength, timeEpsilon } from "../editor/model";
 import type { PlaybackClock } from "../playback/clock";
 import { useClock } from "../playback/clock";
 import { clamp, formatTime } from "../../../shared/time";
@@ -27,12 +27,16 @@ interface TimelineProps {
    clock: PlaybackClock;
    fitToken: number;
    zoomRequest: { id: number; direction: number };
+   /** Pans (zoom=false) or zooms and pans (zoom=true) so the range sits in view. */
+   viewRequest: { id: number; start: number; end: number; zoom: boolean };
    keyframes: number[];
    snapping: boolean;
    playing: boolean;
    onSelect: (id: string) => void;
    onCommit: (document: EditDocument, group?: string) => void;
    onSeek: (time: number, preservePriority?: boolean, glide?: boolean, side?: "start" | "end") => void;
+   /** Reports the in-progress trim so the transport can show live start, end, and duration. */
+   onDraft: (document: EditDocument | null) => void;
    onZoom: (percent: number, viewportWidth: number) => void;
    onTrimming: (active: boolean) => void;
 }
@@ -51,12 +55,14 @@ export function Timeline({
    clock,
    fitToken,
    zoomRequest,
+   viewRequest,
    keyframes,
    snapping,
    playing,
    onSelect,
    onCommit,
    onSeek,
+   onDraft,
    onZoom,
    onTrimming,
 }: TimelineProps) {
@@ -106,6 +112,9 @@ export function Timeline({
    }, [tickExit]);
    const draftRef = useRef<EditDocument | null>(null);
    const drag = useRef<Drag | null>(null);
+   // Feedback that reads as "the clip moved" (the faded playhead, the delta chip) waits for
+   // an actual boundary change; grabbing a handle alone shows nothing.
+   const [dragMoved, setDragMoved] = useState(false);
    const scrubbing = useRef<number | null>(null);
    const [panActive, setPanActive] = useState(false);
    const panning = useRef<{ pointerId: number; x: number; start: number; length: number } | null>(null);
@@ -149,12 +158,31 @@ export function Timeline({
       return () => observer.disconnect();
    }, []);
    const pxPerSecond = viewportWidth > 0 && drawn.length > 0 ? viewportWidth / drawn.length : 0;
+   // Frame-level editing: with only a few dozen frames on screen, every pick quantizes to
+   // the frame grid so cuts land exactly where the eye points and releases need not snap.
+   const frameLevel = frameLevelActive(drawn.length, frameStep);
    const keyframeView = useMemo(() => visibleKeyframes(keyframes, drawn.start, drawn.length, pxPerSecond), [keyframes, drawn.start, drawn.length, pxPerSecond]);
    latest.current = { view, duration };
    useEffect(() => onZoom((100 * duration) / view.length, viewportWidth), [duration, view.length, viewportWidth, onZoom]);
    useEffect(() => {
       setView({ start: 0, length: duration });
    }, [duration, fitToken]);
+   useEffect(() => {
+      if (!viewRequest.id) return;
+      setView((current) => {
+         const { start, end } = viewRequest;
+         if (!viewRequest.zoom) {
+            // Reveal: pan only, and leave the view alone when the range is already on screen.
+            if (start >= current.start && end <= current.start + current.length) return current;
+            const center = (start + end) / 2;
+            return { length: current.length, start: clamp(center - current.length / 2, 0, duration - current.length) };
+         }
+         // Focus: put the handles at 10% and 90% of the view. The zoom clamp (a half-second
+         // floor, like the wheel) and the timeline ends decide how close that can get.
+         const length = clamp((end - start) / 0.8, Math.min(0.5, duration), duration);
+         return { length, start: clamp(start - length * 0.1, 0, duration - length) };
+      });
+   }, [viewRequest, duration]);
    useEffect(() => {
       setView((current) => {
          const length = zoomLength(current.length, duration, zoomRequest.direction);
@@ -225,9 +253,11 @@ export function Timeline({
       drag.current = null;
       draftRef.current = null;
       setDraft(null);
+      setDragMoved(false);
+      onDraft(null);
       if (current) onTrimming(false);
       if (current?.target.hasPointerCapture(current.pointerId)) current.target.releasePointerCapture(current.pointerId);
-   }, [onTrimming]);
+   }, [onDraft, onTrimming]);
    useEffect(() => {
       const escape = (event: KeyboardEvent) => {
          if (event.key === "Escape") cancel();
@@ -243,6 +273,16 @@ export function Timeline({
       },
       [duration]
    );
+   const scrubTarget = useCallback(
+      (clientX: number) => {
+         const raw = pointAt(clientX);
+         // Up close, the frame grid replaces keyframe snapping: it is strictly finer, and
+         // every legal cut sits on it anyway.
+         if (frameLevel) return quantizeToFrame(raw, frameStep, 0, duration);
+         return snapping ? snapPlayhead(raw, keyframes, duration) : raw;
+      },
+      [pointAt, frameLevel, frameStep, duration, snapping, keyframes]
+   );
    const x = useCallback((point: number) => `${((point - drawn.start) / drawn.length) * 100}%`, [drawn.start, drawn.length]);
    const startDrag = useCallback(
       (event: ReactPointerEvent<HTMLButtonElement>, id: string, side: "start" | "end") => {
@@ -253,6 +293,7 @@ export function Timeline({
          drag.current = { pointerId: event.pointerId, lastClientX: event.clientX, original: document, id, side, target: event.currentTarget };
          event.currentTarget.setPointerCapture(event.pointerId);
          // Report before seeking: the drag pins the playhead onto the boundary being edited.
+         setDragMoved(false);
          onTrimming(true);
          onSelect(id);
          const clip = document.clips.find((item) => item.id === id)!;
@@ -265,18 +306,22 @@ export function Timeline({
          const current = drag.current;
          if (!current) return;
          current.lastClientX = clientX;
-         const time = resolveBoundary(current.original, current.id, current.side, pointAt(clientX), {
+         const raw = pointAt(clientX);
+         const time = resolveBoundary(current.original, current.id, current.side, frameLevel ? quantizeToFrame(raw, frameStep, 0, duration) : raw, {
             duration,
             frameStep,
-            snapping,
+            snapping: frameLevel ? false : snapping,
             keyframes,
          });
          const next = trimClip(current.original, current.id, current.side, time, duration);
+         const after = next.clips.find((clip) => clip.id === current.id)![current.side];
+         if (after !== current.original.clips.find((clip) => clip.id === current.id)![current.side]) setDragMoved(true);
          draftRef.current = next;
          setDraft(next);
-         onSeek(next.clips.find((clip) => clip.id === current.id)![current.side], true, false, current.side);
+         onDraft(next);
+         onSeek(after, true, false, current.side);
       },
-      [pointAt, duration, frameStep, snapping, keyframes, onSeek]
+      [pointAt, frameLevel, frameStep, duration, snapping, keyframes, onDraft, onSeek]
    );
    const applyPan = (clientX: number) => {
       const active = panning.current;
@@ -305,12 +350,14 @@ export function Timeline({
          drag.current = null;
          draftRef.current = null;
          setDraft(null);
+         setDragMoved(false);
          onTrimming(false);
          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
          if (next) onCommit(next);
          else onSeek(current.original.clips.find((clip) => clip.id === current.id)![current.side], true, false, current.side);
+         onDraft(null);
       },
-      [applyDrag, onTrimming, onCommit, onSeek]
+      [applyDrag, onDraft, onTrimming, onCommit, onSeek]
    );
    const rulerStep = RULER_STEPS.find((step) => step * pxPerSecond >= 100) ?? RULER_STEPS.at(-1)!;
    const minorStep = rulerStep / 2;
@@ -498,7 +545,7 @@ export function Timeline({
                                  const target = stepBoundary(document, clip.id, side, direction, {
                                     duration,
                                     frameStep,
-                                    snapping,
+                                    snapping: snapping && !frameLevel,
                                     keyframes,
                                     step: event.shiftKey ? 1 : frameStep,
                                  });
@@ -528,6 +575,7 @@ export function Timeline({
          pxPerSecond,
          drawn.length,
          frameStep,
+         frameLevel,
          duration,
          document,
          onSelect,
@@ -559,7 +607,7 @@ export function Timeline({
                   pressScrub.current = null;
                   scrubbing.current = event.pointerId;
                }
-               if (scrubbing.current === event.pointerId) onSeek(snapping ? snapPlayhead(pointAt(event.clientX), keyframes, duration) : pointAt(event.clientX));
+               if (scrubbing.current === event.pointerId) onSeek(scrubTarget(event.clientX));
             }}
             onPointerDown={(event) => {
                if (event.button === 1) {
@@ -576,12 +624,12 @@ export function Timeline({
                if (globalThis.document.activeElement instanceof HTMLElement) globalThis.document.activeElement.blur();
                pressScrub.current = event.pointerId;
                event.currentTarget.setPointerCapture(event.pointerId);
-               onSeek(snapping ? snapPlayhead(pointAt(event.clientX), keyframes, duration) : pointAt(event.clientX));
+               onSeek(scrubTarget(event.clientX));
             }}
             onPointerUp={(event) => {
                // Pointer moves can be coalesced while decoding. Honor the release
                // position even when the final move was not delivered.
-               if (scrubbing.current === event.pointerId) onSeek(snapping ? snapPlayhead(pointAt(event.clientX), keyframes, duration) : pointAt(event.clientX));
+               if (scrubbing.current === event.pointerId) onSeek(scrubTarget(event.clientX));
                setPanActive(false);
                panning.current = null;
                scrubbing.current = null;
@@ -607,20 +655,27 @@ export function Timeline({
             {ruler}
             {track}
             {drawTime >= drawn.start && drawTime <= drawn.start + drawn.length && (
-               <div className="playhead" data-trimming={!!dragging} style={{ left: x(drawTime) }}>
+               <div className="playhead" data-trimming={!!dragging && dragMoved} style={{ left: x(drawTime) }}>
                   <span />
                   <i />
                </div>
             )}
             {dragging &&
+               dragMoved &&
                (() => {
-                  // Live length of the clip being trimmed, floating at the moving boundary.
+                  // Live readout of how much the drag added to or removed from the clip,
+                  // floating at the moving boundary. Up close the frame count is the useful
+                  // unit; a timestamp rounds away the frames being counted.
                   const dragged = visible.clips.find((clip) => clip.id === dragging.id);
                   if (!dragged) return null;
+                  const original = dragging.original.clips.find((item) => item.id === dragging.id);
+                  const delta = dragged.end - dragged.start - (original ? original.end - original.start : 0);
+                  const frames = Math.round(Math.abs(delta) / frameStep);
                   const percent = clamp(((drawEdge - drawn.start) / drawn.length) * 100, 4, 96);
                   return (
-                     <div className="drag-duration" style={{ left: `${percent}%` }}>
-                        {formatTime(dragged.end - dragged.start)}
+                     <div className="drag-duration" style={{ left: `${percent}%` }} aria-hidden="true">
+                        {delta < -timeEpsilon ? "−" : "+"}
+                        {frameLevel ? `${frames} ${frames === 1 ? "frame" : "frames"}` : formatTime(Math.abs(delta))}
                      </div>
                   );
                })()}
@@ -639,11 +694,19 @@ export function Timeline({
                   const point = held ? drawEdge : clip[side];
                   const onScreen = point >= drawn.start && point <= drawn.start + drawn.length;
                   const active = onScreen && (held || (!dragging && hoveredEdge?.id === clip.id && hoveredEdge.side === side));
+                  // Direction cues only earn their place when the clip is too small to show
+                  // its handles clearly: their opacity ceiling fades in over the final
+                  // stretch before the handles touch, starting at half that point.
+                  const width =
+                     ((dragging?.id === clip.id && dragging.side === "start" ? drawEdge : clip.start) -
+                        (dragging?.id === clip.id && dragging.side === "end" ? drawEdge : clip.end)) *
+                     -pxPerSecond;
+                  const cap = clamp((28 - width) / 12, 0, 1);
                   return (
                      <span
                         key={`${clip.id}:${side}`}
                         className={`handle-direction ${side}${active ? " active" : ""}`}
-                        style={{ left: x(point), "--clip-color": clipColor(clip.color) } as CSSProperties}
+                        style={{ left: x(point), "--clip-color": clipColor(clip.color), "--direction-cap": cap } as CSSProperties}
                      >
                         <FontAwesomeIcon icon={side === "start" ? faCaretLeft : faCaretRight} />
                      </span>

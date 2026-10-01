@@ -13,8 +13,8 @@ export function TopActions({ commands, clock }: { commands: Commands; clock: Pla
    return (
       <div className="top-actions">
          <IconButton command="add" icon={faPlus} label="Add clip in gap" />
-         <IconButton command="delete" icon={faTrash} label="Delete selected clip" />
-         <IconButton command="merge" icon={faLink} label="Merge clips" />
+         <IconButton command="delete" icon={faTrash} label="Delete highlighted clip" />
+         <IconButton command="merge" icon={faLink} label="Merge at playhead" />
          <Button icon={faScissors} command="split">
             Split
          </Button>

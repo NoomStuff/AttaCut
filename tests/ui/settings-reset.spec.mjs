@@ -22,7 +22,7 @@ test("shortcut search focus and reset confirmation", async ({ launchApp, profile
    await search.click();
    await expect(search).toHaveCSS("box-shadow", "none");
 
-   const importBindings = page.getByRole("button", { name: /^Change .* for Open file$/ });
+   const importBindings = page.getByRole("button", { name: /^Change .* for Open file…$/ });
    const defaults = await importBindings.count();
    await page.getByRole("button", { name: "Add binding for Open file" }).click();
    await page.getByRole("button", { name: "Record binding for Open file" }).press("ControlOrMeta+Alt+9");

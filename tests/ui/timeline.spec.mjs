@@ -207,6 +207,20 @@ test("timeline zoom and pan preserve the playhead", async ({ launchApp, profile 
    await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("100%");
 });
 
+test("frame-level zoom quantizes the playhead to source frames", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const bar = await page.locator(".timeline-viewport").boundingBox();
+   // Twelve steps reach the 1500% level: only 36 frames of the 18-second fixture fit the view.
+   for (let index = 0; index < 12; index++) await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+   // The drawn view chases the zoom target; let it settle so the pick maps predictably.
+   await page.waitForTimeout(400);
+   await page.mouse.click(bar.x + bar.width * 0.41, bar.y + 36);
+   // 41% of the 1.2s view lands near 0.492s, which rounds to frame 15 at 00:00.50.
+   await expect(page.locator(".timeline-time time").first()).toHaveText("00:00.50");
+});
+
 test("excluded-end feedback and default edit pause", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/named-audio.mp4"));
    const page = await app.firstWindow();

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { visibleKeyframes, zoomLength } from "./timelineView";
+import { frameLevelActive, quantizeToFrame, visibleKeyframes, zoomLength } from "./timelineView";
 
 it("keeps viewport endpoints and computes density from every visible point", () => {
    expect(visibleKeyframes([0, 1, 2, 3, 4], 1, 2, 12)).toEqual({ ticks: [1, 2, 3], opacity: 0.5 });
@@ -26,4 +26,21 @@ it("zooms short videos without exceeding their duration", () => {
    expect(zoomLength(2, 10, 0)).toBe(10);
    expect(zoomLength(10, 10, 1)).toBe(8);
    expect(zoomLength(8, 10, -1)).toBe(10);
+});
+
+it("enables frame-level editing once few frames fit the view", () => {
+   const frame = 1 / 30;
+   expect(frameLevelActive(80 * frame, frame)).toBe(true);
+   expect(frameLevelActive(80 * frame + frame / 2, frame)).toBe(false);
+   // An 18-second 30fps recording at fit shows all 540 frames: ordinary editing.
+   expect(frameLevelActive(18, frame)).toBe(false);
+   expect(frameLevelActive(18, 0)).toBe(false);
+});
+
+it("quantizes picks onto the frame grid without leaving the timeline", () => {
+   const frame = 1 / 30;
+   expect(quantizeToFrame(7.38, frame, 0, 18)).toBeCloseTo(221 * frame, 12);
+   expect(quantizeToFrame(0.507, frame, 0, 18)).toBeCloseTo(0.5, 12);
+   expect(quantizeToFrame(17.999, frame, 0, 18)).toBe(18);
+   expect(quantizeToFrame(-0.2, frame, 0, 18)).toBe(0);
 });

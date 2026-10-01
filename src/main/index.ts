@@ -78,13 +78,10 @@ async function start(): Promise<void> {
       },
    });
    appWindow = window;
-   // Linux fullscreen shows the native widget directly, bypassing the window's
-   // show event. Hide after the fullscreen transition without suppressing it.
+   // Linux background tests hide the window whenever it shows, including first presentation.
    if (backgroundLinuxTest) {
       const hide = () => window.hide();
       window.on("show", hide);
-      window.webContents.on("enter-html-full-screen", hide);
-      window.webContents.on("leave-html-full-screen", hide);
    }
    // Silence the device output without changing the renderer's mute/volume state.
    if (process.env["ATTACUT_TESTING"] === "1") window.webContents.setAudioMuted(true);
@@ -139,10 +136,18 @@ async function start(): Promise<void> {
    const previewCleanup = prunePreviews(previewFolder);
    void previewCleanup.catch(() => undefined);
    const sourceSession = new SourceSession(previewFolder, previewCleanup);
+   // Deny-by-default for renderer permissions; nothing in the app currently requests any.
    session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
       callback(contents === window.webContents && permission === "fullscreen")
    );
    session.defaultSession.setPermissionCheckHandler((contents, permission) => contents === window.webContents && permission === "fullscreen");
+   // The renderer owns fullscreen state for its custom player overlay; native exits
+   // (macOS Escape, system gestures) are pushed back so the overlay follows along.
+   const notifyFullscreen = (value: boolean) => {
+      if (!window.isDestroyed()) window.webContents.send(IpcEvents.windowFullscreen, value);
+   };
+   window.on("enter-full-screen", () => notifyFullscreen(true));
+   window.on("leave-full-screen", () => notifyFullscreen(false));
    protocol.handle("media", async (request) => {
       const id = new URL(request.url).pathname.slice(1);
       const path = sourceSession.mediaPaths.get(id);
@@ -260,6 +265,9 @@ async function start(): Promise<void> {
          else window.maximize();
       }
       if (value === "close") window.close();
+      // Fullscreen takes over the whole screen; the custom player controls stay in-window.
+      if (value === "enterFullscreen") window.setFullScreen(true);
+      if (value === "exitFullscreen") window.setFullScreen(false);
    });
    if (process.env["ELECTRON_RENDERER_URL"]) await window.loadURL(process.env["ELECTRON_RENDERER_URL"]);
    else await window.loadURL("app://editor/index.html");

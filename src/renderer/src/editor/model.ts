@@ -102,7 +102,11 @@ export function canSplit(document: EditDocument, id: string, time: number, step 
    const clip = document.clips.find((item) => item.id === id);
    // Frame timestamps round to microseconds; do not reject a whole frame for that rounding.
    const precision = 0.000001;
-   return !!clip && time > clip.start && time < clip.end && time >= clip.start + step - precision && time <= clip.end - step + precision;
+   // Container timestamps also round frame positions (Matroska to whole milliseconds), so
+   // the one-frame floor carries a small slack instead of assuming an exact frame grid.
+   // The resolver aligns the resulting boundary to the real grid either way.
+   const slack = Math.min(0.002, step / 4);
+   return !!clip && time > clip.start && time < clip.end && time >= clip.start + step - slack - precision && time <= clip.end - step + slack + precision;
 }
 export function splitClip(document: EditDocument, id: string, time: number, step = timeEpsilon): EditDocument {
    if (!canSplit(document, id, time, step)) return document;

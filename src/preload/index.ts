@@ -63,5 +63,6 @@ const api: DesktopApi = {
    rendererReady: () => ipcRenderer.send(IpcEvents.rendererReady),
    onJob: (callback) => listen<ExportJob>(IpcEvents.jobProgress, callback),
    onCommand: (callback) => listen<string>(IpcEvents.command, callback),
+   onWindowFullscreen: (callback) => listen<boolean>(IpcEvents.windowFullscreen, callback),
 };
 contextBridge.exposeInMainWorld("desktop", api);

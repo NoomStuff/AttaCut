@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import type { MediaSource } from "../../../shared/types";
 import type { EditDocument } from "../editor/model";
 import { selectedClip } from "../editor/model";
@@ -21,41 +20,8 @@ import {
    faMagnifyingGlassMinus,
 } from "@fortawesome/free-solid-svg-icons";
 import { AudioPicker } from "./AudioPicker";
-import { pointerSmoothingMs, useSmoothValue } from "../lib/motion";
+import { VolumeSlider } from "./VolumeSlider";
 import { clipColor } from "../editor/colors";
-
-function VolumeSlider({ volume, muted, onChange }: { volume: number; muted: boolean; onChange: (value: number, restore: number) => void }) {
-   const gestureVolume = useRef<number | null>(null);
-   const displayed = useSmoothValue(muted ? 0 : volume, { follow: pointerSmoothingMs });
-   const finish = () => {
-      gestureVolume.current = null;
-   };
-   return (
-      <span className="volume-slider" style={{ "--fill": `${displayed * 100}%`, "--volume": displayed } as CSSProperties}>
-         <i aria-hidden="true" />
-         <input
-            type="range"
-            aria-label="Preview volume"
-            min={0}
-            max={1}
-            step={0.01}
-            value={muted ? 0 : volume}
-            onPointerDown={() => {
-               gestureVolume.current = volume;
-            }}
-            onPointerUp={finish}
-            onPointerCancel={finish}
-            onLostPointerCapture={finish}
-            onKeyDown={() => {
-               gestureVolume.current ??= volume;
-            }}
-            onKeyUp={finish}
-            onBlur={finish}
-            onChange={(event) => onChange(Number(event.target.value), gestureVolume.current ?? volume)}
-         />
-      </span>
-   );
-}
 
 function TimeField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => number }) {
    const [text, setText] = useState(formatTime(value));
@@ -229,7 +195,7 @@ export function Transport({
                aria-busy={readingKeys}
                disabled={readingKeys}
             />
-            <IconButton icon={faExpand} label="Fullscreen video" onClick={onFullscreen} />
+            <IconButton command="fullscreen" icon={faExpand} label="Fullscreen video" onClick={onFullscreen} />
             <IconButton command="settings" icon={faSliders} label="Playback settings" />
          </div>
       </div>

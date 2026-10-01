@@ -39,7 +39,9 @@
       box-shadow 0ms,
       transform 60ms ease-out;
 }
-.button:is(:active:not(:disabled), .shortcut-active) {
+/* shortcut-active deliberately stays out of the pressed transform: the synthesized center
+   ripple carries the click feel, and holding the button down for the whole flash reads wrong. */
+.button:active:not(:disabled) {
    transform: translateY(1px);
 }
 /* Scale stays deliberately absent: a transform shrink displaces the icon about a pixel while
@@ -101,7 +103,7 @@
    background: var(--surface-raised);
    border: 1px solid var(--line);
    border-radius: 6px;
-   box-shadow: 0 6px 18px #0003;
+   box-shadow: var(--shadow-pop);
    padding: 7px 10px;
    font-size: 11px;
    width: max-content;

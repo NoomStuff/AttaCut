@@ -142,7 +142,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
       : unchangedVideo
         ? "Exporting the video unchanged."
         : encoded > 0
-          ? `${encoded < 0.1 ? "Less than 0.1 seconds" : `About ${encodedLabel(encoded)}`} of video near the cuts may be re-encoded.`
+          ? `${encoded < 0.1 ? "Less than 0.1 seconds" : `~${encodedLabel(encoded)}`} near your cuts may be re-encoded.`
           : "Exporting losslessly.";
    const changes = [...new Set(checked.flatMap((item) => item.changes ?? []))];
    const note = [baseNote, ...changes].join(" ");

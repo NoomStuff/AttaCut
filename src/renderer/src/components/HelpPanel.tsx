@@ -93,7 +93,7 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
                   <strong>Split:</strong> <Shortcut command="split" /> cuts a clip in two at the playhead, so a middle section can be removed.
                </li>
                <li>
-                  <strong>Delete:</strong> Removes the selected clip, its range becomes a gap.
+                  <strong>Delete:</strong> Removes the highlighted clip, its range becomes a gap.
                </li>
                <li>
                   <strong>Add:</strong> Turns a whole gap at the playhead back into a clip.

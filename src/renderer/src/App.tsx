@@ -13,6 +13,7 @@ import { primaryVideo } from "../../shared/media";
 import { defaultPreferences } from "../../shared/defaults";
 import { clamp } from "../../shared/time";
 import { adjacentBoundary, neighboringKeyframe, resolveBoundary, splitTargetAt } from "./editor/navigation";
+import { frameLevelActive } from "./editor/timelineView";
 import { resolveAudioSelection } from "./playback/audioSelection";
 import { nativeAudioCodecs } from "./playback/codecs";
 import { nextKeptTime } from "./playback/ranges";
@@ -139,6 +140,14 @@ export default function App() {
    const [fitToken, setFitToken] = useState(0);
    const [zoomRequest, setZoomRequest] = useState({ id: 0, direction: 0 });
    const [zoom, setZoom] = useState(100);
+   // Pans (preview) or zooms and pans (focus) the timeline onto a clip range.
+   const [viewRequest, setViewRequest] = useState({ id: 0, start: 0, end: 0, zoom: false });
+   // The player overlays the window while the window itself takes over the screen, so the
+   // custom controls stay and window management, multi-monitor layouts, and background
+   // presentation behave identically in and out.
+   const [fullscreen, setFullscreen] = useState(false);
+   const [dragDraft, setDragDraft] = useState<EditDocument | null>(null);
+   const onDraft = useCallback((draft: EditDocument | null) => setDragDraft(draft), []);
    const temporarySnapping = useTemporarySnapping(!!panel || loading || !source, preferences.holdToSnap);
    const snapping = preferences.snapping || temporarySnapping;
    const [draggingFile, setDraggingFile] = useState(false);
@@ -185,7 +194,11 @@ export default function App() {
       return editor.document.clips.find((item) => item.id === target?.id);
    };
    const clip = currentClip();
-   const activeDocument = { ...editor.document, selectedId: clip?.id ?? null };
+   const timelineDocument = { ...editor.document, selectedId: clip?.id ?? null };
+   // While a handle drag is live, its draft is the truth: the transport keeps showing the
+   // dragged clip with live start, end, and duration instead of flickering to the gap
+   // message when the moving boundary crosses out of the committed document.
+   const activeDocument = dragDraft ?? timelineDocument;
    const commit = (document: EditDocument, group?: string) => {
       remember(selectedClip(document));
       dispatch({ type: "commit", document, ...(group ? { group } : {}) });
@@ -202,10 +215,20 @@ export default function App() {
       // Scrub bursts only belong to paused seeking; playing video provides its own audio.
       if (videoRef.current?.paused && preferences.audioScrub) scrubber.scrub(target, muted ? 0 : preferences.volume, side);
    };
-   const fullscreen = () => {
-      const action = document.fullscreenElement ? document.exitFullscreen() : videoRef.current?.requestFullscreen();
-      void action?.catch((value) => showError(errorText(value)));
-   };
+   // The volume gesture carries the pre-mute level so unmuting restores it.
+   const updateVolume = useCallback(
+      (volume: number, restore: number) => {
+         setMuted(volume === 0);
+         setPreferences((current) => ({ ...current, volume: volume === 0 ? restore : volume }));
+      },
+      [setMuted]
+   );
+   // Drive the OS window state from the renderer's fullscreen flag, and follow native exits
+   // (macOS Escape, system gestures) back into that flag.
+   useEffect(() => window.desktop.onWindowFullscreen(setFullscreen), []);
+   useEffect(() => {
+      window.desktop.windowAction(fullscreen ? "enterFullscreen" : "exitFullscreen");
+   }, [fullscreen]);
    // Saved eagerly here, and again on every change by the effect in usePersistence: this
    // call flushes the outgoing source's session before another one loads, so restoring
    // always sees the latest edit.
@@ -267,6 +290,8 @@ export default function App() {
       setMenu(null);
       setPanel(null);
       setExportHelp(false);
+      setFullscreen(false);
+      setDragDraft(null);
       scrubber.stop();
       try {
          await saveCurrent();
@@ -349,6 +374,8 @@ export default function App() {
       setMenu(null);
       setPanel(null);
       setExportHelp(false);
+      setFullscreen(false);
+      setDragDraft(null);
       setError(null);
       const snapshot = sessionFor(source, editor, restore, projectRef.current);
       setRestore(keepRecovery && snapshot ? discardProjectChanges(snapshot) : null);
@@ -474,6 +501,11 @@ export default function App() {
       if (preparing) return;
       void video.play().catch(() => undefined);
    };
+   // Panels open above the workspace; fullscreen video yields to all of them.
+   const openPanel = (next: Panel) => {
+      setFullscreen(false);
+      setPanel(next);
+   };
    const setBoundary = (side: "start" | "end", value: number, target = clip) => {
       const clip = target;
       if (source && clip) {
@@ -584,21 +616,26 @@ export default function App() {
          enabled: () => available() && !!editor.document.clips.length && !job?.running,
          run: () => {
             videoRef.current?.pause();
-            setPanel("export");
+            openPanel("export");
          },
       },
       play: { enabled: available, run: togglePlay },
+      // Fullscreen stays usable while a handle is held; only a load takes it away.
+      fullscreen: { enabled: () => !!source && !loading, run: () => setFullscreen((value) => !value) },
       frame: {
          enabled: available,
          run: () => {
             videoRef.current?.pause();
-            setPanel("frame");
+            openPanel("frame");
          },
       },
       preview: {
          enabled: () => available() && !!clip,
          run: () => {
             if (!clip || !videoRef.current) return;
+            // Bring the clip on screen before playing it: previewing something off-view
+            // reads as nothing happening.
+            setViewRequest((current) => ({ id: current.id + 1, start: clip.start, end: clip.end, zoom: false }));
             seeker.seek(clip.start, true);
             playback.previewEnd = clip.end;
             playback.request(true);
@@ -614,11 +651,15 @@ export default function App() {
       previous: navigate(() => adjacentBoundary(editor.document.clips, clock.get(), -1)),
       next: navigate(() => adjacentBoundary(editor.document.clips, clock.get(), 1)),
       split: resolvedCommand(() => {
-         if (!available() || (snapping && readingKeys)) return;
+         if (!available()) return;
+         // Up close the frame grid replaces keyframe snapping, so an unloaded keyframe
+         // index is no reason to hold the split back either.
+         const frameLevel = frameLevelActive((source!.duration * 100) / zoom, frameStep);
+         if (snapping && readingKeys && !frameLevel) return;
          const target = currentClip();
          if (!target) return;
          const current = clock.get();
-         const time = splitTargetAt(editor.document, target.id, current, { snapping, keyframes });
+         const time = splitTargetAt(editor.document, target.id, current, { snapping: snapping && !frameLevel, keyframes });
          const minimum = minimumClipLength();
          if (!canSplit(editor.document, target.id, current, minimum) || !canSplit(editor.document, target.id, time, minimum)) return;
          return () => {
@@ -642,7 +683,9 @@ export default function App() {
          if (!available()) return;
          const time = clock.get();
          const gap = gapAt(editor.document, time, source!.duration);
-         if (!gap || gap.end - gap.start < minimumClipLength()) return;
+         // Container rounding can leave a one-frame gap a hair under the minimum; the
+         // resolver aligns the new clip to the grid, so half a frame of slack is safe.
+         if (!gap || gap.end - gap.start < minimumClipLength() / 2) return;
          return () => commit(addGap(editor.document, time, source!.duration));
       }),
       undo: {
@@ -666,8 +709,15 @@ export default function App() {
       fit: { enabled: available, run: () => setFitToken((value) => value + 1) },
       zoomIn: { enabled: available, run: () => setZoomRequest((value) => ({ id: value.id + 1, direction: 1 })) },
       zoomOut: { enabled: available, run: () => setZoomRequest((value) => ({ id: value.id + 1, direction: -1 })) },
-      settings: { enabled: () => ready, run: () => setPanel("settings") },
-      shortcuts: { enabled: () => ready, run: () => setPanel("shortcuts") },
+      focusClip: {
+         enabled: () => available() && !!clip,
+         run: () => {
+            if (!clip) return;
+            setViewRequest((current) => ({ id: current.id + 1, start: clip.start, end: clip.end, zoom: true }));
+         },
+      },
+      settings: { enabled: () => ready, run: () => openPanel("settings") },
+      shortcuts: { enabled: () => ready, run: () => openPanel("shortcuts") },
       closeProject: {
          enabled: () => (!!source || loading) && !savingProject,
          run: () => {
@@ -688,10 +738,10 @@ export default function App() {
          enabled: () => ready,
          run: () => {
             setHelpTab("intro");
-            setPanel("help");
+            openPanel("help");
          },
       },
-      about: { enabled: () => ready, run: () => setPanel("about") },
+      about: { enabled: () => ready, run: () => openPanel("about") },
    });
    // Panel dialogs guard themselves: the command handler checks the live dialog state, so the
    // panel's exit fade never blocks shortcuts. Only the menu needs the React-side flag.
@@ -705,7 +755,7 @@ export default function App() {
    const menuSections: Record<string, CommandId[][]> = {
       File: [["open"], ["frame", "export"], ["saveProject", "saveProjectAs", "closeProject"], ["quit"]],
       Edit: [["undo", "redo"], ["split", "merge"], ["setStart", "setEnd", "add", "delete"], ["preview"], ["settings"]],
-      View: [["zoomIn", "zoomOut", "fit"]],
+      View: [["zoomIn", "zoomOut", "fit", "focusClip"], ["preview"], ["fullscreen"]],
       Help: [["help", "shortcuts"], ["releases", "about"], ["reset"]],
    };
    const errorPresence = useExitValue(error, 190);
@@ -821,7 +871,6 @@ export default function App() {
                         key={source.id}
                         source={source}
                         seeker={seeker}
-                        onFullscreen={fullscreen}
                         url={url}
                         videoRef={videoRef}
                         playback={playback}
@@ -831,6 +880,13 @@ export default function App() {
                         volume={preferences.volume}
                         muted={muted}
                         audioIndices={audioIndices}
+                        onAudio={changeAudio}
+                        onVolume={updateVolume}
+                        onSeek={seek}
+                        playing={playing}
+                        fullscreen={fullscreen}
+                        onSetFullscreen={setFullscreen}
+                        onTogglePlay={togglePlay}
                         onPlaying={(value) => {
                            setPlaying(value);
                            // Real playback replaces any scrub burst still sounding.
@@ -872,12 +928,13 @@ export default function App() {
                   <div className={`editor-dock${trimAnimating ? " trim-animating" : ""}`}>
                      <Timeline
                         key={source.id}
-                        document={activeDocument}
+                        document={timelineDocument}
                         duration={source.duration}
                         frameStep={frameStep}
                         clock={clock}
                         fitToken={fitToken}
                         zoomRequest={zoomRequest}
+                        viewRequest={viewRequest}
                         onZoom={onZoomReport}
                         keyframes={keyframes}
                         snapping={snapping}
@@ -885,6 +942,7 @@ export default function App() {
                         onSelect={(id) => remember(editor.document.clips.find((item) => item.id === id))}
                         onCommit={commit}
                         onSeek={seek}
+                        onDraft={onDraft}
                         onTrimming={setTrimming}
                      />
                      <Transport
@@ -896,12 +954,9 @@ export default function App() {
                         muted={muted}
                         audioIndices={audioIndices}
                         onAudio={changeAudio}
-                        onVolume={(volume, restore) => {
-                           setMuted(volume === 0);
-                           setPreferences({ ...preferences, volume: volume === 0 ? restore : volume });
-                        }}
+                        onVolume={updateVolume}
                         onBoundary={setBoundary}
-                        onFullscreen={fullscreen}
+                        onFullscreen={() => setFullscreen(true)}
                         zoom={zoom}
                         snapping={snapping}
                         readingKeys={readingKeys}

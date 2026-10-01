@@ -11,6 +11,16 @@
    /* Generous top inset so the drag-duration readout floats above the ruler unclipped. */
    clip-path: inset(-26px 0 -24px);
 }
+/* Invisible scrub extension below the viewport: extra grab area without shifting any
+   visuals. Hits here reach the viewport's own pointer handlers. */
+.timeline-viewport::after {
+   content: "";
+   position: absolute;
+   left: 0;
+   right: 0;
+   top: 100%;
+   height: 8px;
+}
 .timeline-ruler {
    position: absolute;
    top: 0;
@@ -170,7 +180,7 @@
    font-size: 10px;
    font-variant-numeric: tabular-nums;
    color: var(--text);
-   box-shadow: 0 3px 10px #0003;
+   box-shadow: var(--shadow-pop);
    animation: drag-chip-in 130ms ease-out;
 }
 @keyframes drag-chip-in {
@@ -320,7 +330,7 @@
    transform: translateX(-2px);
 }
 .handle-direction.active > svg {
-   opacity: 0.9;
+   opacity: calc(0.9 * var(--direction-cap, 1));
    transform: translateX(0);
 }
 .playhead {
@@ -499,4 +509,8 @@
    .trim-animating .clip-range {
       transition: none;
    }
+}
+/* On white surfaces the plain line color is too quiet for the ruler. */
+:root[data-theme="light"] .timeline-ruler > .ruler-tick::before {
+   background: var(--faint);
 }

@@ -134,6 +134,15 @@ it("switches from merge to split on the next frame despite microsecond rounding"
    expect(canSplit(document, "b", 4 + frame / 2, frame)).toBe(false);
 });
 
+it("splits a two-frame clip when container timestamps round the frame duration", () => {
+   const frame = 1 / 30; // 33.367 ms
+   const rounded = 0.033; // a Matroska millisecond grid
+   const document = { selectedId: "a", clips: [{ id: "a", start: 0.5, end: 0.5 + 2 * rounded, color: 0 }] };
+   expect(canSplit(document, "a", 0.5 + rounded, frame)).toBe(true);
+   expect(canSplit(document, "a", 0.5 + frame, frame)).toBe(true);
+   expect(canSplit(document, "a", 0.5 + rounded / 2, frame)).toBe(false);
+});
+
 describe("merge and playhead targeting", () => {
    it("only joins near a shared boundary", () => {
       const document = {

@@ -138,12 +138,12 @@ test("merge and split meet at the next frame, and held trims dim the playhead", 
       await page.keyboard.press(",");
       await waitForFrame(page, time);
       await expect(page.getByRole("button", { name: "Split", exact: true })).toBeEnabled();
-      await expect(page.getByRole("button", { name: "Merge clips", exact: true })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Merge at playhead", exact: true })).toBeDisabled();
    }
    await page.keyboard.press(",");
    await waitForFrame(page, 4);
    await expect(page.getByRole("button", { name: "Split", exact: true })).toBeDisabled();
-   await expect(page.getByRole("button", { name: "Merge clips", exact: true })).toBeEnabled();
+   await expect(page.getByRole("button", { name: "Merge at playhead", exact: true })).toBeEnabled();
    await page.keyboard.press(".");
    await waitForFrame(page, 4 + 1 / 30);
    await page.keyboard.press("s");
@@ -151,6 +151,9 @@ test("merge and split meet at the next frame, and held trims dim the playhead", 
    const handle = await page.getByRole("slider", { name: "Clip 3 end", exact: true }).boundingBox();
    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
    await page.mouse.down();
+   // Grabbing alone changes nothing; the dim lands once the edge actually moves.
+   await expect.poll(() => page.locator(".playhead").evaluate((el) => Number(window.getComputedStyle(el).opacity))).toBe(1);
+   await page.mouse.move(handle.x - bar.width * 0.04, handle.y + handle.height / 2);
    await expect.poll(() => page.locator(".playhead").evaluate((el) => Number(window.getComputedStyle(el).opacity))).toBe(0.25);
    await page.mouse.up();
    await expect.poll(() => page.locator(".playhead").evaluate((el) => Number(window.getComputedStyle(el).opacity))).toBe(1);

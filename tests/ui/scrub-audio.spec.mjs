@@ -3,7 +3,7 @@ import { expect } from "@playwright/test";
 import { test, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 
-test("default audio scrubbing auditions a held snapped cut once and hover arrows identify the handle", async ({ launchApp, profile }) => {
+test("default audio scrubbing auditions a held snapped cut once and hover stays quiet on a roomy clip", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
@@ -27,7 +27,8 @@ test("default audio scrubbing auditions a held snapped cut once and hover arrows
    const bar = await page.locator(".timeline-viewport").boundingBox();
    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
    const direction = page.locator(".handle-direction.end.active");
-   await expect.poll(() => direction.locator("svg").evaluate((el) => window.getComputedStyle(el).opacity)).toBe("0.9");
+   // A roomy clip keeps its handles legible on their own, so hovering never raises the carets.
+   await expect.poll(() => direction.locator("svg").evaluate((el) => window.getComputedStyle(el).opacity)).toBe("0");
    await expect(page.locator(".handle-direction.start.active")).toHaveCount(0);
    await page.mouse.down();
    await page.mouse.move(bar.x + (bar.width * 6.2) / 18, bounds.y + bounds.height / 2);
@@ -59,6 +60,7 @@ test("small clip carets appear only on hover and fade away when the pointer leav
    const end = page.getByRole("textbox", { name: "Clip end", exact: true });
    const arrows = page.locator(".handle-direction > svg");
    const opacity = () => arrows.evaluateAll((elements) => elements.map((el) => Number(window.getComputedStyle(el).opacity)));
+   const endOpacity = async () => (await opacity())[1];
    const resizeTo = async (pixels) => {
       await end.fill(((pixels / bar.width) * 18).toFixed(6));
       await end.press("Tab");
@@ -73,10 +75,21 @@ test("small clip carets appear only on hover and fade away when the pointer leav
    await expect(page.locator(".handle-direction.active")).toHaveCount(0);
    const handle = page.getByRole("slider", { name: "Clip 1 end", exact: true });
    await handle.hover();
-   await expect.poll(opacity).toEqual([0, 0.9]);
+   // The carets' ceiling fades with the clip's on-screen width: full once the handles touch.
+   await expect.poll(endOpacity).toBe(0.9);
+   await page.mouse.move(bar.x + bar.width / 2, bar.y - 30);
+   await expect.poll(opacity).toEqual([0, 0]);
+   await resizeTo(40);
+   await handle.hover();
+   // 40px of clip still leaves both handles legible on their own: no carets.
+   await expect.poll(endOpacity).toBe(0);
+   await page.mouse.move(bar.x + bar.width / 2, bar.y - 30);
+   await expect.poll(opacity).toEqual([0, 0]);
+   await resizeTo(20);
+   await handle.hover();
+   await expect.poll(endOpacity).toBeGreaterThan(0);
+   await expect.poll(endOpacity).toBeLessThan(0.9);
    await page.mouse.move(bar.x + bar.width / 2, bar.y - 30);
    await expect.poll(opacity).toEqual([0, 0]);
    await page.screenshot({ path: "work/audio-scrub-playground/small-clip-carets.png" });
-   await resizeTo(40);
-   await expect.poll(opacity).toEqual([0, 0]);
 });

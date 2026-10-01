@@ -111,16 +111,24 @@ test("export workflow", async ({ launchApp, profile }) => {
          await expectAudioMatches(resolve("work/fixture.mp4"), original, joined, result, track);
 });
 
-test("fullscreen preserves background presentation", async ({ launchApp, profile }) => {
+test("fullscreen stays in-window and keeps playback running", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
-   await page.waitForFunction(() => document.fullscreenElement?.tagName === "VIDEO");
+   await expect(page.locator(".player-stage.fullscreen")).toHaveClass(/fullscreen/, { timeout: 5000 });
+   await expect(page.locator(".fullscreen-bar")).toBeVisible();
+   await expect(page.locator(".fullscreen-progress")).toBeVisible();
    const before = await page.locator("video").evaluate((video) => video.currentTime);
    await page.waitForFunction((before) => document.querySelector("video").currentTime > before + 0.3, before);
+   // The clip-colored progress bar seeks; pause first so the landing spot is exact.
+   await page.locator(".fullscreen-bar").getByRole("button", { name: "Pause", exact: true }).click();
+   const progress = await page.locator(".fullscreen-progress").boundingBox();
+   await page.mouse.click(progress.x + progress.width / 2, progress.y + progress.height / 2);
+   await expect.poll(() => page.locator("video").evaluate((video) => video.currentTime)).toBeCloseTo(9, 1);
    if (process.env.ATTACUT_TEST_VISIBLE !== "1") {
+      // Custom fullscreen never touches window state, so a hidden test window stays hidden.
       expect(
          await app.evaluate(({ BrowserWindow }) => {
             const window = BrowserWindow.getAllWindows()[0];
@@ -128,8 +136,8 @@ test("fullscreen preserves background presentation", async ({ launchApp, profile
          })
       ).toMatchObject(process.platform === "linux" ? { visible: false, focused: false } : { opacity: 0, focused: false });
    }
-   await page.locator("video").dblclick();
-   await page.waitForFunction(() => !document.fullscreenElement);
+   await page.locator(".player-stage.fullscreen").dblclick();
+   await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
 });
 
 test("compact layout keeps transport controls within the window", async ({ launchApp, profile }) => {

@@ -132,7 +132,7 @@ export function SettingsPanel({
                            Accent colour<small>Used for buttons, active controls, and focus.</small>
                         </div>
                         <div className="accent-picker" role="group" aria-label="Accent colour">
-                           {["Blue", "Purple", "Green", "Amber", "Red"].map((name, accent) => (
+                           {["Blue", "Purple", "Green", "Yellow", "Red"].map((name, accent) => (
                               <button
                                  key={name}
                                  aria-label={`${name} accent`}

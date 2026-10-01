@@ -1,10 +1,10 @@
 import { createContext, useEffect, useRef } from "react";
 export const commandDefinitions = {
-   open: { label: "Open file", bindings: ["Mod+O"], group: "File" },
+   open: { label: "Open file…", bindings: ["Mod+O"], group: "File" },
    saveProject: { label: "Save project", bindings: ["Mod+S"], group: "File" },
-   saveProjectAs: { label: "Save project as", bindings: ["Mod+Shift+S"], group: "File" },
-   export: { label: "Export", bindings: ["Mod+E"], group: "File" },
-   frame: { label: "Export current frame", bindings: ["Mod+Shift+E"], group: "File" },
+   saveProjectAs: { label: "Save project as…", bindings: ["Mod+Shift+S"], group: "File" },
+   export: { label: "Export…", bindings: ["Mod+E"], group: "File" },
+   frame: { label: "Export current frame…", bindings: ["Mod+Shift+E"], group: "File" },
    closeProject: { label: "Close project", bindings: [], group: "File" },
    quit: { label: "Quit AttaCut", bindings: [], group: "File" },
    play: { label: "Play / pause", bindings: ["Space"], group: "Playback" },
@@ -12,9 +12,9 @@ export const commandDefinitions = {
    frameForward: { label: "Next frame", bindings: ["."], group: "Playback", repeat: true },
    mute: { label: "Toggle mute playback", bindings: ["M"], group: "Playback" },
    snap: { label: "Snap to keyframes", bindings: ["C"], group: "Clips" },
-   merge: { label: "Merge clips", bindings: ["E"], group: "Clips" },
+   merge: { label: "Merge at playhead", bindings: ["E"], group: "Clips" },
    toggleClip: { label: "Toggle clip at playhead", bindings: ["W"], group: "Clips" },
-   preview: { label: "Preview selected clip", bindings: ["P"], group: "Playback" },
+   preview: { label: "Preview highlighted clip", bindings: ["P"], group: "Playback" },
    back: { label: "Back one second", bindings: ["ArrowLeft"], group: "Playback", repeat: true },
    forward: { label: "Forward one second", bindings: ["ArrowRight"], group: "Playback", repeat: true },
    backFast: { label: "Back five seconds", bindings: ["Shift+ArrowLeft"], group: "Playback", repeat: true },
@@ -26,14 +26,16 @@ export const commandDefinitions = {
    split: { label: "Split at playhead", bindings: ["S"], group: "Clips" },
    setStart: { label: "Trim left", bindings: ["A"], group: "Clips" },
    setEnd: { label: "Trim right", bindings: ["D"], group: "Clips" },
-   delete: { label: "Delete selected clip", bindings: ["Delete"], group: "Clips" },
+   delete: { label: "Delete highlighted clip", bindings: ["Delete"], group: "Clips" },
    add: { label: "Add clip in gap", bindings: [], group: "Clips" },
    undo: { label: "Undo", bindings: ["Mod+Z"], group: "Edit" },
    redo: { label: "Redo", bindings: ["Mod+Shift+Z"], group: "Edit" },
    fit: { label: "Fit timeline", bindings: ["F", "0"], group: "View" },
    zoomIn: { label: "Zoom in", bindings: ["="], group: "View" },
    zoomOut: { label: "Zoom out", bindings: ["-"], group: "View" },
-   settings: { label: "Settings", bindings: ["Mod+,"], group: "View" },
+   focusClip: { label: "Focus highlighted clip", bindings: ["V"], group: "View" },
+   fullscreen: { label: "Fullscreen video", bindings: ["F11"], group: "View" },
+   settings: { label: "Settings…", bindings: ["Mod+,"], group: "View" },
    help: { label: "Help", bindings: ["F1"], group: "Help" },
    shortcuts: { label: "Keyboard shortcuts", bindings: ["/"], group: "Help" },
    releases: { label: "Releases page", bindings: [], group: "Help" },
@@ -125,6 +127,18 @@ export function useCommands(
       const pointer = () => {
          keyboardFocus = false;
       };
+      // A shortcut press should read like a real click: the shared ripple, fired from the
+      // button's center, expanding and fading in one brief pass.
+      const flashPress = (button: HTMLElement) => {
+         if (!(button instanceof HTMLButtonElement) || button.disabled || button.getAttribute("aria-disabled") === "true") return;
+         const rect = button.getBoundingClientRect();
+         button.style.setProperty("--press-x", "50%");
+         button.style.setProperty("--press-y", "50%");
+         button.style.setProperty("--press-reach", `${Math.ceil(Math.hypot(rect.width, rect.height) / 2)}px`);
+         button.classList.remove("pressing", "releasing");
+         void button.offsetWidth;
+         button.classList.add("pressing", "releasing");
+      };
       const execute = (id: string, resolved?: () => void) => {
          // The dialog's open attribute clears the moment a panel dismisses, even though its
          // exit fade still renders, so shortcuts work again immediately.
@@ -137,6 +151,7 @@ export function useCommands(
                button.classList.remove("shortcut-active");
                void button.offsetWidth;
                button.classList.add("shortcut-active");
+               flashPress(button);
                window.setTimeout(() => button.classList.remove("shortcut-active"), 480);
             });
             action();

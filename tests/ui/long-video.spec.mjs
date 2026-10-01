@@ -58,7 +58,7 @@ test("opens, plays, scrubs, and steps a multi-hour recording", async ({ launchAp
    await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toBeVisible();
    await page.keyboard.press("Shift+ArrowRight");
    await page.keyboard.press("Shift+ArrowRight");
-   await expect(page.getByRole("button", { name: "Merge clips", exact: true })).toBeDisabled();
+   await expect(page.getByRole("button", { name: "Merge at playhead", exact: true })).toBeDisabled();
    await expect(page.getByRole("button", { name: "Split", exact: true })).toBeEnabled();
 
    // Another cold jump near the end, then resume ordinary source playback.

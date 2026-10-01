@@ -177,7 +177,10 @@
       height: 30px;
       padding: 0;
    }
+   /* The play button stays a circle: it must not inherit the compact icon-button width. */
    .transport .play-button {
+      width: 34px;
+      min-width: 34px;
       height: 34px;
    }
    .transport .time-field {

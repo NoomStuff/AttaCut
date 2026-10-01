@@ -66,8 +66,9 @@ export interface DesktopApi {
    openExternal(url: string): Promise<void>;
    openNotices(): Promise<void>;
    exportDiagnostics(): Promise<boolean>;
-   windowAction(action: "minimize" | "maximize" | "close"): void;
+   windowAction(action: "minimize" | "maximize" | "close" | "enterFullscreen" | "exitFullscreen"): void;
    rendererReady(): void;
    onJob(listener: (job: ExportJob) => void): () => void;
    onCommand(listener: (command: string) => void): () => void;
+   onWindowFullscreen(listener: (value: boolean) => void): () => void;
 }

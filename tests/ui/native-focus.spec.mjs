@@ -75,10 +75,11 @@ test("native minimize, restore and activation", async ({ launchApp, profile }) =
    const before = await page.locator("video").evaluate((video) => video.currentTime);
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await page.waitForFunction((before) => document.querySelector("video").currentTime > before + 0.3, before);
+   // Fullscreen takes over the whole screen while the controls stay custom and in-window.
    await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
-   await page.waitForFunction(() => document.fullscreenElement?.tagName === "VIDEO");
+   await expect(page.locator(".player-stage.fullscreen")).toHaveClass(/fullscreen/, { timeout: 5000 });
    await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
-   await page.locator("video").dblclick();
-   await page.waitForFunction(() => !document.fullscreenElement);
+   await page.locator(".player-stage.fullscreen").dblclick();
+   await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
    await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
 });

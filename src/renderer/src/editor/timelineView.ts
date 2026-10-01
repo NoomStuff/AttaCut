@@ -28,3 +28,15 @@ export function visibleKeyframes(points: readonly number[], start: number, lengt
    }
    return { ticks, opacity: clamp((gap - 8) / 8, 0, 1) };
 }
+
+/** Frame-level editing kicks in once roughly this many frames or fewer fit on screen. */
+export const frameLevelFrames = 80;
+
+export function frameLevelActive(viewLength: number, frameStep: number): boolean {
+   return frameStep > 0 && viewLength / frameStep <= frameLevelFrames;
+}
+
+/** Snap a pick onto the frame grid, so what the eye sees is what a commit resolves to. */
+export function quantizeToFrame(value: number, frameStep: number, min: number, max: number): number {
+   return clamp(Math.round(value / frameStep) * frameStep, min, max);
+}

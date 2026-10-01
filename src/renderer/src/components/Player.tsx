@@ -1,15 +1,21 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { CSSProperties, RefObject } from "react";
 import type { Clip, MediaSource } from "../../../shared/types";
 import type { PlaybackClock } from "../playback/clock";
-import { useFrameTime } from "../playback/clock";
+import { useClock, useFrameTime } from "../playback/clock";
 import { insideClip } from "../editor/model";
+import { clipColor } from "../editor/colors";
 import { selectNativeAudio } from "../playback/audio";
 import type { PlaybackController } from "../playback/controller";
 import type { PlaybackSeeker } from "../playback/seeker";
 import { nextKeptTime } from "../playback/ranges";
 import { useExitValue } from "../lib/motion";
 import { presentationTime } from "../playback/presentation";
+import { clamp, formatTime } from "../../../shared/time";
+import { IconButton } from "./Controls";
+import { AudioPicker } from "./AudioPicker";
+import { VolumeSlider } from "./VolumeSlider";
+import { faPlay, faPause, faBackwardStep, faForwardStep, faVolumeHigh, faVolumeXmark, faCompress } from "@fortawesome/free-solid-svg-icons";
 
 export function Player({
    source,
@@ -29,8 +35,14 @@ export function Player({
    preparing,
    failed,
    audioIndices,
+   onAudio,
+   onVolume,
+   onSeek,
    seeker,
-   onFullscreen,
+   playing,
+   fullscreen,
+   onSetFullscreen,
+   onTogglePlay,
    trimming,
 }: {
    source: MediaSource;
@@ -50,8 +62,14 @@ export function Player({
    preparing: boolean;
    failed: boolean;
    audioIndices: number[];
+   onAudio: (indices: number[]) => void;
+   onVolume: (value: number, restore: number) => void;
+   onSeek: (time: number) => void;
    seeker: PlaybackSeeker;
-   onFullscreen: () => void;
+   playing: boolean;
+   fullscreen: boolean;
+   onSetFullscreen: (value: boolean) => void;
+   onTogglePlay: () => void;
    trimming: boolean;
 }) {
    const [readyUrl, setReadyUrl] = useState<string | null>(null);
@@ -78,6 +96,35 @@ export function Player({
          : null,
       240
    );
+   // Fullscreen stays mounted through its exit animation; controls inside idle away only
+   // while the video plays, and pausing brings them back for good.
+   const fullscreenPresence = useExitValue(fullscreen ? "on" : null, 190);
+   const inFullscreen = fullscreenPresence.value !== null;
+   const [controlsShown, setControlsShown] = useState(true);
+   const idleTimer = useRef(0);
+   const wake = useCallback(() => {
+      setControlsShown(true);
+      window.clearTimeout(idleTimer.current);
+      idleTimer.current = window.setTimeout(() => setControlsShown(false), 2600);
+   }, []);
+   useEffect(() => () => window.clearTimeout(idleTimer.current), []);
+   useEffect(() => {
+      if (!inFullscreen || !playing) {
+         window.clearTimeout(idleTimer.current);
+         setControlsShown(true);
+         return;
+      }
+      wake();
+      return () => window.clearTimeout(idleTimer.current);
+   }, [inFullscreen, playing, wake]);
+   useEffect(() => {
+      if (!inFullscreen) return;
+      const escape = (event: KeyboardEvent) => {
+         if (event.key === "Escape") onSetFullscreen(false);
+      };
+      window.addEventListener("keydown", escape);
+      return () => window.removeEventListener("keydown", escape);
+   }, [inFullscreen, onSetFullscreen]);
    const latest = useRef({ clips, keptOnly });
    latest.current = { clips, keptOnly };
    useLayoutEffect(() => {
@@ -184,8 +231,31 @@ export function Player({
    useEffect(() => {
       if (videoRef.current && audioIndices.length === 1) selectNativeAudio(videoRef.current, source, audioIndices);
    }, [source, audioIndices, videoRef]);
+   const stageClass = [
+      "player-stage",
+      !frameReady && !frameHeld && !failed ? "pending" : "",
+      fullscreenPresence.mounted ? `fullscreen${fullscreenPresence.closing ? " closing" : ""}` : "",
+      inFullscreen && !controlsShown ? "no-controls" : "",
+   ]
+      .filter(Boolean)
+      .join(" ");
+   const audioTracks = source.streams.filter((stream) => stream.type === "audio");
    return (
-      <div className={`player-stage${!frameReady && !frameHeld && !failed ? " pending" : ""}`}>
+      <div
+         className={stageClass}
+         onPointerMove={inFullscreen ? wake : undefined}
+         onClick={
+            inFullscreen
+               ? () => {
+                    // A first click on a hidden overlay only reveals the controls; with them
+                    // visible the picture itself toggles playback, like a media player.
+                    if (!controlsShown) wake();
+                    else onTogglePlay();
+                 }
+               : undefined
+         }
+         onDoubleClick={inFullscreen ? () => onSetFullscreen(false) : () => onSetFullscreen(true)}
+      >
          <video
             ref={videoRef}
             className={frameReady ? `frame-ready${skipFrameFade ? " no-fade" : ""}` : ""}
@@ -247,7 +317,6 @@ export function Player({
                }
                if (videoRef.current && playWhenReady) void videoRef.current.play().catch(onFailure);
             }}
-            onDoubleClick={onFullscreen}
          />
          <canvas ref={snapshotRef} className={`preview-held-frame${frameHeld ? " visible" : ""}`} aria-hidden="true" />
          {blockedPresence.mounted && (
@@ -256,7 +325,128 @@ export function Player({
                <span>{blockedPresence.value}</span>
             </div>
          )}
+         {inFullscreen && (
+            <div className={`fullscreen-controls${controlsShown ? "" : " hidden"}`}>
+               <div className="fullscreen-bar" onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
+                  <FullscreenProgress clock={clock} duration={source.duration} clips={clips} onSeek={onSeek} />
+                  <div className="fullscreen-row">
+                     <div className="fullscreen-group">
+                        <IconButton
+                           command="play"
+                           icon={playing ? faPause : faPlay}
+                           label={playing ? "Pause" : "Play"}
+                           className="play-button"
+                           data-playing={playing ? "" : undefined}
+                        />
+                        <IconButton command="previous" icon={faBackwardStep} label="Previous cut" />
+                        <IconButton command="next" icon={faForwardStep} label="Next cut" />
+                     </div>
+                     <FullscreenTime clock={clock} duration={source.duration} />
+                     <div className="fullscreen-group">
+                        {audioTracks.length > 1 && <AudioPicker tracks={audioTracks} selected={audioIndices} onSelect={onAudio} />}
+                        <IconButton
+                           command="mute"
+                           icon={muted || volume === 0 ? faVolumeXmark : faVolumeHigh}
+                           label={muted || volume === 0 ? "Unmute preview" : "Mute preview"}
+                        />
+                        <VolumeSlider volume={volume} muted={muted} onChange={onVolume} />
+                        <IconButton icon={faCompress} label="Exit fullscreen" shortcut="Esc" onClick={() => onSetFullscreen(false)} />
+                     </div>
+                  </div>
+               </div>
+            </div>
+         )}
          <ExcludedHint clock={clock} clips={clips} duration={source.duration} trimming={trimming} />
+      </div>
+   );
+}
+function FullscreenTime({ clock, duration }: { clock: PlaybackClock; duration: number }) {
+   const time = useClock(clock);
+   return (
+      <span className="fullscreen-time">
+         <time>{formatTime(time)}</time>
+         <span>/</span>
+         <time>{formatTime(duration)}</time>
+      </span>
+   );
+}
+function FullscreenProgress({ clock, duration, clips, onSeek }: { clock: PlaybackClock; duration: number; clips: Clip[]; onSeek: (time: number) => void }) {
+   const time = useClock(clock);
+   const bar = useRef<HTMLDivElement>(null);
+   const dragging = useRef(false);
+   const seekTo = (clientX: number) => {
+      const rect = bar.current!.getBoundingClientRect();
+      onSeek(clamp((clientX - rect.left) / rect.width, 0, 1) * duration);
+   };
+   // Kept ranges take their timeline colors; the played span brightens everything it covers.
+   const segments = (className: string) =>
+      clips.map((clip) => (
+         <span
+            key={clip.id}
+            className={className}
+            style={
+               {
+                  left: `${(clip.start / duration) * 100}%`,
+                  width: `${((clip.end - clip.start) / duration) * 100}%`,
+                  "--clip-color": clipColor(clip.color),
+               } as CSSProperties
+            }
+         />
+      ));
+   const fraction = duration > 0 ? clamp(time / duration, 0, 1) : 0;
+   return (
+      <div
+         ref={bar}
+         className="fullscreen-progress"
+         role="slider"
+         aria-label="Seek"
+         aria-valuemin={0}
+         aria-valuemax={Math.round(duration * 100) / 100}
+         aria-valuenow={Math.round(time * 100) / 100}
+         aria-valuetext={formatTime(time)}
+         tabIndex={0}
+         onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            dragging.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            seekTo(event.clientX);
+         }}
+         onPointerMove={(event) => {
+            if (dragging.current) seekTo(event.clientX);
+         }}
+         onPointerUp={(event) => {
+            dragging.current = false;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+         }}
+         onPointerCancel={() => {
+            dragging.current = false;
+         }}
+         onLostPointerCapture={() => {
+            dragging.current = false;
+         }}
+         onKeyDown={(event) => {
+            // Global shortcuts skip slider targets, so the bar carries its own steps.
+            if (event.altKey || event.ctrlKey || event.metaKey) return;
+            const step = event.shiftKey ? 5 : 1;
+            if (event.key === "ArrowLeft") {
+               event.preventDefault();
+               event.stopPropagation();
+               onSeek(clamp(clock.get() - step, 0, duration));
+            } else if (event.key === "ArrowRight") {
+               event.preventDefault();
+               event.stopPropagation();
+               onSeek(clamp(clock.get() + step, 0, duration));
+            } else if (event.key === "Home" || event.key === "End") {
+               event.preventDefault();
+               onSeek(event.key === "Home" ? 0 : duration);
+            }
+         }}
+      >
+         <div className="fullscreen-progress-track">{segments("fullscreen-progress-segment")}</div>
+         <div className="fullscreen-progress-fill" style={{ clipPath: `inset(0 ${100 - fraction * 100}% 0 0)` }}>
+            {segments("fullscreen-progress-segment")}
+         </div>
+         <i className="fullscreen-progress-knob" style={{ left: `${fraction * 100}%` }} />
       </div>
    );
 }
