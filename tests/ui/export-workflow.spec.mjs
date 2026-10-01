@@ -122,7 +122,9 @@ test("fullscreen stays in-window and keeps playback running", async ({ launchApp
    await expect(page.locator(".fullscreen-progress")).toBeVisible();
    const before = await page.locator("video").evaluate((video) => video.currentTime);
    await page.waitForFunction((before) => document.querySelector("video").currentTime > before + 0.3, before);
-   // The clip-colored progress bar seeks; pause first so the landing spot is exact.
+   // The clip-colored progress bar seeks; pause first so the landing spot is exact. The
+   // playback wait can outlast the controls' idle fade on slow runners, so wake them.
+   await page.locator(".player-stage.fullscreen").hover();
    await page.locator(".fullscreen-bar").getByRole("button", { name: "Pause", exact: true }).click();
    const progress = await page.locator(".fullscreen-progress").boundingBox();
    await page.mouse.click(progress.x + progress.width / 2, progress.y + progress.height / 2);
