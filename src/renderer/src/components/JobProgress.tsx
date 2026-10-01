@@ -12,12 +12,14 @@ export function JobProgress({
    onDismiss,
    onError,
    onRetry,
+   retryAvailable,
 }: {
    job: ExportJob;
    closing: boolean;
    onDismiss: () => void;
    onError: (value: string) => void;
    onRetry: (value: ExportJob) => void;
+   retryAvailable: boolean;
 }) {
    const [hideSuccess, setHideSuccess] = useState(false);
    const [hideFailures, setHideFailures] = useState(false);
@@ -48,7 +50,7 @@ export function JobProgress({
       void window.desktop[action](item.outputPath).catch((value: unknown) => onError(errorText(value)));
    };
    return (
-      <div className="job-notifications" aria-live="polite">
+      <div className="job-cards" aria-live="polite">
          {job.running && (
             <aside className={`job-progress${closing ? " closing" : ""}`}>
                <div className="job-summary">
@@ -132,8 +134,14 @@ export function JobProgress({
                </div>
                <div className="job-actions">
                   <Button
-                     disabled={!failures.some((item) => item.failure?.retryable !== false)}
-                     title={failures.every((item) => item.failure?.retryable === false) ? "Change the cuts or options before exporting again" : undefined}
+                     disabled={!retryAvailable || !failures.some((item) => item.failure?.retryable !== false)}
+                     title={
+                        !retryAvailable
+                           ? "Open Export to export these clips again"
+                           : failures.every((item) => item.failure?.retryable === false)
+                             ? "Change the cuts or options before exporting again"
+                             : undefined
+                     }
                      onClick={() => {
                         void window.desktop
                            .retryExport(job.id)

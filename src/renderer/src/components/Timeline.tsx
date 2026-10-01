@@ -9,10 +9,11 @@ import { trimClip, minClipLength } from "../editor/model";
 import type { PlaybackClock } from "../playback/clock";
 import { useClock } from "../playback/clock";
 import { clamp, formatTime } from "../../../shared/time";
-import { resolveBoundary, stepBoundary } from "../editor/navigation";
+import { resolveBoundary, snapPlayhead, stepBoundary } from "../editor/navigation";
 import { IconButton } from "./Controls";
 import { pointerSmoothingMs, useSmoothValue } from "../lib/motion";
-import { faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
+import { faCaretLeft, faCaretRight, faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 
 // Stationary ruler ladder: tick times come from this scale, so their meaning survives zooming
 // and panning. Finer steps fade in between as space allows. Each major has a minor that
@@ -266,7 +267,6 @@ export function Timeline({
          current.lastClientX = clientX;
          const time = resolveBoundary(current.original, current.id, current.side, pointAt(clientX), {
             duration,
-            viewLength: drawn.length,
             frameStep,
             snapping,
             keyframes,
@@ -276,7 +276,7 @@ export function Timeline({
          setDraft(next);
          onSeek(next.clips.find((clip) => clip.id === current.id)![current.side], true, false, current.side);
       },
-      [pointAt, duration, drawn.length, frameStep, snapping, keyframes, onSeek]
+      [pointAt, duration, frameStep, snapping, keyframes, onSeek]
    );
    const applyPan = (clientX: number) => {
       const active = panning.current;
@@ -403,6 +403,7 @@ export function Timeline({
                return (
                   <div
                      key={clip.id}
+                     data-compact={(end - start) * pxPerSecond < 40}
                      className={`clip-range ${clip.id === visible.selectedId ? "selected" : ""}${presence.flashes.has(clip.id) ? " flash" : presence.entering.includes(clip.id) ? " entering" : ""}`}
                      onAnimationEnd={(event) => {
                         if (event.target !== event.currentTarget) return;
@@ -463,11 +464,9 @@ export function Timeline({
                                  : (visible.clips[index + 1]?.start ?? Infinity) - clip.end <= frameStep
                            }
                            aria-label={`Clip ${index + 1} ${side}`}
-                           aria-valuemin={
-                              side === "start" ? (visible.clips[index - 1]?.end ?? 0) : Math.min(clip.end, clip.start + minClipLength(0, frameStep))
-                           }
+                           aria-valuemin={side === "start" ? (visible.clips[index - 1]?.end ?? 0) : Math.min(clip.end, clip.start + minClipLength(frameStep))}
                            aria-valuemax={
-                              side === "end" ? (visible.clips[index + 1]?.start ?? duration) : Math.max(clip.start, clip.end - minClipLength(0, frameStep))
+                              side === "end" ? (visible.clips[index + 1]?.start ?? duration) : Math.max(clip.start, clip.end - minClipLength(frameStep))
                            }
                            aria-valuenow={clip[side]}
                            aria-valuetext={formatTime(clip[side])}
@@ -498,7 +497,6 @@ export function Timeline({
                                  const direction = event.key === "ArrowLeft" ? -1 : 1;
                                  const target = stepBoundary(document, clip.id, side, direction, {
                                     duration,
-                                    viewLength: drawn.length,
                                     frameStep,
                                     snapping,
                                     keyframes,
@@ -561,7 +559,7 @@ export function Timeline({
                   pressScrub.current = null;
                   scrubbing.current = event.pointerId;
                }
-               if (scrubbing.current === event.pointerId) onSeek(pointAt(event.clientX));
+               if (scrubbing.current === event.pointerId) onSeek(snapping ? snapPlayhead(pointAt(event.clientX), keyframes, duration) : pointAt(event.clientX));
             }}
             onPointerDown={(event) => {
                if (event.button === 1) {
@@ -578,12 +576,12 @@ export function Timeline({
                if (globalThis.document.activeElement instanceof HTMLElement) globalThis.document.activeElement.blur();
                pressScrub.current = event.pointerId;
                event.currentTarget.setPointerCapture(event.pointerId);
-               onSeek(pointAt(event.clientX));
+               onSeek(snapping ? snapPlayhead(pointAt(event.clientX), keyframes, duration) : pointAt(event.clientX));
             }}
             onPointerUp={(event) => {
                // Pointer moves can be coalesced while decoding. Honor the release
                // position even when the final move was not delivered.
-               if (scrubbing.current === event.pointerId) onSeek(pointAt(event.clientX));
+               if (scrubbing.current === event.pointerId) onSeek(snapping ? snapPlayhead(pointAt(event.clientX), keyframes, duration) : pointAt(event.clientX));
                setPanActive(false);
                panning.current = null;
                scrubbing.current = null;
@@ -609,7 +607,7 @@ export function Timeline({
             {ruler}
             {track}
             {drawTime >= drawn.start && drawTime <= drawn.start + drawn.length && (
-               <div className="playhead" style={{ left: x(drawTime) }}>
+               <div className="playhead" data-trimming={!!dragging} style={{ left: x(drawTime) }}>
                   <span />
                   <i />
                </div>
@@ -633,6 +631,25 @@ export function Timeline({
             </div>
             <div className="timeline-edge left" style={{ width: 44 * clamp(drawn.start / (drawn.length * 0.04), 0, 1) }} />
             <div className="timeline-edge right" style={{ width: 44 * clamp((duration - drawn.start - drawn.length) / (drawn.length * 0.04), 0, 1) }} />
+         </div>
+         <div className="timeline-handle-directions" aria-hidden="true">
+            {visible.clips.flatMap((clip) =>
+               (["start", "end"] as const).map((side) => {
+                  const held = dragging?.id === clip.id && dragging.side === side;
+                  const point = held ? drawEdge : clip[side];
+                  const onScreen = point >= drawn.start && point <= drawn.start + drawn.length;
+                  const active = onScreen && (held || (!dragging && hoveredEdge?.id === clip.id && hoveredEdge.side === side));
+                  return (
+                     <span
+                        key={`${clip.id}:${side}`}
+                        className={`handle-direction ${side}${active ? " active" : ""}`}
+                        style={{ left: x(point), "--clip-color": clipColor(clip.color) } as CSSProperties}
+                     >
+                        <FontAwesomeIcon icon={side === "start" ? faCaretLeft : faCaretRight} />
+                     </span>
+                  );
+               })
+            )}
          </div>
          <div className="timeline-pan-arrow left" style={{ opacity: drawn.start > 0.001 ? 1 : 0 }}>
             <IconButton

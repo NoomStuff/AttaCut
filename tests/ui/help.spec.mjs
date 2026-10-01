@@ -12,9 +12,14 @@ test("help", async ({ launchApp, profile }) => {
    await page.keyboard.press("F1");
    const help = page.getByRole("dialog", { name: "Help", exact: true });
    await help.waitFor();
-   for (const tab of ["Getting started", "Clips and gaps", "Cutting losslessly"]) {
+   await expect(help.getByRole("tab", { name: "Introduction" })).toHaveAttribute("aria-selected", "true");
+   for (const tab of ["Introduction", "Getting started", "Clips and gaps", "Cutting losslessly", "Export"]) {
       await help.getByRole("tab", { name: tab }).click();
    }
+   await expect(help.getByRole("heading", { name: "When encoding needs your approval" })).toBeVisible();
+   await page.screenshot({ path: "work/audio-scrub-playground/export-help.png" });
+   await help.getByRole("tab", { name: "Cutting losslessly" }).click();
+   await expect(help.getByRole("heading", { name: "When encoding needs your approval" })).toHaveCount(0);
 
    // The About panel comes from the Help menu and shows a real version.
    await page.keyboard.press("Escape");
@@ -30,12 +35,17 @@ test("help", async ({ launchApp, profile }) => {
    const exportDialog = page.getByRole("dialog", { name: "Export video" });
    await exportDialog.waitFor();
    await expect(exportDialog.getByText(/re-encod|losslessly|unchanged/)).toBeVisible({ timeout: 20000 });
+   await exportDialog.getByRole("textbox", { name: "Combined filename", exact: true }).fill("help-return");
    await exportDialog.getByRole("button", { name: "Learn More" }).click();
    await help.waitFor();
    await expect(help.getByRole("tab", { name: "Cutting losslessly" })).toHaveAttribute("aria-selected", "true");
 
    // The shortcuts panel still opens alongside the new Help group.
    await page.keyboard.press("Escape");
+   await expect(exportDialog).toBeVisible();
+   await expect(exportDialog.getByRole("textbox", { name: "Combined filename", exact: true })).toHaveValue("help-return");
+   await page.keyboard.press("Escape");
+
    await page.keyboard.press("/");
    await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
    await expect(page.getByRole("tab", { name: "Keyboard shortcuts" })).toHaveAttribute("aria-selected", "true");

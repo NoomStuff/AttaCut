@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 // Prefer the packaged binary when it has been bundled; fall back to PATH for dev runs.
 
-test("focused time fields reveal resolved precision without creating another edit", async ({ launchApp, profile }) => {
+test("time fields keep readable precision and align to source frames without another edit", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
@@ -15,11 +15,14 @@ test("focused time fields reveal resolved precision without creating another edi
    await field.press("Tab");
    const handle = page.getByRole("slider", { name: "Clip 1 start", exact: true });
    await expect.poll(async () => Number(await handle.getAttribute("aria-valuenow"))).toBeCloseTo(1.233333333, 5);
+   await expect(page.locator(".time-feedback")).toHaveCount(0);
+   await expect(page.locator(".timeline-time time").first()).toHaveText("00:01.23");
    const before = await handle.getAttribute("aria-valuenow");
    await expect(page.locator(".player-excluded")).toHaveClass(/hidden/);
    await expect(page.getByRole("button", { name: "Add clip in gap", exact: true })).toBeEnabled();
    await field.click();
-   await expect(field).toHaveValue("00:01.233333");
+   await expect(field).toHaveValue("00:01.23");
+   await expect(field).toHaveAttribute("title", "00:01.233333");
    await field.press("Tab");
    expect(await handle.getAttribute("aria-valuenow")).toBe(before);
    await page.locator(".title-filename").click();

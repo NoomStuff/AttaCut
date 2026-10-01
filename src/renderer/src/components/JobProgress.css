@@ -1,16 +1,57 @@
 .job-notifications {
    position: absolute;
-   bottom: 42px;
-   right: 36px;
+   bottom: 12px;
+   right: 12px;
    z-index: 50;
    display: flex;
    flex-direction: column;
-   gap: 10px;
-   max-height: calc(100vh - 110px);
+   width: min(355px, calc(100% - 24px));
+   max-height: calc(100% - 24px);
+}
+.notification-toggle {
+   align-self: flex-end;
+   padding: 5px 9px;
+   margin-bottom: 4px;
+   font-size: 11px;
+   background: var(--surface-raised);
+   border: 1px solid var(--line);
+   border-radius: 5px;
+   flex-shrink: 0;
+}
+.notification-scroll {
+   overflow-anchor: none;
+   min-height: 0;
    overflow-y: auto;
+   overflow-x: hidden;
+   padding: 4px;
+   margin: -4px;
+}
+.notification-list {
+   position: relative;
+   transition: height 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.notification-entry {
+   position: absolute;
+   left: 0;
+   right: 0;
+   transform: scale(var(--stack-scale));
+   transform-origin: center bottom;
+   opacity: var(--stack-opacity);
+   transition:
+      bottom 200ms cubic-bezier(0.2, 0.9, 0.3, 1),
+      transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1),
+      opacity 150ms ease-out;
+}
+.notification-entry[data-back="true"] {
+   pointer-events: none;
+}
+.job-cards {
+   display: flex;
+   flex-direction: column;
+   gap: 10px;
 }
 .job-progress {
-   width: 355px;
+   width: 100%;
    border: 1px solid var(--line);
    padding: 17px;
    background: var(--surface-raised);

@@ -193,9 +193,13 @@
    white-space: nowrap;
    pointer-events: none;
    z-index: 2;
+   transition: opacity 160ms ease-out;
    text-shadow:
       0 0 2px color-mix(in srgb, var(--clip-color) 25%, var(--surface)),
       0 1px 3px color-mix(in srgb, var(--clip-color) 25%, var(--surface));
+}
+.clip-range[data-compact="true"] .clip-number {
+   opacity: 0;
 }
 .trim-handle {
    position: absolute;
@@ -206,7 +210,9 @@
    background: var(--clip-color);
    color: var(--surface);
    cursor: ew-resize;
-   border: 1px solid color-mix(in srgb, var(--clip-color) 80%, white);
+   /* An inset stroke preserves the outline without forcing a 2px minimum box. */
+   border: 0;
+   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--clip-color) 80%, white);
    z-index: 3;
    touch-action: none;
    /* Handles never span more than half their clip, however short the clip gets. */
@@ -283,6 +289,40 @@
    filter: brightness(1.28);
    z-index: 6;
 }
+.timeline-handle-directions {
+   /* Outside the clipped viewport so the first and last handles can show their arrows. */
+   position: absolute;
+   inset: 10px 7px 0;
+   pointer-events: none;
+   z-index: 8;
+}
+.handle-direction {
+   position: absolute;
+   top: 37.5px;
+}
+.handle-direction > svg {
+   position: absolute;
+   top: -5.5px;
+   width: 7px;
+   height: 11px;
+   color: var(--clip-color);
+   opacity: 0;
+   transition:
+      opacity 130ms ease-out,
+      transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.handle-direction.start > svg {
+   left: -11px;
+   transform: translateX(2px);
+}
+.handle-direction.end > svg {
+   left: 4px;
+   transform: translateX(-2px);
+}
+.handle-direction.active > svg {
+   opacity: 0.9;
+   transform: translateX(0);
+}
 .playhead {
    position: absolute;
    top: 16px;
@@ -291,6 +331,12 @@
    pointer-events: none;
    transform: translateX(-50%);
    width: 10px;
+}
+.playhead {
+   transition: opacity 100ms ease-out;
+}
+.playhead[data-trimming="true"] {
+   opacity: 0.25;
 }
 .playhead > span {
    position: absolute;

@@ -65,6 +65,16 @@ export const test = base.extend({
          page.setDefaultTimeout(15000);
          page.on("pageerror", (error) => errors.push(error.message));
          page.on("console", (message) => logs.push(`[renderer ${message.type()}] ${message.text()}\n`));
+         // A BrowserWindow also exists when its page fails to load. Main-process-only
+         // checks must not pass against that empty window and hang while closing it.
+         try {
+            await page.locator(".app-shell").waitFor({ state: "attached", timeout: process.env.CI ? 60000 : 30000 });
+         } catch (error) {
+            await testInfo.attach("electron-startup.log", { body: logs.join(""), contentType: "text/plain" });
+            app.process().kill();
+            apps.delete(app);
+            throw error;
+         }
          // Keyboard shortcuts need the same active window that a user would have.
          await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show());
          return app;

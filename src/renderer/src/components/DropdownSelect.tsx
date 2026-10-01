@@ -42,7 +42,12 @@ export function DropdownSelect({
    const presence = useExitValue(open ? true : null, 120);
    useEffect(() => {
       if (!open) return;
-      root.current?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]')?.focus();
+      // Presence mounts after open changes. Focus once the list actually exists.
+      if (!presence.mounted || presence.closing) return;
+      const option =
+         root.current?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]') ??
+         root.current?.querySelector<HTMLButtonElement>('[role="option"]');
+      option?.focus();
       const outside = (event: PointerEvent) => {
          if (!root.current?.contains(event.target as Node)) setOpen(false);
       };
@@ -59,7 +64,7 @@ export function DropdownSelect({
          window.removeEventListener("pointerdown", outside);
          window.removeEventListener("keydown", escape, true);
       };
-   }, [open]);
+   }, [open, presence.mounted, presence.closing]);
    const close = () => {
       setOpen(false);
       root.current?.querySelector<HTMLButtonElement>(".select-trigger")?.focus();
@@ -95,13 +100,14 @@ export function DropdownSelect({
             <div
                className={`select-menu${presence.closing ? " closing" : ""}`}
                role="listbox"
+               data-editor-shortcuts={presence.closing ? undefined : "blocked"}
                aria-label={label}
                aria-multiselectable={multiple || undefined}
                onKeyDown={(event) => {
                   if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
                      event.preventDefault();
                      event.stopPropagation();
-                     const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]:not(:disabled)'));
+                     const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]'));
                      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
                      buttons[
                         event.key === "Home"
@@ -123,8 +129,9 @@ export function DropdownSelect({
                         role="option"
                         aria-selected={selected}
                         aria-disabled={cannotClear || undefined}
-                        disabled={cannotClear}
+                        data-press-ignore
                         onClick={() => {
+                           if (cannotClear) return;
                            if (multiple) onChange(selected ? value.filter((item) => item !== option.value) : [...value, option.value]);
                            else {
                               onChange([option.value]);

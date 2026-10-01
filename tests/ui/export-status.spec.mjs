@@ -35,6 +35,24 @@ test("partial export shows separate success and error cards", async ({ launchApp
       id: "all-failed",
       items: [job.items[1]],
    });
-   await expect(page.getByRole("button", { name: "Show in folder" })).toHaveCount(0);
-   await expect(page.getByText("Export failed", { exact: true })).toBeVisible();
+   const latest = page.locator('.notification-entry[data-job-id="all-failed"]');
+   await expect(latest.getByRole("button", { name: "Show in folder" })).toHaveCount(0);
+   await expect(latest.getByText("Export failed", { exact: true })).toBeVisible();
+   const previous = page.locator('.notification-entry[data-job-id="status-test"]');
+   await page.mouse.move(20, 20);
+   await page.locator(".title-filename").click();
+   await expect(previous).toHaveAttribute("inert", "");
+   const notifications = page.getByRole("region", { name: "Exports" });
+   await notifications.hover();
+   await expect(notifications).toHaveAttribute("data-expanded", "true");
+   await expect(previous).not.toHaveAttribute("inert");
+   const bounds = await notifications.boundingBox();
+   const dock = await page.locator(".editor-dock").boundingBox();
+   expect(bounds.y + bounds.height).toBeLessThan(dock.y);
+   await page.getByRole("button", { name: "Collapse export notifications" }).click();
+   await expect(notifications).toHaveAttribute("data-expanded", "false");
+   await page.getByRole("button", { name: "Expand export notifications" }).press("Enter");
+   await expect(notifications).toHaveAttribute("data-expanded", "true");
+   await page.keyboard.press("Escape");
+   await expect(notifications).toHaveAttribute("data-expanded", "false");
 });

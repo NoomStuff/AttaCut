@@ -1,9 +1,28 @@
 import { expect, it } from "vitest";
-import { adjacentBoundary, adjacentKeyframe, clipFloor, neighboringKeyframe, resolveBoundary, snapBoundary, splitTargetAt, stepBoundary } from "./navigation";
+import {
+   adjacentBoundary,
+   adjacentKeyframe,
+   clipFloor,
+   neighboringKeyframe,
+   resolveBoundary,
+   snapBoundary,
+   snapPlayhead,
+   splitTargetAt,
+   stepBoundary,
+} from "./navigation";
 const clips = [
    { id: "a", start: 1, end: 4, color: 0 },
    { id: "b", start: 7, end: 10, color: 1 },
 ];
+it("snaps playhead picks to source keyframes and ends without moving cold picks", () => {
+   expect(snapPlayhead(3.2, [0, 2, 4, 6], 7)).toBe(4);
+   expect(snapPlayhead(6.9, [0, 2, 4, 6], 7)).toBe(7);
+   expect(snapPlayhead(0.1, [2, 4, 6], 7)).toBe(0);
+   expect(snapPlayhead(3.2, [], 7)).toBe(3.2);
+   const document = { clips, selectedId: "a" };
+   expect(resolveBoundary(document, "a", "start", 2.5, { duration: 12, frameStep: 1 / 30, snapping: true, keyframes: [] })).toBe(2.5);
+   expect(stepBoundary(document, "a", "end", 1, { duration: 12, frameStep: 0.5, snapping: true, keyframes: [] })).toBe(4.5);
+});
 it("navigates starts and ends in both directions, including gaps", () => {
    expect(adjacentBoundary(clips, 2, -1)).toBe(1);
    expect(adjacentBoundary(clips, 2, 1)).toBe(4);
@@ -28,17 +47,17 @@ it("steps to the next and previous keyframe, including the timeline ends", () =>
 });
 it("resolves boundary edits to a snapped, floored time", () => {
    const document = { clips, selectedId: "b" };
-   const drag = { duration: 12, viewLength: 12, frameStep: 0.01 };
+   const drag = { duration: 12, frameStep: 0.01 };
    expect(resolveBoundary(document, "b", "start", 6.5, { ...drag, snapping: true, keyframes: [2, 6] })).toBe(6);
    expect(resolveBoundary(document, "a", "end", 6.7, { ...drag, snapping: true, keyframes: [0, 2, 6, 8, 10] })).toBe(6);
-   expect(resolveBoundary(document, "b", "start", 9.9, { ...drag, snapping: false })).toBeCloseTo(9.82);
-   expect(resolveBoundary(document, "b", "end", 7.05, { ...drag, snapping: false })).toBeCloseTo(7.18);
+   expect(resolveBoundary(document, "b", "start", 9.9, { ...drag, snapping: false })).toBeCloseTo(9.9);
+   expect(resolveBoundary(document, "b", "end", 7.05, { ...drag, snapping: false })).toBeCloseTo(7.05);
 });
 it("floors boundaries without expanding already shorter clips", () => {
-   const document = { clips: [{ id: "s", start: 5, end: 5.1, color: 0 }], selectedId: "s" };
-   const drag = { duration: 12, viewLength: 12, frameStep: 0.01 };
-   expect(clipFloor(document, "s", 12, 0.01)).toBeCloseTo(0.1);
-   expect(resolveBoundary(document, "s", "end", 5.05, { ...drag, snapping: false })).toBeCloseTo(5.1);
+   const document = { clips: [{ id: "s", start: 5, end: 5.005, color: 0 }], selectedId: "s" };
+   const drag = { duration: 12, frameStep: 0.01 };
+   expect(clipFloor(document, "s", 0.01)).toBeCloseTo(0.005);
+   expect(resolveBoundary(document, "s", "end", 5, { ...drag, snapping: false })).toBeCloseTo(5.005);
 });
 it("picks the nearest keyframe inside the clip for a split, or disables it", () => {
    const document = { clips: [{ id: "a", start: 2, end: 10, color: 0 }], selectedId: "a" };
@@ -49,7 +68,7 @@ it("picks the nearest keyframe inside the clip for a split, or disables it", () 
 });
 it("steps keyboard boundaries by keyframe or frame without violating floors", () => {
    const document = { clips: [{ id: "b", start: 7, end: 10, color: 1 }], selectedId: "b" };
-   const options = { duration: 12, viewLength: 12, frameStep: 0.5, snapping: true, keyframes: [6, 8, 9.5] };
+   const options = { duration: 12, frameStep: 0.5, snapping: true, keyframes: [6, 8, 9.5] };
    expect(stepBoundary(document, "b", "start", 1, options)).toBe(8);
    expect(stepBoundary(document, "b", "end", -1, options)).toBe(9.5);
    // Stepping the start leftward extends the clip into the gap; the keyframe at 6 is legal.
@@ -57,8 +76,8 @@ it("steps keyboard boundaries by keyframe or frame without violating floors", ()
    const free = { ...options, snapping: false };
    expect(stepBoundary(document, "b", "start", 1, free)).toBe(7.5);
    expect(stepBoundary(document, "b", "start", 1, { ...free, step: 1 })).toBe(8);
-   // A large step cannot cross the two-frame minimum-length floor.
-   expect(stepBoundary(document, "b", "end", -1, { ...free, step: 3 })).toBe(8);
+   // A large step cannot cross the one-frame minimum-length floor.
+   expect(stepBoundary(document, "b", "end", -1, { ...free, step: 3 })).toBe(7.5);
 });
 it("snaps and steps identically on a large keyframe index", () => {
    // All-intra multi-hour recordings hold hundreds of thousands of keys; the binary search

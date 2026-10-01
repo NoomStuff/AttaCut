@@ -13,9 +13,9 @@ test("source replacement is explicit and reopens the exported video", async ({ l
    await page.getByRole("textbox", { name: "Clip end", exact: true }).fill("00:05.00");
    await page.getByRole("textbox", { name: "Clip end", exact: true }).press("Tab");
    await page.getByRole("button", { name: "Export", exact: true }).click();
-   await expect(page.getByRole("button", { name: "Merged Video", exact: true })).toBeVisible();
-   await expect(page.getByRole("button", { name: "Merged Video", exact: true })).toBeDisabled();
-   await expect(page.getByRole("button", { name: "Separate clips", exact: true })).toBeDisabled();
+   await expect(page.getByRole("button", { name: "Single Video", exact: true })).toBeVisible();
+   await expect(page.getByRole("button", { name: "Single Video", exact: true })).toBeDisabled();
+   await expect(page.getByRole("button", { name: "Separate Clips", exact: true })).toBeDisabled();
    await page.waitForTimeout(200);
    const filename = page.getByRole("textbox", { name: "Combined filename", exact: true });
    await filename.focus();
@@ -56,7 +56,7 @@ test("source replacement is explicit and reopens the exported video", async ({ l
    await page.keyboard.press("s");
    await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toBeVisible();
    await page.getByRole("button", { name: "Export", exact: true }).click();
-   await page.getByRole("button", { name: "Separate clips", exact: true }).click();
+   await page.getByRole("button", { name: "Separate Clips", exact: true }).click();
    await page.getByRole("textbox", { name: "Clip 1 filename", exact: true }).fill("source");
    const rowConflict = page.getByRole("img", { name: "Will replace the source video" });
    await expect(rowConflict).toBeVisible();

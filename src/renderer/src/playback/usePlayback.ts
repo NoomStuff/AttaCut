@@ -51,7 +51,17 @@ export function usePlayback({
          void window.desktop.cancelScrub();
       };
    }, [source, audioIndices, preferences.audioScrub, scrubber]);
-   useEffect(() => () => scrubber.dispose(), [scrubber]);
+   useEffect(() => {
+      if (muted || preferences.volume <= 0) scrubber.stop();
+   }, [muted, preferences.volume, scrubber]);
+   useEffect(() => {
+      const stop = () => scrubber.stop();
+      window.addEventListener("blur", stop);
+      return () => {
+         window.removeEventListener("blur", stop);
+         scrubber.dispose();
+      };
+   }, [scrubber]);
    const preparePreview = async (target: MediaSource, tracks: number[], transcode = false, resume = false) => {
       if (tracks.length) audibleSelection.current = { sourceId: target.id, tracks };
       const video = videoRef.current;

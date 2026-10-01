@@ -78,12 +78,9 @@ export function selectedClip(document: EditDocument): Clip | undefined {
 }
 /** Smallest edit step across the editor; clock noise below it is invisible. */
 export const timeEpsilon = 0.001;
-/**
- * Floor for clip edits: never shorter than two frames, and never narrower than a sliver of the
- * current timeline view so zooming in restores fine precision.
- */
-export function minClipLength(viewLength: number, frameStep: number): number {
-   return Math.max(frameStep * 2, viewLength * 0.015);
+/** Smallest kept range is one frame, independent of timeline zoom. */
+export function minClipLength(frameStep: number): number {
+   return Math.max(timeEpsilon, frameStep);
 }
 /**
  * Whether a playhead position counts as kept. Boundaries are inclusive within the edit step:
@@ -103,7 +100,9 @@ export function insideClip(clips: Clip[], time: number, duration: number): boole
  */
 export function canSplit(document: EditDocument, id: string, time: number, step = timeEpsilon): boolean {
    const clip = document.clips.find((item) => item.id === id);
-   return !!clip && time >= clip.start + step && time <= clip.end - step;
+   // Frame timestamps round to microseconds; do not reject a whole frame for that rounding.
+   const precision = 0.000001;
+   return !!clip && time > clip.start && time < clip.end && time >= clip.start + step - precision && time <= clip.end - step + precision;
 }
 export function splitClip(document: EditDocument, id: string, time: number, step = timeEpsilon): EditDocument {
    if (!canSplit(document, id, time, step)) return document;

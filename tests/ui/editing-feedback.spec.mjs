@@ -1,0 +1,36 @@
+import { expect } from "@playwright/test";
+import { test, waitForVideo } from "./app.mjs";
+import { resolve } from "node:path";
+
+test("invalid times restore the accepted cut and picker keys do not seek or edit", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const start = page.getByRole("textbox", { name: "Clip start", exact: true });
+   await start.fill("4.25");
+   await start.press("Enter");
+   await expect(start).toHaveValue("00:04.23");
+   await expect(page.locator(".time-feedback")).toHaveCount(0);
+   const accepted = await page.getByRole("slider", { name: "Clip 1 start", exact: true }).getAttribute("aria-valuenow");
+   await start.fill("abc");
+   await start.press("Enter");
+   await expect(start).toHaveValue("00:04.23");
+   await expect(page.getByRole("status").filter({ hasText: "Start unchanged" })).toBeVisible();
+   await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", accepted);
+   const time = await page.locator(".timeline-time time").first().textContent();
+   await page.getByRole("button", { name: "Preview audio tracks", exact: true }).click();
+   const first = page.getByRole("option").nth(0);
+   const second = page.getByRole("option").nth(1);
+   await expect(first).toBeFocused();
+   await first.press("Enter");
+   await expect(first).toHaveAttribute("aria-selected", "true");
+   await first.press("ArrowDown");
+   await expect(second).toBeFocused();
+   await expect(page.locator(".timeline-time time").first()).toHaveText(time);
+   await page.keyboard.press("s");
+   await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(1);
+   await second.press("Enter");
+   await expect(second).toHaveAttribute("aria-selected", "true");
+   await page.keyboard.press("Escape");
+   await expect(page.getByRole("listbox")).toHaveCount(0);
+});

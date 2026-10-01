@@ -6,6 +6,13 @@ import type { Preferences } from "../../../shared/types";
 import { commandDefinitions, bindingsFor, displayBinding, bindingFromEvent } from "../editor/commands";
 import type { CommandId } from "../editor/commands";
 import { Button, Modal, Toggle } from "./Controls";
+import { DropdownSelect } from "./DropdownSelect";
+const snapModifiers = [
+   { value: "Alt", label: "Alt" },
+   { value: "Shift", label: "Shift" },
+   { value: "Control", label: "Ctrl" },
+   { value: "none", label: "None" },
+];
 const shortcutGroups = [...new Set(Object.values(commandDefinitions).map(({ group }) => group))].map((group) => ({
    name: group,
    commands: (Object.keys(commandDefinitions) as CommandId[]).filter((id) => commandDefinitions[id].group === group),
@@ -46,6 +53,7 @@ export function SettingsPanel({
       setConflict("");
    };
    const needle = query.trim().toLowerCase();
+   const showHoldToSnap = ["Hold to snap", ...snapModifiers.map(({ label }) => label)].join(" ").toLowerCase().includes(needle);
    const matches = (id: CommandId) => {
       if (!needle) return true;
       // A row being edited stays visible even when the query no longer matches it.
@@ -176,10 +184,26 @@ export function SettingsPanel({
                      <div className="shortcut-list">
                         {shortcutGroups.map((group) => {
                            const commands = group.commands.filter(matches);
-                           if (!commands.length) return null;
+                           const showModifier = group.name === "Clips" && showHoldToSnap;
+                           if (!commands.length && !showModifier) return null;
                            return (
                               <section className="shortcut-group" key={group.name} aria-labelledby={`shortcuts-${group.name}`}>
                                  <h3 id={`shortcuts-${group.name}`}>{group.name}</h3>
+                                 {showModifier && (
+                                    <div className="shortcut-row">
+                                       <div className="shortcut-line">
+                                          <span className="shortcut-action">Hold to snap</span>
+                                          <DropdownSelect
+                                             label="Hold to snap"
+                                             options={snapModifiers}
+                                             required
+                                             value={[preferences.holdToSnap]}
+                                             onChange={([holdToSnap]) => onChange({ ...preferences, holdToSnap: holdToSnap as Preferences["holdToSnap"] })}
+                                             trigger={<kbd>{snapModifiers.find(({ value }) => value === preferences.holdToSnap)!.label}</kbd>}
+                                          />
+                                       </div>
+                                    </div>
+                                 )}
                                  {commands.map((id) => (
                                     <div className="shortcut-row" key={id}>
                                        <div className="shortcut-line">
@@ -261,7 +285,9 @@ export function SettingsPanel({
                               </section>
                            );
                         })}
-                        {!shortcutGroups.some((group) => group.commands.some(matches)) && <p className="shortcut-empty">No actions match that search.</p>}
+                        {!showHoldToSnap && !shortcutGroups.some((group) => group.commands.some(matches)) && (
+                           <p className="shortcut-empty">No actions match that search.</p>
+                        )}
                      </div>
                   </>
                )}
@@ -275,7 +301,7 @@ export function SettingsPanel({
                   <Button
                      variant="danger"
                      onClick={() => {
-                        onChange({ ...preferences, shortcuts: {} });
+                        onChange({ ...preferences, shortcuts: {}, holdToSnap: "Alt" });
                         setRecording(null);
                         setConflict("");
                         setQuery("");

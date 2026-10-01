@@ -1,0 +1,64 @@
+import { expect } from "@playwright/test";
+import { test, waitForPlaybackTime, waitForVideo } from "./app.mjs";
+import { resolve } from "node:path";
+
+test("held snapping can be rebound, disabled, restored and explained by Help", async ({ launchApp, profile }) => {
+   let app = await launchApp(profile, resolve("work/fixture.mp4"));
+   let page = await app.firstWindow();
+   await waitForVideo(page);
+   const choose = async (label) => {
+      await page.keyboard.press("/");
+      await page.getByRole("searchbox", { name: "Search shortcuts" }).fill("hold to snap");
+      await page.getByRole("button", { name: "Hold to snap", exact: true }).click();
+      await page.getByRole("option", { name: label, exact: true }).click();
+      await page.keyboard.press("Escape");
+      await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
+      await page.locator(".title-filename").click();
+   };
+   const magnet = () => page.getByRole("button", { name: "Snap to keyframes", exact: true });
+   await choose("Shift");
+   await page.keyboard.down("Alt");
+   await expect(magnet()).toHaveAttribute("aria-pressed", "false");
+   await page.keyboard.up("Alt");
+   await page.keyboard.down("Shift");
+   await expect(magnet()).toHaveAttribute("aria-pressed", "true");
+   const bar = await page.locator(".timeline-viewport").boundingBox();
+   await page.mouse.click(bar.x + (bar.width * 3.2) / 18, bar.y + 36);
+   await waitForPlaybackTime(page, 4);
+   await page.keyboard.press("s");
+   await expect.poll(async () => Number(await page.getByRole("slider", { name: "Clip 2 start", exact: true }).getAttribute("aria-valuenow"))).toBeCloseTo(4, 6);
+   await page.keyboard.up("Shift");
+   await expect(magnet()).toHaveAttribute("aria-pressed", "false");
+   await page.keyboard.press("F1");
+   const help = page.getByRole("dialog", { name: "Help", exact: true });
+   await help.getByRole("tab", { name: "Cutting losslessly" }).click();
+   await expect(help.locator(".help-body")).toContainText("or holding Shift.");
+   await page.keyboard.press("Escape");
+   await choose("Ctrl");
+   await page.keyboard.down("Control");
+   await expect(magnet()).toHaveAttribute("aria-pressed", "true");
+   await page.keyboard.up("Control");
+   await expect(magnet()).toHaveAttribute("aria-pressed", "false");
+   await app.close();
+   app = await launchApp(profile, resolve("work/fixture.mp4"));
+   page = await app.firstWindow();
+   await waitForVideo(page);
+   await page.keyboard.down("Control");
+   await expect(magnet()).toHaveAttribute("aria-pressed", "true");
+   await page.keyboard.up("Control");
+   await choose("None");
+   for (const key of ["Alt", "Shift", "Control"]) {
+      await page.keyboard.down(key);
+      await expect(magnet()).toHaveAttribute("aria-pressed", "false");
+      await page.keyboard.up(key);
+   }
+   await page.keyboard.press("/");
+   await page.getByRole("button", { name: "Reset bindings", exact: true }).click();
+   await page.getByRole("dialog", { name: "Reset keyboard shortcuts?" }).getByRole("button", { name: "Reset bindings", exact: true }).click();
+   await page.keyboard.press("Escape");
+   await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
+   await page.locator(".title-filename").click();
+   await page.keyboard.down("Alt");
+   await expect(magnet()).toHaveAttribute("aria-pressed", "true");
+   await page.keyboard.up("Alt");
+});

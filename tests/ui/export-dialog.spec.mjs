@@ -41,7 +41,7 @@ test("opening constrained export dialogs preserves preferences and explicit audi
    await page.keyboard.press("s");
    await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toBeVisible();
    await page.getByRole("button", { name: "Export", exact: true }).click();
-   await expect(page.getByRole("button", { name: "Separate clips", exact: true })).toHaveAttribute("aria-pressed", "true");
+   await expect(page.getByRole("button", { name: "Separate Clips", exact: true })).toHaveAttribute("aria-pressed", "true");
    await page.keyboard.press("Escape");
    await app.close();
    app = await launchApp(profile, resolve("work/fixture.mp4"));
@@ -67,8 +67,11 @@ test("export dialog", async ({ launchApp, profile }) => {
    await handle.click();
    await expect.poll(() => page.locator("video").evaluate((v) => v.currentTime)).toBeCloseTo(target - 1 / 30, 2);
    console.log("Handle click seeks correctly:", target);
-   // The forgiving seam target belongs to Merge, even when slightly off the cut.
-   await page.mouse.click(bar.x + (bar.width * target) / 18 + 6, bar.y + 36);
+   // Nearby positions remain valid splits; merge belongs to the shared cut itself.
+   await page.mouse.click(bar.x + (bar.width * target) / 18 + 10, bar.y + 12);
+   await expect(page.locator("[data-command=merge]")).toBeDisabled();
+   await expect(page.locator("[data-command=split]")).toBeEnabled();
+   await page.mouse.click(bar.x + (bar.width * target) / 18, bar.y + 12);
    await expect(page.locator("[data-command=merge]")).toBeEnabled();
    await expect(page.locator("[data-command=split]")).toBeDisabled();
    await page.locator("[data-command=merge]").click();
@@ -78,7 +81,7 @@ test("export dialog", async ({ launchApp, profile }) => {
    await page.keyboard.press("s");
    await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toHaveAttribute("aria-valuenow", String(target));
    await page.getByRole("button", { name: "Export", exact: true }).click();
-   await page.getByRole("button", { name: "Merged Video", exact: true }).click();
+   await page.getByRole("button", { name: "Single Video", exact: true }).click();
    await page.getByLabel("Combined filename", { exact: true }).fill("retained");
    await page.getByLabel("Save to", { exact: true }).fill(profile + "/new-folder");
    await page.getByRole("button", { name: "Audio tracks to export", exact: true }).click();
@@ -110,13 +113,13 @@ test("export dialog", async ({ launchApp, profile }) => {
    await expect(page.getByRole("dialog")).toHaveCount(0);
    await expect(page.getByRole("button", { name: "Open file", exact: true })).toBeVisible({ timeout: 60000 });
    await page.getByRole("button", { name: "Export", exact: true }).click();
-   await page.getByRole("button", { name: "Separate clips", exact: true }).click();
+   await page.getByRole("button", { name: "Separate Clips", exact: true }).click();
    await page.getByRole("textbox", { name: "Clip 1 filename", exact: true }).fill("first-kept-name");
    await page.getByRole("checkbox", { name: "Export clip 2", exact: true }).uncheck();
    await page.keyboard.press("Escape");
    await expect(page.getByRole("dialog")).toHaveCount(0);
    await page.getByRole("button", { name: "Export", exact: true }).click();
-   await expect(page.getByRole("button", { name: "Separate clips", exact: true })).toHaveAttribute("aria-pressed", "true");
+   await expect(page.getByRole("button", { name: "Separate Clips", exact: true })).toHaveAttribute("aria-pressed", "true");
    await expect(page.getByRole("textbox", { name: "Clip 1 filename", exact: true })).toHaveValue("first-kept-name");
    await expect(page.getByRole("checkbox", { name: "Export clip 2", exact: true })).not.toBeChecked();
    console.log("Export persistence, missing folder, cancel and overwrite passed");

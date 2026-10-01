@@ -31,6 +31,7 @@ test("shortcuts", async ({ launchApp, profile }) => {
    await page.keyboard.press("c");
    await expect(page.locator("[data-command=snap]")).toHaveAttribute("aria-pressed", "true");
    await page.keyboard.press("c");
+   await expect(page.locator("[data-command=snap]")).toHaveAttribute("aria-pressed", "false");
    await seek(9);
    await page.keyboard.press("a");
    await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toHaveAttribute("aria-valuenow", /9/);

@@ -5,6 +5,7 @@ import {
    mergePair,
    mergeClips,
    addGap,
+   canSplit,
    deleteClip,
    editorReducer,
    emptyEditor,
@@ -107,13 +108,30 @@ describe("playhead inclusion", () => {
    });
 });
 
-it("keeps two frames at maximum zoom and scales the drag floor with the view", () => {
-   expect(minClipLength(0.5, 1 / 30)).toBeCloseTo(2 / 30);
-   expect(minClipLength(120, 1 / 30)).toBeCloseTo(1.8);
-   const floor = minClipLength(0.5, 1 / 30);
-   expect(splitClip(source, "a", 1 / 30, floor)).toBe(source);
-   expect(splitClip(source, "a", 120 - 1 / 30, floor)).toBe(source);
+it("allows one-frame clips at either end of a split or trim", () => {
+   const floor = minClipLength(1 / 30);
+   expect(floor).toBeCloseTo(1 / 30);
+   expect(splitClip(source, "a", 1 / 30, floor).clips).toHaveLength(2);
+   expect(splitClip(source, "a", 120 - 1 / 30, floor).clips).toHaveLength(2);
    expect(trimClip(source, "a", "start", 120, 120, floor).clips[0]!.start).toBeCloseTo(120 - floor);
+});
+
+it("switches from merge to split on the next frame despite microsecond rounding", () => {
+   const document = {
+      selectedId: "b",
+      clips: [
+         { id: "a", start: 0, end: 4, color: 0 },
+         { id: "b", start: 4, end: 4.1, color: 1 },
+      ],
+   };
+   const frame = 1 / 30;
+   expect(mergePair(document, 4, frame, frame / 2)).toBe(0);
+   expect(canSplit(document, "b", 4, frame)).toBe(false);
+   for (const time of [4.033333, 4.066667]) {
+      expect(mergePair(document, time, frame, frame / 2)).toBe(-1);
+      expect(canSplit(document, "b", time, frame)).toBe(true);
+   }
+   expect(canSplit(document, "b", 4 + frame / 2, frame)).toBe(false);
 });
 
 describe("merge and playhead targeting", () => {

@@ -127,7 +127,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
    const checked = analysis?.filter((item) => includedIds.has(item.clip.id)) ?? [];
    const problem = checked.find((item) => item.method === "unsupported");
    const encoded = checked.reduce((sum, item) => sum + item.encodedSeconds, 0);
-   const encodedLabel = (seconds: number) => (seconds < 0.1 ? "~0.1 seconds" : `~${seconds.toFixed(1)} seconds`);
+   const encodedLabel = (seconds: number) => (seconds < 0.1 ? "less than 0.1 seconds" : `${seconds.toFixed(1)} seconds`);
    // One clip spanning the whole source with every audio track kept is the original video,
    // so say that instead of the generic lossless note.
    const unchangedVideo =
@@ -142,7 +142,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
       : unchangedVideo
         ? "Exporting the video unchanged."
         : encoded > 0
-          ? `${encodedLabel(encoded)} may be re-encoded.`
+          ? `${encoded < 0.1 ? "Less than 0.1 seconds" : `About ${encodedLabel(encoded)}`} of video near the cuts may be re-encoded.`
           : "Exporting losslessly.";
    const changes = [...new Set(checked.flatMap((item) => item.changes ?? []))];
    const note = [baseNote, ...changes].join(" ");
@@ -160,10 +160,10 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
             <div className="modal-body">
                <div className="export-mode" data-mode={mode} role="group" aria-label="Export mode" aria-disabled={clips.length === 1}>
                   <button disabled={starting || clips.length === 1} aria-pressed={mode === "combined"} onClick={() => setMode("combined")}>
-                     Merged Video
+                     Single Video
                   </button>
                   <button disabled={starting || clips.length === 1} aria-pressed={mode === "separate"} onClick={() => setMode("separate")}>
-                     Separate clips
+                     Separate Clips
                   </button>
                </div>
                <label className="field-label" htmlFor="destination">
@@ -241,7 +241,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                         });
                         const conflict = mode === "separate" && row.included ? (conflicts.get(row.clip.id) ?? null) : null;
                         return (
-                           <div key={row.clip.id} className="export-clip-entry">
+                           <div key={row.clip.id} className="export-clip-entry" data-included={row.included}>
                               <div className="export-row">
                                  <input
                                     type="checkbox"
@@ -280,22 +280,24 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                )}
             </div>
             <div className="modal-footer">
-               {analysis && request.items.length > 0 && (
-                  <p className={`export-note${problem ? " problem" : checked.some(substantialEncoding) || changes.length ? " warning" : ""}`}>
-                     <FontAwesomeIcon icon={problem ? faCircleExclamation : faCircleInfo} />
-                     <span>
-                        {note}{" "}
-                        <button
-                           className="export-note-link"
-                           onClick={() => {
-                              onHelp?.("lossless");
-                           }}
-                        >
-                           Learn More
-                        </button>
-                     </span>
-                  </p>
-               )}
+               <div className="export-summary">
+                  {analysis && request.items.length > 0 && (
+                     <p className={`export-note${problem ? " problem" : checked.some(substantialEncoding) || changes.length ? " warning" : ""}`}>
+                        <FontAwesomeIcon icon={problem ? faCircleExclamation : faCircleInfo} />
+                        <span>
+                           {note}{" "}
+                           <button
+                              className="export-note-link"
+                              onClick={() => {
+                                 onHelp?.(problem || checked.some(substantialEncoding) || changes.length ? "export" : "lossless");
+                              }}
+                           >
+                              Learn More
+                           </button>
+                        </span>
+                     </p>
+                  )}
+               </div>
                <Button
                   variant="primary"
                   icon={faArrowUpFromBracket}

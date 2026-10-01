@@ -40,12 +40,13 @@ import { Transport } from "./components/Transport";
 import { LoadingEditor } from "./components/LoadingEditor";
 import { TopActions } from "./components/TopActions";
 import { AppUpdate } from "./components/AppUpdate";
-import { JobProgress } from "./components/JobProgress";
+import { JobNotifications } from "./components/JobNotifications";
 import { EmptyState } from "./components/EmptyState";
 import type { ExportDraft } from "./export/useExport";
 import type { HelpTab } from "./components/HelpPanel";
 import { prefetchModules } from "./lib/prefetch";
 import { useKeyframes } from "./lib/keyframes";
+import { useTemporarySnapping } from "./lib/temporarySnapping";
 import { errorText } from "./lib/errors";
 import { useExitValue, usePressFeedback } from "./lib/motion";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -81,6 +82,7 @@ export default function App() {
    const [exportDraft, setExportDraft] = useState<ExportDraft | null>(null);
    const [panel, setPanel] = useState<Panel>(null);
    const [helpTab, setHelpTab] = useState<HelpTab>("intro");
+   const [exportHelp, setExportHelp] = useState(false);
    const [menu, setMenu] = useState<string | null>(null);
    const [confirmReset, setConfirmReset] = useState(false);
    const [loading, setLoading] = useState(false);
@@ -109,13 +111,21 @@ export default function App() {
       changeAudio,
    } = usePlayback({ source, preferences, setPreferences, setError: showError });
    const [job, setJob] = useState<ExportJob | null>(null);
+   const [notifications, setNotifications] = useState<ExportJob[]>([]);
+   const receiveJob = useCallback((updated: ExportJob, starting = false) => {
+      // Progress can finish before startExport returns. Do not put that finished job back into running state.
+      setJob((current) => (starting && current?.id === updated.id && !current.running ? current : updated));
+      setNotifications((current) => {
+         const existing = current.find((item) => item.id === updated.id);
+         if (starting && existing && !existing.running) return current;
+         return existing ? current.map((item) => (item.id === updated.id ? updated : item)) : [updated, ...current];
+      });
+   }, []);
    const [fitToken, setFitToken] = useState(0);
    const [zoomRequest, setZoomRequest] = useState({ id: 0, direction: 0 });
    const [zoom, setZoom] = useState(100);
-   // Reported by the Timeline with the zoom percentage; read when merge evaluates, so a
-   // viewport resize between renders still yields a current seam tolerance.
-   const viewportWidth = useRef(0);
-   const snapping = preferences.snapping;
+   const temporarySnapping = useTemporarySnapping(!!panel || loading || !source, preferences.holdToSnap);
+   const snapping = preferences.snapping || temporarySnapping;
    const [draggingFile, setDraggingFile] = useState(false);
    const [trimAnimating, setTrimAnimating] = useState(false);
    const trimTimer = useRef(0);
@@ -144,7 +154,8 @@ export default function App() {
    documentRef.current = editor.document;
    const mac = platform === "darwin";
    const [priority] = useState(() => new ClipPriority());
-   const editingTime = clock.getFrame;
+   const pendingBoundary = useRef<number | null>(null);
+   const editingTime = () => (pendingBoundary.current === clock.get() ? clock.get() : clock.getFrame());
    // Time displays subscribe separately. The root only updates when the active clip changes.
    useSyncExternalStore(clock.subscribe, () => priority.resolve(editor.document, editingTime())?.id ?? null);
    const [, refreshPriority] = useReducer((value: number) => value + 1, 0);
@@ -174,7 +185,7 @@ export default function App() {
       playback.previewEnd = null;
       seeker.seek(target, preferences.keepPlaying, glide, side ? (side === "end" ? -1 : 0) : undefined);
       // Scrub bursts only belong to paused seeking; playing video provides its own audio.
-      if (videoRef.current?.paused && preferences.audioScrub) scrubber.scrub(target, muted ? 0 : preferences.volume);
+      if (videoRef.current?.paused && preferences.audioScrub) scrubber.scrub(target, muted ? 0 : preferences.volume, side);
    };
    const fullscreen = () => {
       const action = document.fullscreenElement ? document.exitFullscreen() : videoRef.current?.requestFullscreen();
@@ -194,6 +205,7 @@ export default function App() {
       setError(null);
       setMenu(null);
       setPanel(null);
+      setExportHelp(false);
       scrubber.stop();
       try {
          await saveCurrent();
@@ -268,6 +280,7 @@ export default function App() {
       playback.invalidate();
       setMenu(null);
       setPanel(null);
+      setExportHelp(false);
       setError(null);
       setRestore(keepRecovery ? sessionFor(source, editor, restore) : null);
       void window.desktop.closeSource().catch((value) => showError(errorText(value)));
@@ -320,7 +333,7 @@ export default function App() {
          showError(errorText(value));
       },
       onJob: (updated) => {
-         setJob(updated);
+         receiveJob(updated);
          if (!updated.running && updated.items.some((item) => item.status === "completed"))
             setPreferences((current) => ({ ...current, outputDirectory: updated.directory }));
          if (updated.running || !updated.replacesSource || updated.sourceId !== replacingSourceId.current) return;
@@ -335,7 +348,23 @@ export default function App() {
       },
    });
    usePersistence({ source, editor, restore, preferences, ready, setError: showError });
-   useFrameBoundaries(source, editor.document, dispatch, showError);
+   const alignResolvedBoundary = useCallback(
+      (times: Map<number, number>) => {
+         const requested = clock.get();
+         const actual = times.get(requested);
+         if (pendingBoundary.current !== null) {
+            pendingBoundary.current = null;
+            refreshPriority();
+         }
+         if (actual === undefined || actual === requested || !videoRef.current?.paused || trimmingRef.current) return;
+         const ending = documentRef.current.clips.some((clip) => clip.end === requested);
+         const starting = documentRef.current.clips.some((clip) => clip.start === requested);
+         // Keep the timeline at the accepted cutoff. End previews still show the last kept frame.
+         seeker.seek(actual, false, false, ending && !starting ? -1 : 0);
+      },
+      [clock, seeker, videoRef]
+   );
+   useFrameBoundaries(source, editor.document, dispatch, showError, alignResolvedBoundary);
    useAppearance(preferences);
    useEffect(() => {
       if (!menu) return;
@@ -379,7 +408,6 @@ export default function App() {
       if (source && clip) {
          const time = resolveBoundary(editor.document, clip.id, side, value, {
             duration: source.duration,
-            viewLength: 0,
             frameStep,
             snapping,
             keyframes,
@@ -388,13 +416,14 @@ export default function App() {
          const actual = next.clips.find((item) => item.id === clip.id)![side];
          if (actual === clip[side]) return actual;
          animateTrim();
+         pendingBoundary.current = actual;
          commit(next);
          seeker.seek(actual, preferences.keepPlaying, false, side === "end" ? -1 : 0);
          return actual;
       }
       return value;
    };
-   const minimumClipLength = () => minClipLength(0, frameStep);
+   const minimumClipLength = () => minClipLength(frameStep);
    const available = () => !!source && !loading && !trimmingRef.current;
    const frameStep = 1 / ((source && primaryVideo(source)?.frameRate) || 100);
    const frameSequence = useRef(0);
@@ -405,9 +434,8 @@ export default function App() {
       const id = source!.id;
       const video = videoRef.current;
       const from =
-         seeker.pending || video?.seeking
-            ? clock.get()
-            : (clock.getResolved() ?? (video && clock.getDisplayed(video.currentSrc)) ?? video?.currentTime ?? clock.get());
+         clock.getResolved() ??
+         (seeker.pending || video?.seeking ? clock.get() : ((video && clock.getDisplayed(video.currentSrc)) ?? video?.currentTime ?? clock.get()));
       void window.desktop
          .frameTime(id, from, direction)
          .then((target) => {
@@ -417,19 +445,8 @@ export default function App() {
             if (sourceRef.current?.id === id) showError(errorText(value));
          });
    };
-   const joinAtPlayhead = () =>
-      mergePair(
-         editor.document,
-         clock.get(),
-         frameStep,
-         // A seam joins when the playhead is within ~12px of it at the current zoom.
-         Math.max(frameStep, (((source!.duration * 100) / Math.max(1, zoom)) * 12) / Math.max(1, viewportWidth.current))
-      );
-   // Stable identity: the Timeline re-reports zoom through an effect keyed on this callback.
-   const onZoomReport = useCallback((percent: number, width: number) => {
-      setZoom(percent);
-      viewportWidth.current = width;
-   }, []);
+   const joinAtPlayhead = () => mergePair(editor.document, clock.get(), frameStep, frameStep / 2);
+   const onZoomReport = useCallback((percent: number) => setZoom(percent), []);
    const navigate = (resolveTime: () => number | null) =>
       resolvedCommand(() => {
          if (!available()) return;
@@ -453,7 +470,10 @@ export default function App() {
             if (preferences.volume === 0) setPreferences({ ...preferences, volume: 0.7 });
          },
       },
-      snap: { enabled: () => available() && !readingKeys, run: () => setPreferences((current) => ({ ...current, snapping: !current.snapping })) },
+      snap: {
+         enabled: () => available() && (preferences.snapping || !readingKeys),
+         run: () => setPreferences((current) => ({ ...current, snapping: !current.snapping })),
+      },
       merge: resolvedCommand(() => {
          if (!available()) return;
          const index = joinAtPlayhead();
@@ -511,7 +531,7 @@ export default function App() {
       previous: navigate(() => adjacentBoundary(editor.document.clips, clock.get(), -1)),
       next: navigate(() => adjacentBoundary(editor.document.clips, clock.get(), 1)),
       split: resolvedCommand(() => {
-         if (!available() || joinAtPlayhead() >= 0 || (snapping && readingKeys)) return;
+         if (!available() || (snapping && readingKeys)) return;
          const target = currentClip();
          if (!target) return;
          const current = clock.get();
@@ -585,7 +605,13 @@ export default function App() {
    });
    // Panel dialogs guard themselves: the command handler checks the live dialog state, so the
    // panel's exit fade never blocks shortcuts. Only the menu needs the React-side flag.
-   useCommands(commands, preferences.shortcuts, mac, !!menu);
+   useCommands(
+      commands,
+      preferences.shortcuts,
+      mac,
+      !!menu,
+      preferences.holdToSnap === "none" ? false : preferences.holdToSnap === "Control" ? (mac ? "Ctrl" : "Mod") : preferences.holdToSnap
+   );
    const menuSections: Record<string, CommandId[][]> = {
       File: [["open", "frame", "export"], ["closeProject"], ["quit"]],
       Edit: [["undo", "redo"], ["split", "merge"], ["setStart", "setEnd", "add", "delete"], ["preview"], ["settings"]],
@@ -593,9 +619,8 @@ export default function App() {
       Help: [["help", "shortcuts"], ["releases", "about"], ["reset"]],
    };
    const errorPresence = useExitValue(error, 190);
-   const jobPresence = useExitValue(job, 160);
    return (
-      <CommandContext.Provider value={{ commands, overrides: preferences.shortcuts, mac }}>
+      <CommandContext.Provider value={{ commands, overrides: preferences.shortcuts, mac, holdToSnap: preferences.holdToSnap }}>
          <div
             className={`app-shell ${draggingFile ? "file-over" : ""}`}
             onDragOver={(event) => {
@@ -697,8 +722,8 @@ export default function App() {
                </div>
             )}
             <main className="workspace">
-               {source ? (
-                  <>
+               <div className="preview-workspace">
+                  {source ? (
                      <Player
                         key={source.id}
                         source={source}
@@ -738,47 +763,56 @@ export default function App() {
                         failed={playbackState.phase === "failed"}
                         trimming={trimming}
                      />
-                     <div className={`editor-dock${trimAnimating ? " trim-animating" : ""}`}>
-                        <Timeline
-                           key={source.id}
-                           document={activeDocument}
-                           duration={source.duration}
-                           frameStep={frameStep}
-                           clock={clock}
-                           fitToken={fitToken}
-                           zoomRequest={zoomRequest}
-                           onZoom={onZoomReport}
-                           keyframes={keyframes}
-                           snapping={snapping}
-                           playing={playing || playWhenReady}
-                           onSelect={(id) => remember(editor.document.clips.find((item) => item.id === id))}
-                           onCommit={commit}
-                           onSeek={seek}
-                           onTrimming={setTrimming}
-                        />
-                        <Transport
-                           document={activeDocument}
-                           source={source}
-                           clock={clock}
-                           playing={playing}
-                           volume={preferences.volume}
-                           muted={muted}
-                           audioIndices={audioIndices}
-                           onAudio={changeAudio}
-                           onVolume={(volume, restore) => {
-                              setMuted(volume === 0);
-                              setPreferences({ ...preferences, volume: volume === 0 ? restore : volume });
-                           }}
-                           onBoundary={setBoundary}
-                           onFullscreen={fullscreen}
-                           zoom={zoom}
-                           snapping={snapping}
-                           readingKeys={readingKeys}
-                        />
-                     </div>
-                  </>
-               ) : (
-                  <EmptyState onImport={() => void choose()} loading={loading} mac={mac} />
+                  ) : (
+                     <EmptyState onImport={() => void choose()} loading={loading} mac={mac} />
+                  )}
+                  <JobNotifications
+                     jobs={notifications}
+                     currentJob={job}
+                     onDismiss={(id) => setNotifications((current) => current.filter((item) => item.id !== id))}
+                     onError={showError}
+                     onRetry={receiveJob}
+                  />
+               </div>
+               {source && (
+                  <div className={`editor-dock${trimAnimating ? " trim-animating" : ""}`}>
+                     <Timeline
+                        key={source.id}
+                        document={activeDocument}
+                        duration={source.duration}
+                        frameStep={frameStep}
+                        clock={clock}
+                        fitToken={fitToken}
+                        zoomRequest={zoomRequest}
+                        onZoom={onZoomReport}
+                        keyframes={keyframes}
+                        snapping={snapping}
+                        playing={playing || playWhenReady}
+                        onSelect={(id) => remember(editor.document.clips.find((item) => item.id === id))}
+                        onCommit={commit}
+                        onSeek={seek}
+                        onTrimming={setTrimming}
+                     />
+                     <Transport
+                        document={activeDocument}
+                        source={source}
+                        clock={clock}
+                        playing={playing}
+                        volume={preferences.volume}
+                        muted={muted}
+                        audioIndices={audioIndices}
+                        onAudio={changeAudio}
+                        onVolume={(volume, restore) => {
+                           setMuted(volume === 0);
+                           setPreferences({ ...preferences, volume: volume === 0 ? restore : volume });
+                        }}
+                        onBoundary={setBoundary}
+                        onFullscreen={fullscreen}
+                        zoom={zoom}
+                        snapping={snapping}
+                        readingKeys={readingKeys}
+                     />
+                  </div>
                )}
                {(loading || !ready) && (
                   <div className="loading-overlay" role="status" aria-label={loading ? "Opening video" : "Starting"}>
@@ -786,16 +820,6 @@ export default function App() {
                   </div>
                )}
             </main>
-            {jobPresence.mounted && jobPresence.value && (
-               <JobProgress
-                  key={jobPresence.value.id}
-                  job={jobPresence.value}
-                  closing={jobPresence.closing}
-                  onDismiss={() => setJob(null)}
-                  onError={(value) => showError(value)}
-                  onRetry={setJob}
-               />
-            )}
             <Suspense
                key={panel}
                fallback={
@@ -813,7 +837,7 @@ export default function App() {
                      preferences={preferences}
                      onPreferences={setPreferences}
                      onClose={() => setPanel((current) => (current === panel ? null : current))}
-                     onStarted={(started) => setJob((current) => (current?.id === started.id && !current.running ? current : started))}
+                     onStarted={(started) => receiveJob(started, true)}
                      onBeforeSourceReplace={async () => {
                         replacingSourceId.current = source.id;
                         playback.suspend();
@@ -831,14 +855,19 @@ export default function App() {
                      }}
                      onHelp={(topic) => {
                         setHelpTab(topic);
-                        setPanel("help");
+                        setExportHelp(true);
                      }}
                   />
                )}
                {panel === "frame" && source && (
                   <FramePanel
                      source={source}
-                     time={(videoRef.current && clock.getDisplayed(videoRef.current.currentSrc)) ?? videoRef.current?.currentTime ?? clock.get()}
+                     videoRef={videoRef}
+                     time={
+                        seeker.pending || videoRef.current?.seeking
+                           ? clock.getFrame()
+                           : ((videoRef.current && clock.getDisplayed(videoRef.current.currentSrc)) ?? videoRef.current?.currentTime ?? clock.get())
+                     }
                      preferences={preferences}
                      onPreferences={setPreferences}
                      onClose={() => setPanel((current) => (current === panel ? null : current))}
@@ -853,7 +882,15 @@ export default function App() {
                      initialTab={panel === "shortcuts" ? "shortcuts" : "general"}
                   />
                )}
-               {panel === "help" && <HelpPanel initialTab={helpTab} onClose={() => setPanel((current) => (current === panel ? null : current))} />}
+               {(panel === "help" || (panel === "export" && exportHelp)) && (
+                  <HelpPanel
+                     initialTab={helpTab}
+                     onClose={() => {
+                        if (exportHelp) setExportHelp(false);
+                        else setPanel((current) => (current === "help" ? null : current));
+                     }}
+                  />
+               )}
                {panel === "about" && <AboutPanel version={version} onClose={() => setPanel((current) => (current === panel ? null : current))} />}
             </Suspense>
             {confirmReset && (

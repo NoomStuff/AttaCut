@@ -27,6 +27,14 @@ function nearestKey(keys: number[], value: number, min: number, max: number): nu
    const before = after > first ? keys[after - 1]! : best;
    return Math.abs(before - value) < Math.abs(best - value) ? before : best;
 }
+
+/** Snap a timeline pick to the nearest keyframe or source end. Keep cold picks free. */
+export function snapPlayhead(value: number, keys: number[], duration: number): number {
+   if (!keys.length) return value;
+   const key = nearestKey(keys, value, 0, duration);
+   const candidates = key === null ? [0, duration] : [0, key, duration];
+   return candidates.reduce((best, point) => (Math.abs(point - value) < Math.abs(best - value) ? point : best));
+}
 export function snapBoundary(
    document: EditDocument,
    id: string,
@@ -61,17 +69,15 @@ export function adjacentKeyframe(value: number, direction: -1 | 1, keys: number[
    return 0 < value - timeEpsilon && 0 >= low ? 0 : value;
 }
 
-/** Longest floor a clip must keep at this zoom without expanding already shorter clips. */
-export function clipFloor(document: EditDocument, id: string, viewLength: number, frameStep: number): number {
+/** Minimum kept duration without expanding clips already shorter than one frame. */
+export function clipFloor(document: EditDocument, id: string, frameStep: number): number {
    const clip = document.clips.find((item) => item.id === id);
    if (!clip) return 0;
-   return Math.min(clip.end - clip.start, minClipLength(viewLength, frameStep));
+   return Math.min(clip.end - clip.start, minClipLength(frameStep));
 }
 
 export interface BoundaryOptions {
    duration: number;
-   /** Current timeline view length in seconds; the floor scales with it so zooming in restores precision. */
-   viewLength: number;
    frameStep: number;
    snapping: boolean;
    keyframes?: number[];
@@ -79,16 +85,16 @@ export interface BoundaryOptions {
 
 /**
  * Legal time for one boundary edit, shared by pointer drags, trim commands, and typed times:
- * keyframe snapping when enabled, then the zoom floor that keeps handles usable. Callers hand
+ * one frame minimum, with keyframe snapping when enabled. Callers hand
  * the result to trimClip, which applies the neighbor limits. Keyboard steps pass a
  * pre-snapped target with snapping disabled; every other path snaps to the nearest key.
  */
 export function resolveBoundary(document: EditDocument, id: string, side: "start" | "end", target: number, options: BoundaryOptions): number {
    const clip = document.clips.find((item) => item.id === id);
    if (!clip) return target;
-   const floor = clipFloor(document, id, options.viewLength, options.frameStep);
+   const floor = clipFloor(document, id, options.frameStep);
    const bounded = side === "start" ? Math.min(target, clip.end - floor) : Math.max(target, clip.start + floor);
-   if (!options.snapping) return bounded;
+   if (!options.snapping || !options.keyframes?.length) return bounded;
    return snapBoundary(
       document,
       id,
@@ -119,7 +125,6 @@ export function splitTargetAt(document: EditDocument, id: string, time: number, 
 
 export interface StepOptions {
    duration: number;
-   viewLength: number;
    frameStep: number;
    snapping: boolean;
    keyframes: number[];
@@ -131,19 +136,19 @@ export interface StepOptions {
 export function stepBoundary(document: EditDocument, id: string, side: "start" | "end", direction: -1 | 1, options: StepOptions): number {
    const clip = document.clips.find((item) => item.id === id);
    if (!clip) return 0;
-   const floor = clipFloor(document, id, 0, options.frameStep);
-   const target = options.snapping
-      ? adjacentKeyframe(
-           clip[side],
-           direction,
-           options.keyframes,
-           options.duration,
-           side === "start" ? { high: clip.end - floor } : { low: clip.start + floor }
-        )
-      : clip[side] + direction * (options.step ?? options.frameStep);
+   const floor = clipFloor(document, id, options.frameStep);
+   const target =
+      options.snapping && options.keyframes.length > 0
+         ? adjacentKeyframe(
+              clip[side],
+              direction,
+              options.keyframes,
+              options.duration,
+              side === "start" ? { high: clip.end - floor } : { low: clip.start + floor }
+           )
+         : clip[side] + direction * (options.step ?? options.frameStep);
    return resolveBoundary(document, id, side, target, {
       duration: options.duration,
-      viewLength: 0,
       frameStep: options.frameStep,
       snapping: false,
    });

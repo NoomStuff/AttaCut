@@ -17,10 +17,10 @@ export const commandDefinitions = {
    forward: { label: "Forward one second", bindings: ["ArrowRight"], group: "Playback", repeat: true },
    backFast: { label: "Back five seconds", bindings: ["Shift+ArrowLeft"], group: "Playback", repeat: true },
    forwardFast: { label: "Forward five seconds", bindings: ["Shift+ArrowRight"], group: "Playback", repeat: true },
-   previousKeyframe: { label: "Previous keyframe", bindings: ["Mod+ArrowLeft"], group: "Playback", repeat: true },
-   nextKeyframe: { label: "Next keyframe", bindings: ["Mod+ArrowRight"], group: "Playback", repeat: true },
-   previous: { label: "Previous clip", bindings: ["Alt+ArrowLeft"], group: "Clips" },
-   next: { label: "Next clip", bindings: ["Alt+ArrowRight"], group: "Clips" },
+   previousKeyframe: { label: "Previous keyframe", bindings: ["Shift+,", "Alt+ArrowLeft"], group: "Playback", repeat: true },
+   nextKeyframe: { label: "Next keyframe", bindings: ["Shift+.", "Alt+ArrowRight"], group: "Playback", repeat: true },
+   previous: { label: "Previous cut", bindings: ["Mod+ArrowLeft"], group: "Clips" },
+   next: { label: "Next cut", bindings: ["Mod+ArrowRight"], group: "Clips" },
    split: { label: "Split at playhead", bindings: ["S"], group: "Clips" },
    setStart: { label: "Trim left", bindings: ["A"], group: "Clips" },
    setEnd: { label: "Trim right", bindings: ["D"], group: "Clips" },
@@ -64,15 +64,30 @@ export function guardCommands(commands: Commands): Commands {
       ])
    ) as Commands;
 }
-export const CommandContext = createContext<{ commands: Commands; overrides: Record<string, string[]>; mac: boolean } | null>(null);
+export const CommandContext = createContext<{
+   commands: Commands;
+   overrides: Record<string, string[]>;
+   mac: boolean;
+   holdToSnap?: "Alt" | "Shift" | "Control" | "none";
+} | null>(null);
 export function isCommandId(id: string): id is CommandId {
    return Object.hasOwn(commandDefinitions, id);
 }
 export function bindingsFor(id: CommandId, overrides: Record<string, string[]>): readonly string[] {
    return overrides[id] ?? commandDefinitions[id].bindings;
 }
-export function commandForBinding(binding: string, overrides: Record<string, string[]>): CommandId | undefined {
-   return (Object.keys(commandDefinitions) as CommandId[]).find((id) => bindingsFor(id, overrides).some((key) => key.toUpperCase() === binding.toUpperCase()));
+export function commandForBinding(binding: string, overrides: Record<string, string[]>, temporaryModifier: boolean | string = false): CommandId | undefined {
+   const exact = (Object.keys(commandDefinitions) as CommandId[]).find((id) =>
+      bindingsFor(id, overrides).some((key) => key.toUpperCase() === binding.toUpperCase())
+   );
+   if (exact || !temporaryModifier) return exact;
+   // Explicit combinations win; otherwise the held snapping modifier leaves other shortcuts usable.
+   const modifier = (temporaryModifier === true ? "Alt" : temporaryModifier).toUpperCase();
+   if (modifier === "MOD" && /^MOD\+[ACVWXQ]$/i.test(binding)) return undefined;
+   const parts = binding.split("+");
+   return parts.some((part) => part.toUpperCase() === modifier)
+      ? commandForBinding(parts.filter((part) => part.toUpperCase() !== modifier).join("+"), overrides)
+      : undefined;
 }
 export function displayBindings(bindings: readonly string[], mac: boolean): string {
    return bindings.map((binding) => displayBinding(binding, mac)).join(" / ");
@@ -84,17 +99,25 @@ export function displayBinding(binding: string, mac: boolean): string {
       .replaceAll("ArrowRight", "→");
 }
 export function bindingFromEvent(event: KeyboardEvent, mac: boolean): string {
+   // Shift changes these keys to < and > on many layouts. Keep the frame-key identity.
+   const key = event.shiftKey && event.code === "Comma" ? "," : event.shiftKey && event.code === "Period" ? "." : event.key;
    const parts: string[] = [];
    if (mac ? event.metaKey : event.ctrlKey) parts.push("Mod");
    if (mac ? event.ctrlKey : event.metaKey) parts.push(mac ? "Ctrl" : "Meta");
    if (event.altKey) parts.push("Alt");
-   if (event.shiftKey && (event.key.length > 1 || /[a-z]/i.test(event.key))) parts.push("Shift");
-   parts.push(event.key === " " ? "Space" : event.key.length === 1 ? event.key.toUpperCase() : event.key);
+   if (event.shiftKey && (key.length > 1 || /[a-z]/i.test(key) || key === "," || key === ".")) parts.push("Shift");
+   parts.push(key === " " ? "Space" : key.length === 1 ? key.toUpperCase() : key);
    return parts.join("+");
 }
-export function useCommands(commands: Commands, overrides: Record<string, string[]>, mac: boolean, blocked: boolean): void {
-   const latest = useRef({ commands, overrides, mac, blocked });
-   latest.current = { commands, overrides, mac, blocked };
+export function useCommands(
+   commands: Commands,
+   overrides: Record<string, string[]>,
+   mac: boolean,
+   blocked: boolean,
+   temporaryModifier: string | false = "Alt"
+): void {
+   const latest = useRef({ commands, overrides, mac, blocked, temporaryModifier });
+   latest.current = { commands, overrides, mac, blocked, temporaryModifier };
    useEffect(() => {
       let keyboardFocus = false;
       const pointer = () => {
@@ -103,7 +126,7 @@ export function useCommands(commands: Commands, overrides: Record<string, string
       const execute = (id: string, resolved?: () => void) => {
          // The dialog's open attribute clears the moment a panel dismisses, even though its
          // exit fade still renders, so shortcuts work again immediately.
-         if (!isCommandId(id) || latest.current.blocked || document.querySelector("dialog[open]")) return;
+         if (!isCommandId(id) || latest.current.blocked || document.querySelector('dialog[open], [data-editor-shortcuts="blocked"]')) return;
          const command = latest.current.commands[id];
          const action = resolved ?? (command.resolve ? command.resolve() : command.enabled() ? command.run : undefined);
          if (action) {
@@ -122,7 +145,7 @@ export function useCommands(commands: Commands, overrides: Record<string, string
          const target = event.target;
          if (
             latest.current.blocked ||
-            document.querySelector("dialog[open]") ||
+            document.querySelector('dialog[open], [data-editor-shortcuts="blocked"]') ||
             event.isComposing ||
             (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable=true]"))
          )
@@ -137,7 +160,7 @@ export function useCommands(commands: Commands, overrides: Record<string, string
          )
             return;
          const binding = bindingFromEvent(event, latest.current.mac);
-         const id = commandForBinding(binding, latest.current.overrides);
+         const id = commandForBinding(binding, latest.current.overrides, latest.current.temporaryModifier);
          if (!id) return;
          const command = latest.current.commands[id];
          const action = command.resolve ? command.resolve() : command.enabled() ? command.run : undefined;

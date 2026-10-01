@@ -49,9 +49,9 @@ export function LoadingEditor({ label }: { label?: string }) {
                </div>
                <div className="playback-controls">
                   <div>
-                     <Control icon={faBackwardStep} label="Previous clip" />
+                     <Control icon={faBackwardStep} label="Previous cut" />
                      <Control icon={faPlay} label="Play" className="play-button" />
-                     <Control icon={faForwardStep} label="Next clip" />
+                     <Control icon={faForwardStep} label="Next cut" />
                   </div>
                </div>
                <div className="volume-controls">

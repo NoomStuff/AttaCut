@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { useEffect, useId, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { MediaSource } from "../../../shared/types";
 import type { EditDocument } from "../editor/model";
@@ -60,26 +59,37 @@ function VolumeSlider({ volume, muted, onChange }: { volume: number; muted: bool
 
 function TimeField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => number }) {
    const [text, setText] = useState(formatTime(value));
-   const [invalid, setInvalid] = useState(false);
+   const [feedback, setFeedback] = useState<string | null>(null);
+   const feedbackId = useId();
    const cancelled = useRef(false);
    const focused = useRef(false);
+   const dirty = useRef(false);
    const previousValue = useRef(value);
    useEffect(() => {
       if (previousValue.current === value) return;
       previousValue.current = value;
-      setText(formatTime(value, focused.current ? 6 : 2));
-      setInvalid(false);
+      if (focused.current && dirty.current) return;
+      setText(formatTime(value));
    }, [value]);
+   useEffect(() => {
+      if (!feedback) return;
+      const timer = window.setTimeout(() => setFeedback(null), 5000);
+      return () => window.clearTimeout(timer);
+   }, [feedback]);
    const commit = () => {
       const parsed = cancelled.current ? null : parseTime(text);
       if (!cancelled.current && parsed === null) {
-         setInvalid(true);
+         setText(formatTime(value));
+         setFeedback(`${label} unchanged. Enter seconds or a time such as 01:23.45.`);
+         dirty.current = false;
          return;
       }
-      setInvalid(false);
+      setFeedback(null);
       cancelled.current = false;
+      dirty.current = false;
       const unchanged = [2, 6].some((precision) => text === formatTime(value, precision) || parsed === parseTime(formatTime(value, precision)));
-      setText(formatTime(parsed === null || unchanged ? value : onChange(parsed)));
+      const actual = parsed === null || unchanged ? value : onChange(parsed);
+      setText(formatTime(actual));
    };
    return (
       <label className="time-field">
@@ -87,18 +97,17 @@ function TimeField({ label, value, onChange }: { label: string; value: number; o
          <input
             aria-label={`Clip ${label.toLowerCase()}`}
             value={text}
-            aria-invalid={invalid}
-            title={invalid ? "Enter seconds or a time such as 01:23.45" : formatTime(value, 6)}
+            aria-describedby={feedback ? feedbackId : undefined}
+            title={formatTime(value, 6)}
             onChange={(event) => {
                setText(event.target.value);
-               setInvalid(false);
+               dirty.current = true;
+               setFeedback(null);
             }}
             onFocus={(event) => {
                focused.current = true;
-               if (!invalid) {
-                  flushSync(() => setText(formatTime(value, 6)));
-                  event.currentTarget.select();
-               }
+               dirty.current = false;
+               event.currentTarget.select();
             }}
             onBlur={() => {
                focused.current = false;
@@ -113,6 +122,11 @@ function TimeField({ label, value, onChange }: { label: string; value: number; o
                }
             }}
          />
+         {feedback && (
+            <span id={feedbackId} className="time-feedback" role="status">
+               {feedback}
+            </span>
+         )}
       </label>
    );
 }
@@ -161,8 +175,8 @@ export function Transport({
                      {document.clips.length > 1 && <span className="muted">of {document.clips.length}</span>}
                   </span>
                   <div className="clip-boundaries">
-                     <TimeField label="Start" value={clip.start} onChange={(value) => onBoundary("start", value)} />
-                     <TimeField label="End" value={clip.end} onChange={(value) => onBoundary("end", value)} />
+                     <TimeField key={`${clip.id}:start`} label="Start" value={clip.start} onChange={(value) => onBoundary("start", value)} />
+                     <TimeField key={`${clip.id}:end`} label="End" value={clip.end} onChange={(value) => onBoundary("end", value)} />
                      <span className="clip-duration">
                         {formatTime(clip.end - clip.start)}
                         <small>duration</small>
@@ -175,7 +189,7 @@ export function Transport({
          </div>
          <div className="playback-controls">
             <div>
-               <IconButton command="previous" icon={faBackwardStep} label="Previous clip" />
+               <IconButton command="previous" icon={faBackwardStep} label="Previous cut" />
                <IconButton
                   command="play"
                   icon={playing ? faPause : faPlay}
@@ -186,7 +200,7 @@ export function Transport({
                   // relies on for its feedback animations.
                   data-playing={playing ? "" : undefined}
                />
-               <IconButton command="next" icon={faForwardStep} label="Next clip" />
+               <IconButton command="next" icon={faForwardStep} label="Next cut" />
             </div>
          </div>
          <div className="volume-controls">

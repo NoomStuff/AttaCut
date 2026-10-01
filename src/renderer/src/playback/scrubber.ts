@@ -4,11 +4,16 @@
  * untouched; bursts are cut short the moment real playback starts.
  */
 import type { ScrubAudio } from "../../../shared/types";
+type Audition = { time: number; volume: number; side: "start" | "end" };
 export class AudioScrubber {
    private context: AudioContext | null = null;
    private buffer: AudioBuffer | null = null;
    private previous: { start: number; buffer: AudioBuffer } | null = null;
    private voice: AudioBufferSourceNode | null = null;
+   private gain: GainNode | null = null;
+   private pending: Audition | null = null;
+   private lastAudition: Audition | null = null;
+   private auditionTimer = 0;
    private decoding: { view: DataView; frames: number; position: number } | null = null;
    private timer = 0;
    private lastScrub = -Infinity;
@@ -41,7 +46,7 @@ export class AudioScrubber {
       if (!this.load || this.loading === start) return;
       const generation = ++this.generation;
       this.loading = start;
-      this.stop();
+      this.stopVoice();
       // Keep the outgoing chunk so scrubbing back and forth over a boundary does not
       // re-request the same chunk on every crossing; it is swapped back in by scrub().
       this.previous = this.buffer ? { start: this.start, buffer: this.buffer } : null;
@@ -51,12 +56,17 @@ export class AudioScrubber {
             if (generation !== this.generation) return;
             this.loading = -1;
             if (data) {
+               if (this.buffer && this.start !== data.start) this.previous = { start: this.start, buffer: this.buffer };
                this.start = data.start;
                this.setPcm(data.pcm, data.sampleRate);
-            }
+               this.flush();
+            } else this.pending = null;
          })
          .catch(() => {
-            if (generation === this.generation) this.loading = -1;
+            if (generation === this.generation) {
+               this.loading = -1;
+               this.pending = null;
+            }
          });
    }
 
@@ -94,57 +104,107 @@ export class AudioScrubber {
       return this.context;
    }
 
-   /** Play a short burst starting at `time`; each call replaces the previous burst. Dense
-      pointer input re-triggers at most every 50ms — the playing burst already covers that. */
-   scrub(time: number, volume: number): void {
+   /** Audition a new position, coalescing fast movement without replaying a snapped frame. */
+   scrub(time: number, volume: number, side: "start" | "end" = "start"): void {
       if (volume <= 0) {
          this.stop();
          return;
       }
-      const covers = (chunk: { start: number; buffer: AudioBuffer } | null) => !!chunk && time >= chunk.start && time < chunk.start + chunk.buffer.duration;
+      this.pending = { time, volume, side };
+      this.flush();
+   }
+
+   private flush(): void {
+      const audition = this.pending;
+      if (!audition) return;
+      const { time, volume, side } = audition;
+      const sameSample = this.lastAudition?.side === side && Math.abs(time - this.lastAudition.time) < 1 / (this.buffer?.sampleRate ?? 22050);
+      if (sameSample) {
+         this.pending = null;
+         window.clearTimeout(this.auditionTimer);
+         this.auditionTimer = 0;
+         return;
+      }
+      // An end handle auditions the kept audio before the cut, not the discarded audio after it.
+      const position = side === "end" ? Math.max(0, time - 0.16) : time;
+      const covers = (chunk: { start: number; buffer: AudioBuffer } | null) =>
+         !!chunk && position >= chunk.start && position < chunk.start + chunk.buffer.duration;
       const current = this.buffer ? { start: this.start, buffer: this.buffer } : null;
       if (!covers(current)) {
          if (this.previous && covers(this.previous)) {
-            // Re-entering the retained neighbor chunk: swap the two instead of reloading.
-            const swapped = current;
             this.buffer = this.previous.buffer;
             this.start = this.previous.start;
-            this.previous = swapped;
+            this.previous = current;
          } else {
-            this.request(time);
+            this.request(position);
             return;
          }
       }
-      const buffer = this.buffer!;
-      time -= this.start;
       const stamp = performance.now();
-      if (stamp - this.lastScrub < 50) return;
+      const wait = 50 - (stamp - this.lastScrub);
+      if (wait > 0) {
+         if (!this.auditionTimer)
+            this.auditionTimer = window.setTimeout(() => {
+               this.auditionTimer = 0;
+               this.flush();
+            }, wait);
+         return;
+      }
+      window.clearTimeout(this.auditionTimer);
+      this.auditionTimer = 0;
+      this.pending = null;
+      const buffer = this.buffer!;
+      const offset = position - this.start;
+      const burst = Math.min(0.16, buffer.duration - offset, side === "end" ? time - position : Infinity);
+      if (burst <= 0) return;
       this.lastScrub = stamp;
-      this.stop();
+      this.lastAudition = audition;
+      this.stopVoice();
       const context = this.ensureContext();
       const voice = context.createBufferSource();
       voice.buffer = buffer;
       const gain = context.createGain();
       const now = context.currentTime;
-      const burst = Math.min(0.16, buffer.duration - time);
-      gain.gain.setValueAtTime(volume, now);
-      gain.gain.setValueAtTime(volume, now + Math.max(0, burst - 0.03));
+      const attack = Math.min(0.005, burst / 3);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(volume, now + attack);
+      gain.gain.setValueAtTime(volume, now + Math.max(attack, burst - 0.03));
       gain.gain.linearRampToValueAtTime(0, now + burst);
       voice.connect(gain).connect(context.destination);
-      voice.start(now, time, burst);
+      voice.start(now, offset, burst);
       this.voice = voice;
+      this.gain = gain;
       voice.onended = () => {
-         if (this.voice === voice) this.voice = null;
+         voice.disconnect();
+         gain.disconnect();
+         if (this.voice === voice) {
+            this.voice = null;
+            this.gain = null;
+         }
       };
    }
 
    stop(): void {
+      window.clearTimeout(this.auditionTimer);
+      this.auditionTimer = 0;
+      this.pending = null;
+      this.lastAudition = null;
+      this.lastScrub = -Infinity;
+      this.stopVoice();
+   }
+
+   private stopVoice(): void {
       const voice = this.voice;
+      const gain = this.gain;
       this.voice = null;
+      this.gain = null;
       if (voice) {
-         voice.onended = null;
          try {
-            voice.stop();
+            const now = this.context!.currentTime;
+            gain!.gain.cancelScheduledValues(now);
+            gain!.gain.setValueAtTime(gain!.gain.value, now);
+            gain!.gain.linearRampToValueAtTime(0, now + 0.008);
+            voice.stop(now + 0.01);
          } catch {
             // The burst had already finished.
          }

@@ -13,7 +13,7 @@ test("kept playback", async ({ launchApp, profile }) => {
       page.waitForFunction(
          ({ start, end, paused }) => {
             const video = document.querySelector("video");
-            return !video.seeking && video.paused === paused && video.currentTime >= start - 0.001 && video.currentTime <= end;
+            return !video.seeking && video.paused === paused && video.currentTime >= start - 0.001 && video.currentTime <= end + 0.001;
          },
          { start, end, paused }
       );

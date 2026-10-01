@@ -31,7 +31,7 @@ test("clip selection", async ({ launchApp, profile }) => {
       await expect(selected().locator(".clip-number")).toHaveText("02");
    }
    await seek(3);
-   await page.keyboard.press("Alt+ArrowRight");
+   await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowRight" : "Control+ArrowRight");
    await expect(selected().locator(".clip-number")).toHaveText("01");
    await page.keyboard.press("w");
    await expect(ranges()).toHaveCount(1);
@@ -45,7 +45,7 @@ test("clip selection", async ({ launchApp, profile }) => {
    await expect(ranges()).toHaveCount(1);
    await seek(3);
    await expect(selected()).toHaveCount(0);
-   await page.keyboard.press("Alt+ArrowRight");
+   await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowRight" : "Control+ArrowRight");
    await expect(selected()).toHaveCount(1);
    // Explicit Add works at the remaining clip's start, despite Delete also being available.
    await expect(page.locator("[data-command=add]")).toBeEnabled();
@@ -78,7 +78,7 @@ test("clip selection", async ({ launchApp, profile }) => {
    await expectSliderTime("Clip 2 end", 12);
    // Explicit Delete keeps removing existing clips, while Toggle preserves the gap priority.
    await seek(8);
-   await page.keyboard.press("Alt+ArrowLeft");
+   await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowLeft" : "Control+ArrowLeft");
    await expect(selected().locator(".clip-number")).toHaveText("02");
    await page.keyboard.press("Delete");
    await expect(ranges()).toHaveCount(1);

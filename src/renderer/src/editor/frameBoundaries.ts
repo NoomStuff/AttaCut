@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { flushSync } from "react-dom";
 import type { Dispatch } from "react";
 import type { MediaSource } from "../../../shared/types";
 import type { EditAction, EditDocument } from "./model";
@@ -9,7 +10,8 @@ export function useFrameBoundaries(
    source: MediaSource | null,
    document: EditDocument,
    dispatch: Dispatch<EditAction>,
-   onError: (message: string) => void
+   onError: (message: string) => void,
+   onResolved: (times: Map<number, number>) => void
 ): boolean {
    const index = useMemo(() => ({ sourceId: source?.id, times: new Map<number, number>() }), [source?.id]);
    const times = index.times;
@@ -21,7 +23,10 @@ export function useFrameBoundaries(
       const pending = [...new Set(document.clips.flatMap((clip) => [clip.start, clip.end]))].filter(
          (time) => time !== 0 && time !== source.duration && !times.has(time)
       );
-      if (!pending.length) return;
+      if (!pending.length) {
+         onResolved(times);
+         return;
+      }
       let current = true;
       void Promise.all(pending.map(async (time) => [time, await window.desktop.frameTime(source.id, time, 0)] as const))
          .then((resolved) => {
@@ -36,7 +41,12 @@ export function useFrameBoundaries(
                   return;
                }
             }
-            dispatch({ type: "resolve", document, times });
+            // Commit accepted boundaries before moving the clock to them. Otherwise a
+            // rounded start can briefly look like a gap and unmount the editing fields.
+            flushSync(() => {
+               dispatch({ type: "resolve", document, times });
+               onResolved(times);
+            });
          })
          .catch((error: unknown) => {
             if (current && !isCancellation(errorText(error))) onError(errorText(error));
@@ -44,6 +54,6 @@ export function useFrameBoundaries(
       return () => {
          current = false;
       };
-   }, [source, document, times, dispatch, onError]);
+   }, [source, document, times, dispatch, onError, onResolved]);
    return requested.length > 0;
 }
