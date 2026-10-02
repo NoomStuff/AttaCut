@@ -197,8 +197,10 @@ export function Timeline({
    // the view so it lands exactly on the crossed edge (10% after a left overflow, 90% after
    // a right one), clamped to the timeline ends. Only playhead movement corrects the view,
    // so zooming and panning never shift it; pointer-driven motion (scrub, handle drag) stays
-   // 1:1 until it ends. This listens to the clock directly instead of rendering with it, so
-   // playback costs no Timeline renders here except when a pan actually fires.
+   // 1:1 until it ends. Paused moves count too, so shortcuts and transport jumps keep the
+   // playhead in range exactly like playback does. This listens to the clock directly
+   // instead of rendering with it, so playback costs no Timeline renders here except when a
+   // pan actually fires.
    const lastPanTime = useRef(-1);
    useEffect(() => {
       if (!playing) followPan.current = false;
@@ -207,7 +209,7 @@ export function Timeline({
          if (scrubbing.current !== null || drag.current || current === lastPanTime.current) return;
          lastPanTime.current = current;
          const { view: currentView, duration: total } = latest.current;
-         if (!playing || currentView.length >= total - 0.0001) {
+         if (currentView.length >= total - 0.0001) {
             followPan.current = false;
             return;
          }
@@ -224,13 +226,16 @@ export function Timeline({
             followPan.current = false;
             return;
          }
-         followPan.current = true;
+         // Playback snaps the drawn view to each page so the playhead cannot outrun it.
+         // Paused moves tween instead: they are single jumps, and the chase keeps them as
+         // smooth as the pan buttons while repeated shortcuts retarget freely.
+         followPan.current = playing;
          setView({ start, length: currentView.length });
       });
    }, [clock, playing]);
    useEffect(() => {
-      // Listened on the whole section: the pan arrows overlay the viewport edges and would
-      // otherwise swallow the wheel events aimed at the timeline underneath them.
+      // Listened on the whole section so the gutters and pan arrows flanking the viewport
+      // stay part of the pan and zoom gesture area rather than dead zones.
       const sectionElement = section.current!;
       const wheel = (event: WheelEvent) => {
          event.preventDefault();
@@ -379,16 +384,29 @@ export function Timeline({
    const minorStep = rulerStep / 2;
    const minorSpacing = minorStep * pxPerSecond;
    const minorOpacity = clamp((minorSpacing - 50) / 50, 0, 1);
-   // Labels near the centered time chip would be occluded by it, so they yield to the chip.
-   const chipHalf = chipWidth / 2 + 10;
+   // Labels yield to the centered time chip by fading out across its edge instead of
+   // vanishing, so panning never pops a label in or out mid-view.
+   const chipHalf = chipWidth / 2;
+   // Edge fades span 44px and shrink toward nothing as the view approaches that end of the
+   // timeline. The ruler's edge alignment keys off the same values: centered labels only
+   // need nudging inward where no fade will hide their overhang.
+   const fadeScale = drawn.length * 0.04;
+   const leftFade = clamp(drawn.start / fadeScale, 0, 1) * 44;
+   const rightFade = clamp((duration - drawn.start - drawn.length) / fadeScale, 0, 1) * 44;
+   const leftStop = leftFade > 0.5 ? Math.min(leftFade, viewportWidth / 2) : 0;
+   const rightStop = rightFade > 0.5 ? Math.min(rightFade, viewportWidth / 2) : 0;
    // The ruler and clip track are memoized subtrees, and the playhead and time chip subscribe
    // to the clock in their own leaf: during playback the Timeline itself never re-renders,
    // and a drag re-renders the track through the drawEdge dep.
    const ruler = useMemo(() => {
-      const underChip = (point: number) => Math.abs(point - (drawn.start + drawn.length / 2)) * pxPerSecond < chipHalf;
+      const labelFade = (point: number) => {
+         if (chipHalf <= 0) return 1;
+         const distance = Math.abs(point - (drawn.start + drawn.length / 2)) * pxPerSecond;
+         return clamp((distance - chipHalf) / 14, 0, 1);
+      };
       const tickAlign = (point: number) => {
          const percent = ((point - drawn.start) / drawn.length) * 100;
-         return percent < 2 ? " edge-start" : percent > 98 ? " edge-end" : "";
+         return leftStop === 0 && percent < 2 ? " edge-start" : rightStop === 0 && percent > 98 ? " edge-end" : "";
       };
       const rulerMarks = (() => {
          if (pxPerSecond <= 0) return { major: [], minor: [] as number[] };
@@ -408,7 +426,7 @@ export function Timeline({
          <div className="timeline-ruler" aria-hidden="true">
             {rulerMarks.major.map((point) => (
                <span key={point} className={`ruler-tick major${tickAlign(point)}`} style={{ left: `${Math.round((point - drawn.start) * pxPerSecond)}px` }}>
-                  {!underChip(point) && <em>{formatTime(point, rulerStep < 1 ? 2 : 0)}</em>}
+                  <em style={{ opacity: labelFade(point) }}>{formatTime(point, rulerStep < 1 ? 2 : 0)}</em>
                </span>
             ))}
             {rulerMarks.minor.map((point) => (
@@ -417,12 +435,12 @@ export function Timeline({
                   className={`ruler-tick minor${tickAlign(point)}`}
                   style={{ left: `${Math.round((point - drawn.start) * pxPerSecond)}px`, opacity: minorOpacity }}
                >
-                  {!underChip(point) && <em>{formatTime(point, minorStep < 1 ? 2 : 0)}</em>}
+                  <em style={{ opacity: labelFade(point) }}>{formatTime(point, minorStep < 1 ? 2 : 0)}</em>
                </span>
             ))}
          </div>
       );
-   }, [pxPerSecond, rulerStep, minorStep, minorOpacity, drawn.start, drawn.length, chipHalf]);
+   }, [pxPerSecond, rulerStep, minorStep, minorOpacity, drawn.start, drawn.length, chipHalf, leftStop, rightStop]);
    const track = useMemo(
       () => (
          <div className="timeline-track">
@@ -608,11 +626,24 @@ export function Timeline({
          x,
       ]
    );
+   // Edges fade through a mask on the viewport itself instead of painted overlays, so the
+   // ruler, handles, and playhead all fade no matter their stacking order. The fade stops
+   // reuse the spans computed for the ruler above.
+   const px = (value: number) => `${+value.toFixed(2)}px`;
+   let edgeMask: string | undefined;
+   if (leftStop || rightStop) {
+      const stops: string[] = [];
+      if (leftStop) stops.push(`rgba(0,0,0,0) ${px(leftStop * 0.18)}`, `#000 ${px(leftStop)}`);
+      stops.push(rightStop ? `#000 calc(100% - ${px(rightStop)})` : "#000");
+      if (rightStop) stops.push(`rgba(0,0,0,0) calc(100% - ${px(rightStop * 0.18)})`);
+      edgeMask = `linear-gradient(to right, ${stops.join(", ")})`;
+   }
    return (
       <section className="timeline-section" aria-label="Clip timeline" ref={section}>
          <div
             className={`timeline-viewport${panActive ? " panning" : ""}`}
             ref={viewport}
+            style={edgeMask ? { WebkitMaskImage: edgeMask, maskImage: edgeMask } : undefined}
             onPointerMove={(event) => {
                const pan = panning.current;
                if (pan?.pointerId === event.pointerId) {
@@ -704,8 +735,6 @@ export function Timeline({
                      </div>
                   );
                })()}
-            <div className="timeline-edge left" style={{ width: 44 * clamp(drawn.start / (drawn.length * 0.04), 0, 1) }} />
-            <div className="timeline-edge right" style={{ width: 44 * clamp((duration - drawn.start - drawn.length) / (drawn.length * 0.04), 0, 1) }} />
          </div>
          <div className="timeline-handle-directions" aria-hidden="true">
             {visible.clips.flatMap((clip) =>

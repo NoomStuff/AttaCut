@@ -425,33 +425,19 @@
       scale: 0.5 0.6;
    }
 }
-.timeline-edge {
-   position: absolute;
-   top: 15px;
-   bottom: 0;
-   width: 44px;
-   z-index: 7;
-   pointer-events: none;
-}
-.timeline-edge.left {
-   left: 0;
-   background: linear-gradient(to right, var(--surface) 18%, transparent);
-}
-.timeline-edge.right {
-   right: 0;
-   background: linear-gradient(to left, var(--surface) 18%, transparent);
-}
 .timeline-pan-arrow {
    position: absolute;
    top: 35px;
    z-index: 9;
    transition: opacity 160ms ease-out;
 }
+/* The 20px buttons fit the existing side space (dock padding + viewport margin) without
+   covering any of the timeline or shrinking it. */
 .timeline-pan-arrow.left {
-   left: 9px;
+   left: -15px;
 }
 .timeline-pan-arrow.right {
-   right: 9px;
+   right: -15px;
 }
 .timeline-pan-arrow .icon-button {
    width: 20px;
