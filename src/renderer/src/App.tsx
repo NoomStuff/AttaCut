@@ -1000,7 +1000,6 @@ export default function App() {
                      <Transport
                         document={activeDocument}
                         source={source}
-                        clock={clock}
                         playing={playing}
                         volume={preferences.volume}
                         muted={muted}

@@ -2,8 +2,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { MediaSource } from "../../../shared/types";
 import type { EditDocument } from "../editor/model";
 import { selectedClip } from "../editor/model";
-import type { PlaybackClock } from "../playback/clock";
-import { useClock } from "../playback/clock";
 import { formatTime, parseTime } from "../../../shared/time";
 import { Button, IconButton } from "./Controls";
 import {
@@ -99,7 +97,6 @@ function TimeField({ label, value, onChange }: { label: string; value: number; o
 export function Transport({
    document,
    source,
-   clock,
    playing,
    volume,
    muted,
@@ -114,7 +111,6 @@ export function Transport({
 }: {
    document: EditDocument;
    source: MediaSource;
-   clock: PlaybackClock;
    playing: boolean;
    volume: number;
    muted: boolean;
@@ -127,7 +123,6 @@ export function Transport({
    readingKeys: boolean;
    zoom: number;
 }) {
-   useClock(clock);
    const clip = selectedClip(document);
    const index = document.clips.findIndex((item) => item.id === document.selectedId);
    return (

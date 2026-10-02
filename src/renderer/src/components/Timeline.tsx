@@ -1,6 +1,6 @@
 import { frameLevelActive, quantizeToFrame, visibleKeyframes, zoomLength } from "../editor/timelineView";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { EditDocument } from "../editor/model";
 import type { Clip } from "../../../shared/types";
 import { clipChanges } from "../editor/clipChanges";
@@ -68,7 +68,6 @@ export function Timeline({
    onZoom,
    onTrimming,
 }: TimelineProps) {
-   const time = useClock(clock);
    const section = useRef<HTMLElement>(null);
    const keyboardGesture = useRef<string | null>(null);
    const viewport = useRef<HTMLDivElement>(null);
@@ -98,7 +97,7 @@ export function Timeline({
       prevSnapping.current = snapping;
       // Enabling snapping pops the ticks outward from the playhead; disabling fades them
       // out before they unmount.
-      if (snapping) setPop((current) => ({ time, token: (current?.token ?? 0) + 1 }));
+      if (snapping) setPop((current) => ({ time: clock.get(), token: (current?.token ?? 0) + 1 }));
       else setTickExit(true);
    }
    useEffect(() => {
@@ -123,30 +122,29 @@ export function Timeline({
    const pressScrub = useRef<number | null>(null);
    const latest = useRef({ view, duration });
    const latestDrawn = useRef({ start: 0, length: duration });
+   // Set while playback keeps panning the view to hold the playhead at the margin. The drawn
+   // view then snaps to its target instead of chasing it: a tween retargeted every frame
+   // settles into a permanent lag that lets the playhead drift past the margin line.
+   const followPan = useRef(false);
    const [viewportWidth, setViewportWidth] = useState(0);
    const [chipWidth, setChipWidth] = useState(0);
-   // The drawn view and playhead chase their targets so zooms, pans, and seeks read as one
-   // continuous motion. Pointer-driven edits (scrub, handle drag) use a short chase instead of
-   // exact snapping, and middle-button panning stays 1:1.
-   const drawnStart = useSmoothValue(view.start, { duration: 240, snap: () => panning.current !== null });
-   const drawnLength = useSmoothValue(view.length, { duration: 240, snap: () => panning.current !== null });
+   // The drawn view chases its target so zooms, pans, and seeks read as one continuous
+   // motion. Pointer-driven edits (scrub, handle drag) use a short chase instead of exact
+   // snapping, and middle-button panning stays 1:1.
+   const drawnStart = useSmoothValue(view.start, { duration: 240, snap: () => panning.current !== null || followPan.current });
+   const drawnLength = useSmoothValue(view.length, { duration: 240, snap: () => panning.current !== null || followPan.current });
    const drawn = { start: drawnStart, length: drawnLength };
    latestDrawn.current = drawn;
    const visible = draft ?? document;
    const dragging = drag.current;
-   const pointerDriven = scrubbing.current !== null || dragging !== null;
-   const dragBoundary = dragging ? visible.clips.find((clip) => clip.id === dragging.id)![dragging.side] : time;
-   // Share one follower so the dragged edge and playhead cannot drift apart. While playback
-   // runs, the drawn time snaps straight to the clock: the picture jumps on a seek, and a
-   // gliding playhead would land after the content it points at. Below the jump threshold a
-   // retarget snaps instead of tweening, so frame stepping stays 1:1 — unless the seek asked
-   // to glide (discrete navigation such as keyframe and clip jumps), which tweens regardless.
-   const drawTime = useSmoothValue(dragBoundary, {
-      ...(pointerDriven ? { follow: pointerSmoothingMs } : { duration: 170, jump: Math.max(frameStep * 1.5, 0.05), glide: clock.getGlide }),
-      snap: () => playing,
-      key: dragging ? "drag:" + dragging.id + ":" + dragging.side : (scrubbing.current ?? "idle"),
+   // The dragged edge chases the boundary so the clip glides with the pointer. The playhead
+   // leaf mirrors this follower, so the edge and the line cannot drift apart.
+   const dragDrawTime = useSmoothValue(dragging ? visible.clips.find((clip) => clip.id === dragging.id)![dragging.side] : 0, {
+      ...(dragging ? { follow: pointerSmoothingMs } : { duration: 170 }),
+      snap: () => playing && !!dragging,
+      key: dragging ? "drag:" + dragging.id + ":" + dragging.side : "idle",
    });
-   const drawEdge = dragging ? drawTime : 0;
+   const drawEdge = dragging ? dragDrawTime : 0;
    useEffect(() => {
       const element = viewport.current!;
       const measure = () => {
@@ -199,21 +197,37 @@ export function Timeline({
    // the view so it lands exactly on the crossed edge (10% after a left overflow, 90% after
    // a right one), clamped to the timeline ends. Only playhead movement corrects the view,
    // so zooming and panning never shift it; pointer-driven motion (scrub, handle drag) stays
-   // 1:1 until it ends. The correction rides the smooth view chase, like the pan buttons.
+   // 1:1 until it ends. This listens to the clock directly instead of rendering with it, so
+   // playback costs no Timeline renders here except when a pan actually fires.
    const lastPanTime = useRef(-1);
    useEffect(() => {
-      if (pointerDriven || time === lastPanTime.current) return;
-      lastPanTime.current = time;
-      if (view.length >= duration - 0.0001) return;
-      const margin = view.length * 0.1;
-      let start: number | null = null;
-      if (time < view.start + margin) start = time - margin;
-      else if (time > view.start + view.length - margin) start = time - view.length + margin;
-      if (start === null) return;
-      start = clamp(start, 0, duration - view.length);
-      if (Math.abs(start - view.start) < 0.0001) return;
-      setView({ start, length: view.length });
-   }, [time, view, duration, pointerDriven]);
+      if (!playing) followPan.current = false;
+      return clock.subscribe(() => {
+         const current = clock.get();
+         if (scrubbing.current !== null || drag.current || current === lastPanTime.current) return;
+         lastPanTime.current = current;
+         const { view: currentView, duration: total } = latest.current;
+         if (!playing || currentView.length >= total - 0.0001) {
+            followPan.current = false;
+            return;
+         }
+         const margin = currentView.length * 0.1;
+         let start: number | null = null;
+         if (current < currentView.start + margin) start = current - margin;
+         else if (current > currentView.start + currentView.length - margin) start = current - currentView.length + margin;
+         if (start === null) {
+            followPan.current = false;
+            return;
+         }
+         start = clamp(start, 0, total - currentView.length);
+         if (Math.abs(start - currentView.start) < 0.0001) {
+            followPan.current = false;
+            return;
+         }
+         followPan.current = true;
+         setView({ start, length: currentView.length });
+      });
+   }, [clock, playing]);
    useEffect(() => {
       // Listened on the whole section: the pan arrows overlay the viewport edges and would
       // otherwise swallow the wheel events aimed at the timeline underneath them.
@@ -367,8 +381,9 @@ export function Timeline({
    const minorOpacity = clamp((minorSpacing - 50) / 50, 0, 1);
    // Labels near the centered time chip would be occluded by it, so they yield to the chip.
    const chipHalf = chipWidth / 2 + 10;
-   // The ruler and clip track are memoized subtrees: during playback only the playhead and
-   // time chip re-render each frame, and a drag re-renders the track through the drawEdge dep.
+   // The ruler and clip track are memoized subtrees, and the playhead and time chip subscribe
+   // to the clock in their own leaf: during playback the Timeline itself never re-renders,
+   // and a drag re-renders the track through the drawEdge dep.
    const ruler = useMemo(() => {
       const underChip = (point: number) => Math.abs(point - (drawn.start + drawn.length / 2)) * pxPerSecond < chipHalf;
       const tickAlign = (point: number) => {
@@ -656,12 +671,20 @@ export function Timeline({
          >
             {ruler}
             {track}
-            {drawTime >= drawn.start && drawTime <= drawn.start + drawn.length && (
-               <div className="playhead" data-trimming={!!dragging && dragMoved} style={{ left: x(drawTime) }}>
-                  <span />
-                  <i />
-               </div>
-            )}
+            <TimelinePlayhead
+               clock={clock}
+               duration={duration}
+               frameStep={frameStep}
+               playing={playing}
+               drawnStart={drawnStart}
+               drawnLength={drawnLength}
+               dragging={!!dragging}
+               dragBoundary={dragging ? dragDrawTime : null}
+               dragKey={dragging ? `${dragging.id}:${dragging.side}` : null}
+               dragMoved={dragMoved}
+               scrubbingRef={scrubbing}
+               dragRef={drag}
+            />
             {dragging &&
                dragMoved &&
                (() => {
@@ -681,11 +704,6 @@ export function Timeline({
                      </div>
                   );
                })()}
-            <div className="timeline-time" aria-label="Playback time">
-               <time>{formatTime(time)}</time>
-               <span>/</span>
-               <time>{formatTime(duration)}</time>
-            </div>
             <div className="timeline-edge left" style={{ width: 44 * clamp(drawn.start / (drawn.length * 0.04), 0, 1) }} />
             <div className="timeline-edge right" style={{ width: 44 * clamp((duration - drawn.start - drawn.length) / (drawn.length * 0.04), 0, 1) }} />
          </div>
@@ -733,5 +751,71 @@ export function Timeline({
             />
          </div>
       </section>
+   );
+}
+// The playhead and time chip are the only per-frame UI in the timeline, so they subscribe to
+// the clock inside their own subtree: playback re-renders just this leaf, never the whole
+// Timeline. While a handle is dragged the leaf mirrors the Timeline's drag follower, so the
+// line and the moving edge cannot drift apart.
+function TimelinePlayhead({
+   clock,
+   duration,
+   frameStep,
+   playing,
+   drawnStart,
+   drawnLength,
+   dragging,
+   dragBoundary,
+   dragKey,
+   dragMoved,
+   scrubbingRef,
+   dragRef,
+}: {
+   clock: PlaybackClock;
+   duration: number;
+   frameStep: number;
+   playing: boolean;
+   drawnStart: number;
+   drawnLength: number;
+   dragging: boolean;
+   dragBoundary: number | null;
+   dragKey: string | null;
+   dragMoved: boolean;
+   scrubbingRef: RefObject<number | null>;
+   dragRef: RefObject<Drag | null>;
+}) {
+   const time = useClock(clock);
+   // Read at render time: scrubbing and drags flip refs without re-rendering the parent, but
+   // every clock change re-renders here, so the mode below is always seen fresh.
+   const pointerDriven = scrubbingRef.current !== null || dragRef.current !== null;
+   // While playback runs, the drawn time snaps straight to the clock: the picture jumps on a
+   // seek, and a gliding playhead would land after the content it points at. During a drag
+   // the Timeline's follower has already smoothed the boundary, so the leaf mirrors it
+   // exactly. Below the jump threshold a retarget snaps instead of tweening, so frame
+   // stepping stays 1:1 — unless the seek asked to glide (discrete navigation such as
+   // keyframe and clip jumps), which tweens regardless.
+   const drawTime = useSmoothValue(dragging ? (dragBoundary ?? 0) : time, {
+      ...(dragging
+         ? { snap: () => true }
+         : {
+              ...(pointerDriven ? { follow: pointerSmoothingMs } : { duration: 170, jump: Math.max(frameStep * 1.5, 0.05), glide: clock.getGlide }),
+              snap: () => playing,
+           }),
+      key: dragging && dragKey ? "drag:" + dragKey : (scrubbingRef.current ?? "idle"),
+   });
+   return (
+      <>
+         {drawTime >= drawnStart && drawTime <= drawnStart + drawnLength && (
+            <div className="playhead" data-trimming={dragging && dragMoved} style={{ left: `${((drawTime - drawnStart) / drawnLength) * 100}%` }}>
+               <span />
+               <i />
+            </div>
+         )}
+         <div className="timeline-time" aria-label="Playback time">
+            <time>{formatTime(time)}</time>
+            <span>/</span>
+            <time>{formatTime(duration)}</time>
+         </div>
+      </>
    );
 }
