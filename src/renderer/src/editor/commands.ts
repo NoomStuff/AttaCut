@@ -39,6 +39,7 @@ export const commandDefinitions = {
    help: { label: "Help", bindings: ["F1"], group: "Help" },
    shortcuts: { label: "Keyboard shortcuts", bindings: ["/"], group: "Help" },
    releases: { label: "Releases page", bindings: [], group: "Help" },
+   updates: { label: "Check for updates", bindings: [], group: "Help" },
    about: { label: "About", bindings: [], group: "Help" },
    reset: { label: "Factory reset", bindings: [], group: "Help" },
 } as const;

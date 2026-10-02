@@ -146,17 +146,18 @@ test("idle time warms dialogs and keyframes before they are requested", async ({
       .poll(() => scripts)
       .toEqual(
          expect.arrayContaining([
-            expect.stringMatching(/ExportPanel-.*\.js$/),
             expect.stringMatching(/SettingsPanel-.*\.js$/),
             expect.stringMatching(/FramePanel-.*\.js$/),
             expect.stringMatching(/HelpPanel-.*\.js$/),
             expect.stringMatching(/AboutPanel-.*\.js$/),
          ])
       );
-   await debuggerSession.detach();
    expect(await page.locator("dialog[open]").count()).toBe(0);
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
    await waitForVideo(page);
+   // The export panel loads eagerly with the source so opening Export never shows a loader.
+   await expect.poll(() => scripts).toEqual(expect.arrayContaining([expect.stringMatching(/ExportPanel-.*\.js$/)]));
+   await debuggerSession.detach();
    const snap = page.getByRole("button", { name: "Snap to keyframes", exact: true });
    await expect(snap).toHaveAttribute("aria-pressed", "false");
    await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.ready("source:keyframes"))).toBe(true);

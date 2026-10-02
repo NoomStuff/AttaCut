@@ -17,6 +17,6 @@ export function appFailure(value: unknown): AppFailure {
       return result("invalid-request", "This request is no longer valid. Reopen the panel and try again.", false);
    if (/net::ERR_|ENOTFOUND|ERR_CONNECTION_|ERR_INTERNET_|\bETIMEDOUT\b|network timeout/i.test(detail))
       return result("network", "AttaCut couldn't reach the internet. Check your connection and try again.");
-   const permanent = /No output was published|partial export was removed|unsupported|Reopen the source video/i.test(detail);
+   const permanent = /No output was published|No video frames were produced|partial export was removed|unsupported|Reopen the source video/i.test(detail);
    return result(permanent ? "media" : "unknown", detail, !permanent);
 }

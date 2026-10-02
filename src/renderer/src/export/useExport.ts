@@ -120,10 +120,14 @@ export function useExport({
    }, [source.id, clips, mode, audioTracks]);
    const valid = request.items.length > 0 && !!directory.trim() && (mode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim()));
    // Main reports conflicts per clip, so the panel never replicates export naming rules.
+   // While a recheck is pending the previous results stay shown: clearing them would replay
+   // every row's warning animation on unrelated edits, and the recheck itself is debounced.
    useEffect(() => {
       let cancelled = false;
-      setConflicts(new Map());
-      if (!valid) return;
+      if (!valid) {
+         setConflicts(new Map());
+         return;
+      }
       const timer = window.setTimeout(() => {
          void window.desktop
             .checkExportDestinations(request)

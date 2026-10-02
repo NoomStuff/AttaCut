@@ -1,6 +1,6 @@
 import { withTemporaryOutput } from "./transaction";
 import { primaryVideo } from "../../shared/types";
-import { writeFile, copyFile, constants } from "node:fs/promises";
+import { writeFile, copyFile, stat, constants } from "node:fs/promises";
 import { publishOutput } from "./publish.ts";
 import { join, extname, dirname, resolve } from "node:path";
 import type { Clip, ExportPlanItem, StreamAssessment, ExportStage } from "../../shared/types.ts";
@@ -304,8 +304,15 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                `0:${video.index}`,
                "-an",
             ];
+            // The bounds carry the same epsilon slack as the copy filter below, so both span
+            // kinds treat boundary frames identically regardless of how each tool rounds
+            // timestamps internally.
             if (span.encode)
-               args.push("-vf", `trim=start=${absoluteStart}:end=${absoluteEnd},setpts=PTS-round(${absoluteStart}/TB)`, ...encoderArguments(video)!);
+               args.push(
+                  "-vf",
+                  `trim=start=${absoluteStart - epsilon}:end=${absoluteEnd - epsilon},setpts=PTS-round(${absoluteStart}/TB)`,
+                  ...encoderArguments(video)!
+               );
             else
                args.push(
                   "-c:v",
@@ -327,6 +334,10 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                duration: span.end - span.start,
                onProgress: (fraction) => options.onProgress?.((0.9 * (finishedWork + weight(span) * fraction)) / totalWork),
             });
+            // ffmpeg exits 0 even when the trim let nothing through, and the empty segment
+            // only surfaces later as a cryptic concat failure. Name the cut instead.
+            const written = await stat(path).catch(() => null);
+            if (!written || written.size === 0) throw new Error("No video frames were produced for this cut. Try a nearby cut or turn on Snap to keyframes.");
             finishedWork += weight(span);
             segmentPaths.push(path);
          }

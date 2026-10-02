@@ -211,6 +211,16 @@ describe("clip interaction priority", () => {
       priority.move(document, 10);
       expect(priority.resolve(document, 10)).toEqual(b);
    });
+   it("highlights the clip the playhead moved over when it lands on a shared edge", () => {
+      const forward = new ClipPriority();
+      forward.move(document, 0);
+      forward.move(document, 10);
+      expect(forward.resolve(document, 10)).toEqual(a);
+      const backward = new ClipPriority();
+      backward.move(document, 25);
+      backward.move(document, 10);
+      expect(backward.resolve(document, 10)).toEqual(b);
+   });
    it("remembers the deleted side instead of targeting its neighbor", () => {
       const priority = new ClipPriority();
       priority.remember(a);

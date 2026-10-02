@@ -125,6 +125,35 @@ export function Player({
       window.addEventListener("keydown", escape);
       return () => window.removeEventListener("keydown", escape);
    }, [inFullscreen, onSetFullscreen]);
+   // Chromium's Windows video presentation intermittently misplaces the presented frame of
+   // a paused video when the scene around it changes: the controls fading in or out shift
+   // the picture aside or collapse it to a sliver, and window occlusion does the same. The
+   // page cannot see or prevent the misplacement, but presenting the frame again heals it —
+   // the same reason pressing play fixes it. A 0.5 ms hop re-presents the current frame
+   // without leaving it, so nothing visible changes.
+   const repaintPausedFrame = useCallback(() => {
+      const video = videoRef.current;
+      if (!inFullscreen || playing || !frameReady || !video || video.seeking || seeker.pending) return;
+      const hop = 0.0005;
+      const target = video.currentTime > hop ? video.currentTime - hop : video.currentTime + hop;
+      video.currentTime = Math.min(target, video.duration || target);
+   }, [inFullscreen, playing, frameReady, videoRef, seeker]);
+   useEffect(() => {
+      if (!inFullscreen) return;
+      repaintPausedFrame();
+      // The misplacement can land a beat after the commit that provokes it (or while the
+      // fullscreen animation is still running), so sweep a second time.
+      const late = window.setTimeout(repaintPausedFrame, 180);
+      return () => window.clearTimeout(late);
+   }, [repaintPausedFrame, controlsShown, inFullscreen]);
+   useEffect(() => {
+      if (!inFullscreen) return;
+      const reappear = () => {
+         if (document.visibilityState === "visible") repaintPausedFrame();
+      };
+      document.addEventListener("visibilitychange", reappear);
+      return () => document.removeEventListener("visibilitychange", reappear);
+   }, [inFullscreen, repaintPausedFrame]);
    const latest = useRef({ clips, keptOnly });
    latest.current = { clips, keptOnly };
    useLayoutEffect(() => {

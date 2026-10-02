@@ -41,6 +41,7 @@ app.on("open-file", (event, path) => {
 app.setName("AttaCut");
 if (process.platform === "win32") app.setAppUserModelId("dev.attacut.app");
 app.commandLine.appendSwitch("enable-blink-features", "AudioVideoTracks");
+// EXPERIMENT: disable-zero-copy-dxgi-video goes here when validated.
 protocol.registerSchemesAsPrivileged([
    { scheme: "media", privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
    { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },

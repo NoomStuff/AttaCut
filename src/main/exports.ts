@@ -234,6 +234,8 @@ export class ExportService {
             status: "queued",
             progress: 0,
             duration: item.duration ?? item.clip.end - item.clip.start,
+            // Combined outputs span many cuts, so a source range would mislabel them.
+            ...(stored.plan.mode === "separate" ? { start: item.clip.start, end: item.clip.end } : {}),
             error: null,
          })),
       };

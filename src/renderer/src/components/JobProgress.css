@@ -109,6 +109,12 @@
    font-size: 11px;
    overflow-wrap: anywhere;
 }
+.job-failure-item small {
+   display: block;
+   margin-top: 2px;
+   color: var(--muted);
+   font-size: 11px;
+}
 .job-failure-item p {
    margin: 5px 0 0;
    color: var(--text);

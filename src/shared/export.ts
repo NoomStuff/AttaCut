@@ -6,7 +6,7 @@ export const exportItemSchema = z.object({ clip: clipSchema, name: z.string().mi
 export const planRequestSchema = z.object({
    sourceId: z.string(),
    directory: z.string().min(1),
-   items: z.array(exportItemSchema).min(1).max(500),
+   items: z.array(exportItemSchema).min(1).max(1000),
    mode: z.enum(["separate", "combined"]).default("separate"),
    audioTracks: z.array(z.number().int().nonnegative()).max(100).nullable().default(null),
    name: z.string().max(240).default("combined"),
@@ -65,6 +65,9 @@ export type ExportStage = "copying" | "encoding" | "checking" | "saving";
 export interface JobItem {
    stage?: ExportStage;
    duration?: number;
+   /** Source range behind this output, so a failure names the cut it came from. */
+   start?: number;
+   end?: number;
    id: string;
    name: string;
    outputPath: string;

@@ -34,7 +34,9 @@ interface TimelineProps {
    playing: boolean;
    onSelect: (id: string) => void;
    onCommit: (document: EditDocument, group?: string) => void;
-   onSeek: (time: number, preservePriority?: boolean, glide?: boolean, side?: "start" | "end") => void;
+   /** `hover` carries the unquantized pointer position so boundary picks can tell which side
+       the pointer is on; it is only set by scrubbing. */
+   onSeek: (time: number, preservePriority?: boolean, glide?: boolean, side?: "start" | "end", hover?: number) => void;
    /** Reports the in-progress trim so the transport can show live start, end, and duration. */
    onDraft: (document: EditDocument | null) => void;
    onZoom: (percent: number, viewportWidth: number) => void;
@@ -607,7 +609,7 @@ export function Timeline({
                   pressScrub.current = null;
                   scrubbing.current = event.pointerId;
                }
-               if (scrubbing.current === event.pointerId) onSeek(scrubTarget(event.clientX));
+               if (scrubbing.current === event.pointerId) onSeek(scrubTarget(event.clientX), false, false, undefined, pointAt(event.clientX));
             }}
             onPointerDown={(event) => {
                if (event.button === 1) {
@@ -624,12 +626,12 @@ export function Timeline({
                if (globalThis.document.activeElement instanceof HTMLElement) globalThis.document.activeElement.blur();
                pressScrub.current = event.pointerId;
                event.currentTarget.setPointerCapture(event.pointerId);
-               onSeek(scrubTarget(event.clientX));
+               onSeek(scrubTarget(event.clientX), false, false, undefined, pointAt(event.clientX));
             }}
             onPointerUp={(event) => {
                // Pointer moves can be coalesced while decoding. Honor the release
                // position even when the final move was not delivered.
-               if (scrubbing.current === event.pointerId) onSeek(scrubTarget(event.clientX));
+               if (scrubbing.current === event.pointerId) onSeek(scrubTarget(event.clientX), false, false, undefined, pointAt(event.clientX));
                setPanActive(false);
                panning.current = null;
                scrubbing.current = null;

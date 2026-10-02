@@ -161,6 +161,12 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
       video.dynamicHdr ||= sideData.some((item) => isDynamicHdrMetadata(item["side_data_type"]));
    }
    if (!video || video.width <= 0) throw new Error("This file does not contain a video track.");
+   // Still images probe as a one-frame video stream at a nominal rate. Nothing trimmable
+   // fits in under two frames, so refuse the import instead of letting export discover it.
+   {
+      const frames = video.frameRate > 0 ? duration * video.frameRate : duration < 0.1 ? 1 : Infinity;
+      if (frames < 1.5) throw new Error("This file is a still image, not a video.");
+   }
    const startOffset = Number(result.format.start_time) || 0;
    const videoDuration = Number(result.streams.find((stream) => stream.index === video.index)?.duration);
    const videoStart = video.startTime - startOffset;

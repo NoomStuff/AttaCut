@@ -3,24 +3,11 @@ import type { AvailableUpdate, UpdateStatus } from "../../../shared/types";
 import { errorText } from "../lib/errors";
 import { UpdateChip } from "./UpdateChip";
 
-/** Update availability, download events and actions have one owner. */
-export function AppUpdate({ ready, onError }: { ready: boolean; onError: (message: string) => void }) {
-   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
+/** Update availability, download events and actions have one owner. Availability comes from
+    App so the Help menu's "Check for updates" and the chip share one result. */
+export function AppUpdate({ update, onError }: { update: AvailableUpdate | null; onError: (message: string) => void }) {
    const [status, setStatus] = useState<UpdateStatus | null>(null);
    useEffect(() => window.desktop.onUpdateStatus(setStatus), []);
-   useEffect(() => {
-      if (!ready) return;
-      let active = true;
-      void window.desktop
-         .checkForUpdate()
-         .then((value) => {
-            if (active) setUpdate(value);
-         })
-         .catch(() => {});
-      return () => {
-         active = false;
-      };
-   }, [ready]);
    if (!update) return null;
    const failure = (value: unknown) => setStatus({ phase: "error", version: update.version, percent: null, message: errorText(value) });
    return (

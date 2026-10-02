@@ -8,7 +8,7 @@ import { useAppearance } from "./lib/appearance";
 import { useDesktopLifecycle } from "./lib/desktopLifecycle";
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
-import type { MediaSource, ExportJob, SavedSession } from "../../shared/types";
+import type { MediaSource, ExportJob, SavedSession, AvailableUpdate } from "../../shared/types";
 import { primaryVideo } from "../../shared/media";
 import { defaultPreferences } from "../../shared/defaults";
 import { clamp } from "../../shared/time";
@@ -53,7 +53,16 @@ import { useTemporarySnapping } from "./lib/temporarySnapping";
 import { errorText } from "./lib/errors";
 import { useExitValue, usePressFeedback } from "./lib/motion";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faScissors, faFolderOpen, faMinus, faSquare, faXmark, faCircleExclamation, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
+import {
+   faScissors,
+   faFolderOpen,
+   faMinus,
+   faSquare,
+   faXmark,
+   faCircleExclamation,
+   faCircleInfo,
+   faTriangleExclamation,
+} from "@fortawesome/free-solid-svg-icons";
 
 const loadFramePanel = () => import("./components/FramePanel").then((module) => ({ default: module.FramePanel }));
 const FramePanel = lazy(loadFramePanel);
@@ -89,9 +98,33 @@ export default function App() {
    const [menu, setMenu] = useState<string | null>(null);
    const [confirmReset, setConfirmReset] = useState(false);
    const [loading, setLoading] = useState(false);
-   const [error, setError] = useState<{ text: string; tone: "error" | "warning" } | null>(null);
+   const [error, setError] = useState<{ text: string; tone: "error" | "warning" | "info" } | null>(null);
    /** Errors interrupt work and deserve the red banner; warnings only explain a recoverable state. */
    const showError = useCallback((message: string | null) => setError(message === null ? null : { text: message, tone: "error" }), []);
+   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
+   // The startup check stays quiet; only an explicit check reports when nothing was found.
+   useEffect(() => {
+      if (!ready) return;
+      let active = true;
+      void window.desktop
+         .checkForUpdate()
+         .then((value) => {
+            if (active) setUpdate(value);
+         })
+         .catch(() => {});
+      return () => {
+         active = false;
+      };
+   }, [ready]);
+   const checkForUpdates = useCallback(() => {
+      void window.desktop
+         .checkForUpdate()
+         .then((value) => {
+            setUpdate(value);
+            if (!value) setError({ text: "You're on the latest version of AttaCut.", tone: "info" });
+         })
+         .catch((value: unknown) => showError(errorText(value)));
+   }, [showError]);
    const [restore, setRestore] = useState<SavedSession | null>(null);
    const [project, setProject] = useState<SavedSession["project"]>();
    const projectRef = useRef(project);
@@ -203,11 +236,14 @@ export default function App() {
       remember(selectedClip(document));
       dispatch({ type: "commit", document, ...(group ? { group } : {}) });
    };
-   const seek = (time: number, preservePriority = false, glide = false, side?: "start" | "end") => {
+   const seek = (time: number, preservePriority = false, glide = false, side?: "start" | "end", hover?: number) => {
       if (!source) return;
       const target = clamp(time, 0, source.duration);
+      // `hover` is the unquantized pointer position. At frame level the quantized target can
+      // sit exactly on a join, where the hovered side is the only thing that says which clip
+      // the user is actually over.
       if (!trimmingRef.current && !preservePriority) {
-         priority.move(editor.document, target);
+         priority.move(editor.document, clamp(hover ?? target, 0, source.duration));
          refreshPriority();
       }
       playback.previewEnd = null;
@@ -345,6 +381,8 @@ export default function App() {
             // instead of echoing stat, errno, or ffprobe strings.
             if (/no such file or directory/i.test(message)) {
                setError({ text: `"${name}" was moved or changed and can't be found.`, tone: "warning" });
+            } else if (/still image/i.test(message)) {
+               setError({ text: `"${name}" is a still image. AttaCut trims videos, so still images can't be opened.`, tone: "warning" });
             } else if (/invalid data found when processing input|moov atom not found|does not contain a video track|no usable video duration/i.test(message)) {
                setError({
                   text: `"${name}" doesn't look like a working video. It may be damaged, incomplete, or in a format AttaCut can't read.`,
@@ -406,9 +444,14 @@ export default function App() {
       closeProject(false);
       setPreferences(defaultPreferences);
    };
+   // The export panel must never show its loader behind a click, and the idle prefetch
+   // below waits out preview preparation first. Import it eagerly once a source exists.
+   useEffect(() => {
+      if (source) void loadExportPanel();
+   }, [source]);
    useEffect(() => {
       if (!ready || loading || preparing) return;
-      return prefetchModules([loadExportPanel, loadSettingsPanel, loadFramePanel, loadHelpPanel, loadAboutPanel]);
+      return prefetchModules([loadSettingsPanel, loadFramePanel, loadHelpPanel, loadAboutPanel]);
    }, [ready, loading, preparing]);
    const { keyframes, reading: readingKeys } = useKeyframes({ source, snapping, loading, preparing, videoRef, onError: showError });
    useDesktopLifecycle({
@@ -542,7 +585,7 @@ export default function App() {
       void window.desktop
          .frameTime(id, from, direction)
          .then((target) => {
-            if (sequence === frameSequence.current && sourceRef.current?.id === id) seek(target, false, false, "start");
+            if (sequence === frameSequence.current && sourceRef.current?.id === id) seek(target, false, true, "start");
          })
          .catch((value: unknown) => {
             if (sourceRef.current?.id === id) showError(errorText(value));
@@ -742,6 +785,7 @@ export default function App() {
          },
       },
       about: { enabled: () => ready, run: () => openPanel("about") },
+      updates: { enabled: () => ready, run: () => checkForUpdates() },
    });
    // Panel dialogs guard themselves: the command handler checks the live dialog state, so the
    // panel's exit fade never blocks shortcuts. Only the menu needs the React-side flag.
@@ -756,7 +800,7 @@ export default function App() {
       File: [["open"], ["frame", "export"], ["saveProject", "saveProjectAs", "closeProject"], ["quit"]],
       Edit: [["undo", "redo"], ["split", "merge"], ["setStart", "setEnd", "add", "delete"], ["preview"], ["settings"]],
       View: [["zoomIn", "zoomOut", "fit", "focusClip"], ["preview"], ["fullscreen"]],
-      Help: [["help", "shortcuts"], ["releases", "about"], ["reset"]],
+      Help: [["help", "shortcuts", "about"], ["updates", "releases"], ["reset"]],
    };
    const errorPresence = useExitValue(error, 190);
    return (
@@ -790,7 +834,7 @@ export default function App() {
                   {projectDirty ? "* " : ""}
                   {projectName ?? source?.name ?? "New cut"}
                </span>
-               <AppUpdate ready={ready} onError={showError} />
+               <AppUpdate update={update} onError={showError} />
                {!mac && (
                   <div className="window-controls">
                      <button aria-label="Minimize window" onClick={() => window.desktop.windowAction("minimize")}>
@@ -844,10 +888,18 @@ export default function App() {
             {errorPresence.mounted && errorPresence.value && (
                <div className={`error-wrap${errorPresence.closing ? " closing" : ""}`}>
                   <div
-                     className={`error-banner${errorPresence.value.tone === "warning" ? " warning" : ""}`}
-                     role={errorPresence.value.tone === "warning" ? "status" : "alert"}
+                     className={`error-banner${errorPresence.value.tone === "warning" ? " warning" : errorPresence.value.tone === "info" ? " info" : ""}`}
+                     role={errorPresence.value.tone === "error" ? "alert" : "status"}
                   >
-                     <FontAwesomeIcon icon={errorPresence.value.tone === "warning" ? faTriangleExclamation : faCircleExclamation} />
+                     <FontAwesomeIcon
+                        icon={
+                           errorPresence.value.tone === "warning"
+                              ? faTriangleExclamation
+                              : errorPresence.value.tone === "info"
+                                ? faCircleInfo
+                                : faCircleExclamation
+                        }
+                     />
                      <span>{errorPresence.value.text}</span>
                      {restore && (
                         <Button

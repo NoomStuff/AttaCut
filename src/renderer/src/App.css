@@ -219,6 +219,11 @@
    background: color-mix(in srgb, var(--warning) 10%, var(--background));
    color: var(--warning);
 }
+/* Neutral notices, like the answer to an explicit "Check for updates". */
+.error-banner.info {
+   background: color-mix(in srgb, var(--accent) 10%, var(--background));
+   color: var(--accent);
+}
 @keyframes banner-in {
    from {
       opacity: 0;
@@ -245,6 +250,9 @@
 }
 .error-banner.warning > button:hover:not(:disabled) {
    background: var(--warning-hover);
+}
+.error-banner.info > button:hover:not(:disabled) {
+   background: var(--accent-press);
 }
 :root[data-keyboard] .error-banner > button:focus-visible {
    outline-color: currentColor;

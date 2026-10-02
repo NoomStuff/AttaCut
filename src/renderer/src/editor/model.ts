@@ -191,6 +191,8 @@ export function mergeClips(document: EditDocument, index: number): EditDocument 
 /** Interaction memory is independent of selection and survives deletion until the next move/edit. */
 export class ClipPriority {
    private last: Clip | undefined;
+   private lastTime: number | null = null;
+   private direction: -1 | 0 | 1 = 0;
    remember(clip: Clip | undefined): void {
       this.last = clip;
    }
@@ -200,9 +202,17 @@ export class ClipPriority {
       if (interior) return interior;
       const remembered = document.clips.find((clip) => clip.id === this.last?.id) ?? (includeDeleted ? this.last : undefined);
       if (remembered && contains(remembered)) return remembered;
-      return document.clips.find(contains);
+      const candidates = document.clips.filter(contains);
+      // A shared boundary belongs to the end of one clip and the start of the next, so the
+      // playhead's position alone has no winner. Keep the clip the playhead moved across to
+      // reach it: a forward seek highlights the earlier clip, a backward one the later. This
+      // only decides the tie; scrubbing normally resolves it through the hovered position.
+      if (candidates.length > 1 && this.direction !== 0) return this.direction > 0 ? candidates[0]! : candidates.at(-1)!;
+      return candidates[0];
    }
    move(document: EditDocument, time: number): void {
+      if (this.lastTime !== null && time !== this.lastTime) this.direction = time > this.lastTime ? 1 : -1;
+      this.lastTime = time;
       const candidates = document.clips.filter((clip) => time >= clip.start - timeEpsilon && time <= clip.end + timeEpsilon);
       // A clear gap starts a fresh interaction. At an edge, preserve the previous choice.
       if (!candidates.length) this.last = undefined;

@@ -10,8 +10,12 @@ export const clipSchema = z
    .refine((clip) => clip.end > clip.start, "A clip must have a positive duration.");
 export type Clip = z.infer<typeof clipSchema>;
 
+/** Sanity bound for saved documents; frame-slicing long recordings can legitimately stack
+    hundreds of clips, so the ceiling stays far above normal use. */
+const clipLimit = 1000;
+
 const savedDocumentShape = {
-   clips: z.array(clipSchema).max(500),
+   clips: z.array(clipSchema).max(clipLimit),
    selectedId: z.string().nullable(),
 };
 const savedDocumentInvariant = (document: { clips: Clip[]; selectedId: string | null }): boolean =>
@@ -33,7 +37,7 @@ export const savedSessionSchema = z
             path: z.string().min(1),
             savedClips: z
                .array(clipSchema)
-               .max(500)
+               .max(clipLimit)
                .refine((clips) => savedDocumentInvariant({ clips, selectedId: null }), "Saved project clips are inconsistent."),
          })
          .optional(),

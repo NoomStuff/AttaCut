@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faArrowUpFromBracket, faCircleExclamation, faCheck, faXmark, faFolderOpen, faPlay } from "@fortawesome/free-solid-svg-icons";
 import type { ExportJob, JobItem } from "../../../shared/types";
+import { formatTime } from "../../../shared/time";
 import { Button, IconButton } from "./Controls";
 import { errorText } from "../lib/errors";
 import { explainExportError } from "../lib/exportErrors";
@@ -108,9 +109,11 @@ export function JobProgress({
                   <IconButton icon={faXmark} label="Dismiss export status" onClick={dismissSuccess} />
                </div>
                <div className="job-actions">
-                  <Button icon={faPlay} onClick={() => openFirst("openOutput")}>
-                     {completed.length === 1 ? "Open file" : "Open first file"}
-                  </Button>
+                  {completed.length === 1 && (
+                     <Button icon={faPlay} onClick={() => openFirst("openOutput")}>
+                        Open file
+                     </Button>
+                  )}
                   <Button icon={faFolderOpen} onClick={() => openFirst("revealOutput")}>
                      Show in folder
                   </Button>
@@ -125,7 +128,13 @@ export function JobProgress({
                   </span>
                   <div>
                      <strong>{failures.some((item) => item.status === "failed") ? "Export failed" : "Export cancelled"}</strong>
-                     <small>{failures.length === 1 ? "1 file was not exported" : `${failures.length} files were not exported`}</small>
+                     <small>
+                        {job.items.length === 1
+                           ? "The video was not exported"
+                           : failures.length === 1
+                             ? "1 file was not exported"
+                             : `${failures.length} files were not exported`}
+                     </small>
                   </div>
                   <IconButton icon={faXmark} label="Dismiss export errors" onClick={dismissFailures} />
                </div>
@@ -156,7 +165,7 @@ export function JobProgress({
                            .catch((value: unknown) => onError(errorText(value)));
                      }}
                   >
-                     Retry files
+                     {job.items.length === 1 ? "Retry video" : "Retry files"}
                   </Button>
                </div>
             </aside>
@@ -175,6 +184,11 @@ function Failure({ item }: { item: JobItem }) {
    return (
       <div className="job-failure-item">
          <b>{item.name}</b>
+         {item.start !== undefined && item.end !== undefined && (
+            <small>
+               Source {formatTime(item.start)} to {formatTime(item.end)}
+            </small>
+         )}
          <p>{explanation}</p>
          {item.error && item.error !== explanation && item.status !== "cancelled" && (
             <details>
