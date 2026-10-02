@@ -11,7 +11,8 @@ export async function provisionMedia(): Promise<{ FFMPEG_PATH: string; FFPROBE_P
    const folder = await mkdtemp(resolve("work/media-toolchain-"));
    for (const archive of archives) {
       const path = join(folder, basename(new URL(archive.url).pathname));
-      // curl retries transient HTTP/connection failures and truncates partial downloads.
+      // curl retries on every error (--retry alone skips mid-transfer protocol
+      // failures like flaky HTTP/2 hosts); the checksum below catches bad data.
       execFileSync(
          process.platform === "win32" ? "curl.exe" : "curl",
          [
@@ -21,7 +22,7 @@ export async function provisionMedia(): Promise<{ FFMPEG_PATH: string; FFPROBE_P
             "--silent",
             "--retry",
             "4",
-            "--retry-connrefused",
+            "--retry-all-errors",
             "--retry-max-time",
             "600",
             "--connect-timeout",
