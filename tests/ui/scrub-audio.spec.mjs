@@ -15,7 +15,8 @@ test("default audio scrubbing auditions a held snapped cut once and hover stays 
          return start.apply(this, args);
       };
    });
-   await page.getByRole("button", { name: "Playback settings", exact: true }).click();
+   await page.getByRole("button", { name: "Settings", exact: true }).click();
+   await page.getByRole("tab", { name: "Editing" }).click();
    await expect(page.getByRole("switch", { name: "Audio scrubbing", exact: true })).toBeChecked();
    await page.keyboard.press("Escape");
    await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });

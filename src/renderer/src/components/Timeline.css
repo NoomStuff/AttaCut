@@ -5,11 +5,21 @@
 .timeline-viewport {
    position: relative;
    height: 58px;
-   margin: 4px 7px 0;
+   margin: 4px 0 0;
    cursor: crosshair;
    touch-action: none;
    /* Generous top inset so the drag-duration readout floats above the ruler unclipped. */
    clip-path: inset(-26px 0 -24px);
+}
+/* Each clip paints its own on-screen slice of audio, tinted with the clip color and kept
+   under the clip number and keyframe ticks. Left and width come from the render, tracking
+   the part of the clip the view can actually see. */
+.clip-waveform {
+   position: absolute;
+   top: 0;
+   height: 100%;
+   color: var(--clip-color);
+   pointer-events: none;
 }
 /* Invisible scrub extension below the viewport: extra grab area without shifting any
    visuals. Hits here reach the viewport's own pointer handlers. */

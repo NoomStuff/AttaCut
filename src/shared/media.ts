@@ -57,3 +57,8 @@ export interface ScrubAudio {
    sampleRate: number;
    pcm: ArrayBuffer;
 }
+/** Timeline waveform resolution and the decimated levels built from it. The finest level
+    keeps one min/max pair per millisecond; each coarser level folds ten of the level below. */
+export const waveformRate = 1000;
+export const waveformLevels = [1000, 100, 10, 1];
+export const waveformSampleRate = 16000;

@@ -12,6 +12,7 @@ import { clamp, formatTime } from "../../../shared/time";
 import { resolveBoundary, snapPlayhead, stepBoundary } from "../editor/navigation";
 import { IconButton } from "./Controls";
 import { pointerSmoothingMs, useSmoothValue } from "../lib/motion";
+import { drawWaveformBand, waveformDuration, type Waveform } from "../lib/waveform";
 import { faCaretLeft, faCaretRight, faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 
@@ -32,6 +33,8 @@ interface TimelineProps {
    keyframes: number[];
    snapping: boolean;
    playing: boolean;
+   /** Audio peaks for the per-clip waveforms; null while hidden or still resolving. */
+   waveform: Waveform | null;
    onSelect: (id: string) => void;
    onCommit: (document: EditDocument, group?: string) => void;
    /** `hover` carries the unquantized pointer position so boundary picks can tell which side
@@ -61,6 +64,7 @@ export function Timeline({
    keyframes,
    snapping,
    playing,
+   waveform,
    onSelect,
    onCommit,
    onSeek,
@@ -510,6 +514,13 @@ export function Timeline({
                         } as CSSProperties
                      }
                   >
+                     {(() => {
+                        if (!waveform) return null;
+                        const visibleFrom = Math.max(start, drawn.start);
+                        const visibleTo = Math.min(end, drawn.start + drawn.length);
+                        if (visibleTo <= visibleFrom) return null;
+                        return <ClipWaveform waveform={waveform} start={start} visibleFrom={visibleFrom} visibleTo={visibleTo} pxPerSecond={pxPerSecond} />;
+                     })()}
                      <span className="clip-number" aria-hidden="true">
                         {String(index + 1).padStart(2, "0")}
                      </span>
@@ -608,11 +619,13 @@ export function Timeline({
          pop,
          tickExit,
          pxPerSecond,
+         drawn.start,
          drawn.length,
          frameStep,
          frameLevel,
          duration,
          document,
+         waveform,
          onSelect,
          onCommit,
          onSeek,
@@ -780,6 +793,125 @@ export function Timeline({
             />
          </div>
       </section>
+   );
+}
+// Each clip paints its own audio band, tinted with the clip color. Canvases share the band
+// painter: one column per device pixel, a min/max frame around an RMS core, the level
+// chosen by zoom, and a gradient-softened reveal edge while the audio decodes.
+function useWaveformCanvas(waveform: Waveform | null, draw: () => void, redraw?: () => void) {
+   const revealed = useRef(0);
+   const paint = useRef<() => void>(() => {});
+   paint.current = draw;
+   const repaint = useRef<() => void>(redraw ?? draw);
+   repaint.current = redraw ?? draw;
+   // Repaint on every render of the owner: view moves, clip geometry, and new peak data
+   // all arrive as renders, and the canvas has no other input. Theme and accent changes
+   // recolor through CSS variables without a render, so they force a repaint.
+   useEffect(() => {
+      paint.current();
+   });
+   useEffect(() => {
+      const observer = new MutationObserver(() => repaint.current());
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-theme"] });
+      return () => observer.disconnect();
+   }, []);
+   useEffect(() => {
+      if (!waveform) return;
+      // A finished waveform never animates: clips entering the view while panning or
+      // zooming out must paint instantly, not replay the loading sweep.
+      if (waveform.filled >= 1) {
+         revealed.current = 1;
+         paint.current();
+         return;
+      }
+      // A new decode restarts the sweep from the left edge.
+      if (waveform.filled < revealed.current) revealed.current = 0;
+      let frame = 0;
+      let last = performance.now();
+      const step = (now: number) => {
+         const dt = Math.min(0.1, (now - last) / 1000);
+         last = now;
+         const current = revealed.current;
+         revealed.current = current + (waveform.filled - current) * Math.min(1, dt * 4);
+         paint.current();
+         const settled = waveform.filled >= 1 ? revealed.current > 0.995 : revealed.current >= waveform.filled - 0.002;
+         if (settled) {
+            revealed.current = waveform.filled;
+            paint.current();
+         } else frame = requestAnimationFrame(step);
+      };
+      if (revealed.current < waveform.filled - 0.002 || waveform.filled < 1) frame = requestAnimationFrame(step);
+      return () => cancelAnimationFrame(frame);
+   }, [waveform]);
+   return revealed;
+}
+function ClipWaveform({
+   waveform,
+   start,
+   visibleFrom,
+   visibleTo,
+   pxPerSecond,
+}: {
+   waveform: Waveform;
+   start: number;
+   visibleFrom: number;
+   visibleTo: number;
+   pxPerSecond: number;
+}) {
+   const canvasRef = useRef<HTMLCanvasElement>(null);
+   const ratio = window.devicePixelRatio || 1;
+   // Pixels cover only the on-screen slice of the clip. At deep zoom the clip itself spans
+   // tens of thousands of CSS pixels: a canvas that wide blows past the browser's texture
+   // limits (turning the clip solid white) and drags every frame down with it. The box and
+   // the bitmap share one device-pixel grid, so zooming never resamples the drawing and
+   // the waveform holds still instead of jittering.
+   const px = pxPerSecond * ratio;
+   const leftDevice = Math.max(0, Math.round((visibleFrom - start) * px));
+   const width = Math.max(1, Math.round((visibleTo - visibleFrom) * px));
+   // Zoom tweens re-render every frame while the quantized geometry barely moves; a repaint
+   // that would draw the same pixels is skipped, which keeps waveform zooms cheap.
+   const lastPaint = useRef("");
+   const draw = (force = false) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const signature = force ? `${Math.random()}` : `${leftDevice}|${width}|${revealed.current.toFixed(3)}|${waveform.filled}`;
+      if (!force && signature === lastPaint.current) return;
+      lastPaint.current = signature;
+      const height = Math.round(23 * ratio);
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      drawWaveformBand({
+         context,
+         waveform,
+         from: start + leftDevice / px,
+         to: start + (leftDevice + width) / px,
+         width,
+         height,
+         color: getComputedStyle(canvas).color,
+         revealedSeconds: revealed.current * waveformDuration(waveform),
+         fadeSeconds: Math.min(1.5, (visibleTo - visibleFrom) / 4),
+         alpha: 0.55,
+      });
+   };
+   const revealed = useWaveformCanvas(
+      waveform,
+      () => draw(),
+      () => draw(true)
+   );
+   return (
+      <canvas
+         ref={canvasRef}
+         className="clip-waveform"
+         aria-hidden="true"
+         style={{
+            // Offsets resolve against the clip's own box, so the slice maps clip-locally,
+            // quantized to whole device pixels to match the bitmap exactly.
+            left: `${leftDevice / ratio}px`,
+            width: `${width / ratio}px`,
+         }}
+      />
    );
 }
 // The playhead and time chip are the only per-frame UI in the timeline, so they subscribe to

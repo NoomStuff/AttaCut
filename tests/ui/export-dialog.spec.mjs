@@ -138,3 +138,39 @@ test("export names, selection and destination confirmations persist", async ({ l
    await expect(page.getByRole("checkbox", { name: "Export clip 2", exact: true })).not.toBeChecked();
    console.log("Export persistence, missing folder, cancel and overwrite passed");
 });
+
+test("duplicate clip names block the export instead of being rewritten", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const viewport = await page.locator(".timeline-viewport").boundingBox();
+   await page.mouse.click(viewport.x + viewport.width / 2, viewport.y + 36);
+   await page.keyboard.press("s");
+   await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toBeVisible();
+   await page.getByRole("button", { name: "Export", exact: true }).click();
+   const dialog = page.getByRole("dialog", { name: "Export clips" });
+   await dialog.waitFor();
+   await expect(dialog.getByRole("button", { name: "Export 2 clips" })).toBeEnabled();
+   const first = dialog.getByRole("textbox", { name: "Clip 1 filename", exact: true });
+   const second = dialog.getByRole("textbox", { name: "Clip 2 filename", exact: true });
+   await first.fill("same-name");
+   await second.fill("same-name");
+   // Both rows turn dangerous and the export locks; nothing is renamed behind the user's back.
+   await expect(dialog.getByRole("img", { name: "Another clip exports to this name" })).toHaveCount(2);
+   await expect(dialog.getByText("Some clips export to the same file name")).toBeVisible();
+   await expect(dialog.getByRole("button", { name: "Export 2 clips" })).toBeDisabled();
+   // File systems compare case-insensitively, so this still collides.
+   await second.fill("Same-Name");
+   await expect(dialog.getByRole("button", { name: "Export 2 clips" })).toBeDisabled();
+   await second.fill("other-name");
+   await expect(dialog.getByRole("img", { name: "Another clip exports to this name" })).toHaveCount(0);
+   await expect(dialog.getByRole("button", { name: "Export 2 clips" })).toBeEnabled();
+   // Clearing a field stays empty while typing; leaving it empty hands the name back to
+   // the template on blur.
+   await first.fill("");
+   await expect(first).toHaveValue("");
+   await expect(first).toBeFocused();
+   await first.press("Tab");
+   await expect(first).toHaveValue("fixture (1)");
+   await expect(dialog.getByRole("button", { name: "Export 2 clips" })).toBeEnabled();
+});

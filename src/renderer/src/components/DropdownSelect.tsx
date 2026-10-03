@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { faCheck, faChevronDown } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -40,6 +40,20 @@ export function DropdownSelect({
    const root = useRef<HTMLDivElement>(null);
    const tooltipId = useId();
    const presence = useExitValue(open ? true : null, 120);
+   // Menus anchor to the trigger's left edge by default; when that would push them past
+   // the surrounding dialog or the window, they flip to the trigger's right edge instead.
+   // The dialog matters: a menu hanging off the settings modal reads as broken even when
+   // the window has room to spare.
+   const [flipped, setFlipped] = useState(false);
+   useLayoutEffect(() => {
+      if (!open || !presence.mounted) return;
+      const trigger = root.current?.querySelector(".select-trigger")?.getBoundingClientRect();
+      const menu = root.current?.querySelector(".select-menu");
+      if (!trigger || !menu) return;
+      const dialog = root.current?.closest("dialog")?.getBoundingClientRect();
+      const limit = Math.min(dialog ? dialog.right - 14 : Number.POSITIVE_INFINITY, window.innerWidth - 12);
+      setFlipped(trigger.right + menu.getBoundingClientRect().width > limit);
+   }, [open, presence.mounted]);
    useEffect(() => {
       if (!open) return;
       // Presence mounts after open changes. Focus once the list actually exists.
@@ -85,7 +99,7 @@ export function DropdownSelect({
       </button>
    );
    return (
-      <div className={`custom-select ${placement} ${className}`} ref={root}>
+      <div className={`custom-select ${placement}${flipped ? " flip" : ""} ${className}`} ref={root}>
          {tooltip ? (
             <TooltipHost>
                {triggerButton}

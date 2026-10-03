@@ -226,6 +226,10 @@
    opacity: 0;
    pointer-events: none;
 }
+.export-conflict-indicator[data-tone="danger"] {
+   color: var(--danger);
+}
+
 .export-conflict-indicator[data-state="visible"] {
    pointer-events: auto;
    animation: export-conflict-in 220ms ease-out both;

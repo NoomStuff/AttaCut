@@ -5,7 +5,14 @@ import { audioTrackLabel } from "../playback/audioSelection";
 import { DropdownSelect } from "./DropdownSelect";
 
 export function AudioPicker({ tracks, selected, onSelect }: { tracks: MediaStream[]; selected: number[]; onSelect: (indices: number[]) => void }) {
-   const all = selected.length === tracks.length;
+   // One chosen track reads as its number; several show how many of the total play, since
+   // "2" alone is ambiguous between the second track and two tracks. Every track is "All".
+   const label =
+      selected.length === tracks.length
+         ? "All"
+         : selected.length === 1
+           ? String(tracks.findIndex((track) => track.index === selected[0]) + 1)
+           : `${selected.length}/${tracks.length}`;
    return (
       <DropdownSelect
          label="Preview audio tracks"
@@ -21,7 +28,7 @@ export function AudioPicker({ tracks, selected, onSelect }: { tracks: MediaStrea
          trigger={
             <>
                <FontAwesomeIcon icon={faHeadphones} />
-               <b>{all ? "All" : selected.length}</b>
+               <b>{label}</b>
             </>
          }
       />

@@ -4,6 +4,7 @@ import { packetsAround, probeSource, sourceFrames, sourceKeyframes, setSourceLif
 import type { ProbedSource } from "./media/probe.ts";
 import { preparePreview, leasePreview, releasePreview } from "./media/preview.ts";
 import { extractScrubPcm, scrubChunkSeconds } from "./media/scrub-audio.ts";
+import { extractWaveform } from "./media/waveform.ts";
 
 /** Owns the active source. Export plans retain their own immutable source reference. */
 export class SourceSession {
@@ -11,10 +12,13 @@ export class SourceSession {
    private lifetime = new AbortController();
    private preview = new AbortController();
    private scrub = new AbortController();
+   private wave = new AbortController();
    private source: ProbedSource | null = null;
    private keys: Promise<number[]> | null = null;
    private pcm: { key: string; value: Promise<ScrubAudio | null> } | null = null;
    private previewFiles: string[] = [];
+   private previewAudio: number[] | null = null;
+   private previewPath: string | null = null;
    readonly mediaPaths = new Map<string, string>();
    private previewFolder: string;
    private previewReady: Promise<void>;
@@ -84,6 +88,8 @@ export class SourceSession {
       controller.signal.throwIfAborted();
       const result = await preparePreview(source, this.previewFolder, tracks, transcode, { signal: controller.signal });
       controller.signal.throwIfAborted();
+      this.previewAudio = [...tracks].sort((a, b) => a - b);
+      this.previewPath = result.path;
       this.mediaPaths.set(result.id, result.path);
       if (!this.previewFiles.includes(result.path)) {
          this.previewFiles.push(result.path);
@@ -114,11 +120,37 @@ export class SourceSession {
       this.pcm = { key, value };
       return value;
    }
+   cancelWaveform(): void {
+      this.wave.abort();
+   }
+   /** One waveform extraction at a time; `onChunk` streams completed peak ranges. */
+   /** The file a waveform should decode: the prepared preview when it carries exactly the
+       requested tracks (it is compact and indexed), otherwise the source itself. */
+   waveformDecodePath(tracks: number[]): string | undefined {
+      if (!this.previewAudio || !this.previewPath) return undefined;
+      const wanted = [...tracks].sort((a, b) => a - b);
+      if (wanted.length !== this.previewAudio.length || wanted.some((track, index) => track !== this.previewAudio![index])) return undefined;
+      return this.previewPath;
+   }
+   startWaveform(
+      id: string,
+      tracks: number[],
+      decodePath: string | undefined,
+      onChunk: (chunk: { offset: number; peaks: Uint8Array }) => void
+   ): Promise<{ peaks: Uint8Array } | null> {
+      const source = this.get(id);
+      this.cancelWaveform();
+      this.wave = new AbortController();
+      return extractWaveform(source, tracks, this.wave.signal, onChunk, decodePath ? { decodePath } : undefined);
+   }
    private release(): void {
       this.lifetime.abort();
       this.lifetime = new AbortController();
       this.cancelPreview();
       this.cancelScrub();
+      this.cancelWaveform();
+      this.previewAudio = null;
+      this.previewPath = null;
       this.keys = null;
       this.source = null;
       this.mediaPaths.clear();

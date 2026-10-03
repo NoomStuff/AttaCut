@@ -280,6 +280,12 @@ if (!ownsInstance) app.quit();
 else
    void start().catch((error: unknown) => {
       console.error(error);
+      // Hidden test windows cannot show this box sensibly: a native dialog from an
+      // invisible process dangles on the user's screen, so tests fail in the log only.
+      if (process.env["ATTACUT_TESTING"] === "1") {
+         app.exit(1);
+         return;
+      }
       dialog.showErrorBox("Could not start AttaCut", error instanceof Error ? error.message : String(error));
       app.exit(1);
    });

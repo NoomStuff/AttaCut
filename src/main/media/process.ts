@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import os from "node:os";
 import { scheduleMedia } from "./scheduler";
 import { recordDiagnostic } from "../diagnostics";
 import { appFailure } from "../failure";
@@ -28,6 +29,9 @@ export interface RunOptions {
    onLines?: ((line: string) => void) | undefined;
    /** Binary consumers own their bounded buffer; process lifetime remains shared. */
    onBytes?: (chunk: Buffer) => void;
+   /** Runs the child below normal OS priority, for work that must never compete with
+       interactive decodes or the preview transcode. */
+   belowNormal?: boolean;
 }
 /** ffmpeg and ffprobe stream progress or results continuously, so two minutes of total silence means a wedged decoder or stalled disk. */
 const defaultIdleTimeoutMs = 120_000;
@@ -52,6 +56,13 @@ function runChild(name: "ffmpeg" | "ffprobe", args: string[], options: RunOption
          return;
       }
       const child = spawn(binaryPath(name), args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+      if (options.belowNormal && child.pid) {
+         try {
+            os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
+         } catch {
+            /* The child may have exited already; scheduling politeness is best effort. */
+         }
+      }
       const idleLimit = options.idleTimeoutMs ?? defaultIdleTimeoutMs;
       let stdout = "";
       let stderr = "";

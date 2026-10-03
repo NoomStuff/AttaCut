@@ -4,7 +4,8 @@ import type { HelpTab } from "./HelpPanel";
 import { useEffect, useState } from "react";
 import { exportExtensionFor } from "../../../shared/export-format";
 import { formatTime } from "../../../shared/time";
-import { faArrowUpFromBracket, faCircleExclamation, faCircleInfo } from "@fortawesome/free-solid-svg-icons";
+import { sanitizeName } from "../../../shared/filename";
+import { faArrowUpFromBracket, faCircleExclamation, faCircleInfo, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
 import { OutputDirectoryField } from "./OutputDirectoryField";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { Button, Modal, Toggle } from "./Controls";
@@ -25,6 +26,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
       setAudioTracks,
       name,
       setName,
+      setRowName,
       normalizeName,
       rows,
       setRows,
@@ -33,6 +35,8 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
       replaceSourceChecked,
       setReplaceSourceChecked,
       conflicts,
+      dangers,
+      collisions,
       request,
       error,
       setError,
@@ -190,7 +194,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                                  onBlur={() => normalizeName()}
                                  onChange={(event) => setName(event.target.value)}
                               />
-                              <ConflictIndicator message={conflicts.get("combined") ?? null} />
+                              <ConflictIndicator message={conflicts.get("combined") ?? null} tone={dangers.get("combined") ? "danger" : "warning"} />
                            </span>
                            <span className="filename-extension">{source.exportExtension}</span>
                         </div>
@@ -239,7 +243,15 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                            separate: mode === "separate",
                            allAudio: audioTracks.length === sourceAudio.length,
                         });
-                        const conflict = mode === "separate" && row.included ? (conflicts.get(row.clip.id) ?? null) : null;
+                        // A batch collision outranks a disk conflict: it must be fixed before
+                        // Export unlocks, while a replace can still be confirmed.
+                        const collides = mode === "separate" && row.included && collisions.has(sanitizeName(row.name).toLowerCase());
+                        const conflict = collides
+                           ? "Another clip exports to this name"
+                           : mode === "separate" && row.included
+                             ? (conflicts.get(row.clip.id) ?? null)
+                             : null;
+                        const tone = collides || dangers.get(row.clip.id) ? "danger" : "warning";
                         return (
                            <div key={row.clip.id} className="export-clip-entry" data-included={row.included}>
                               <div className="export-row">
@@ -260,9 +272,9 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                                           value={row.name}
                                           onBlur={() => normalizeName(index)}
                                           disabled={starting}
-                                          onChange={(event) => setRows(rows.map((value, i) => (i === index ? { ...value, name: event.target.value } : value)))}
+                                          onChange={(event) => setRowName(index, event.target.value)}
                                        />
-                                       <ConflictIndicator message={conflict} />
+                                       <ConflictIndicator message={conflict} tone={tone} />
                                     </span>
                                  )}
                                  <span className="extension">{mode === "separate" ? extension : ""}</span>
@@ -281,6 +293,12 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
             </div>
             <div className="modal-footer">
                <div className="export-summary">
+                  {collisions.size > 0 && (
+                     <p className="export-note problem" role="alert">
+                        <FontAwesomeIcon icon={faTriangleExclamation} />
+                        <span>Some clips export to the same file name. Give each clip its own name.</span>
+                     </p>
+                  )}
                   {analysis && request.items.length > 0 && (
                      <p className={`export-note${problem ? " problem" : checked.some(substantialEncoding) || changes.length ? " warning" : ""}`}>
                         <FontAwesomeIcon icon={problem ? faCircleExclamation : faCircleInfo} />
@@ -315,7 +333,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
    );
 }
 
-function ConflictIndicator({ message }: { message: string | null }) {
+function ConflictIndicator({ message, tone = "warning" }: { message: string | null; tone?: "warning" | "danger" }) {
    const [hasAppeared, setHasAppeared] = useState(!!message);
    useEffect(() => {
       if (message) setHasAppeared(true);
@@ -324,12 +342,13 @@ function ConflictIndicator({ message }: { message: string | null }) {
       <span
          className="export-conflict-indicator"
          data-state={message ? "visible" : hasAppeared ? "leaving" : "hidden"}
+         data-tone={tone}
          role="img"
          aria-label={message ?? undefined}
          aria-hidden={!message}
          tabIndex={message ? 0 : -1}
       >
-         <FontAwesomeIcon icon={faCircleExclamation} />
+         <FontAwesomeIcon icon={tone === "danger" ? faTriangleExclamation : faCircleExclamation} />
          {message && (
             <span className="export-conflict-tooltip" role="tooltip">
                {message}

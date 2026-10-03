@@ -19,7 +19,7 @@ import type { CutAnalysis } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import { protectSource } from "./media/publish.ts";
 import { exportCombined } from "./media/combine.ts";
-import { sanitizeName } from "../shared/filename";
+import { duplicateNames, sanitizeName } from "../shared/filename";
 import { substantialEncoding } from "../shared/export-policy";
 import { waitForWork } from "./media/shared-work";
 import { appFailure } from "./failure";
@@ -122,14 +122,14 @@ export class ExportService {
       const settings = planRequestSchema.parse(request);
       const directoryPath = resolve(settings.directory);
       const names = outputNames(source, settings);
-      const conflictFor = async (path: string): Promise<string | null> => {
-         if (await protectSource(source.path, path, true)) return "Will replace the source video";
-         return (await exists(path)) ? "Will replace an existing file" : null;
+      const conflictFor = async (path: string): Promise<Omit<DestinationConflict, "clipId">> => {
+         if (await protectSource(source.path, path, true)) return { conflict: "Will replace the source video", danger: true };
+         return (await exists(path)) ? { conflict: "Will replace an existing file", danger: false } : { conflict: null, danger: false };
       };
-      if (settings.mode === "combined") return { items: [{ clipId: null, conflict: await conflictFor(join(directoryPath, names[0]!)) }] };
+      if (settings.mode === "combined") return { items: [{ clipId: null, ...(await conflictFor(join(directoryPath, names[0]!))) }] };
       const sorted = [...settings.items].sort((a, b) => a.clip.start - b.clip.start);
       const items: DestinationConflict[] = [];
-      for (const [index, item] of sorted.entries()) items.push({ clipId: item.clip.id, conflict: await conflictFor(join(directoryPath, names[index]!)) });
+      for (const [index, item] of sorted.entries()) items.push({ clipId: item.clip.id, ...(await conflictFor(join(directoryPath, names[index]!))) });
       return { items };
    }
    async plan(source: ProbedSource, request: PlanRequest): Promise<ExportPlan> {
@@ -145,6 +145,9 @@ export class ExportService {
       if (directory) await access(directoryPath, constants.W_OK);
       const names = outputNames(source, settings);
       const itemNames = settings.mode === "combined" ? outputNames(source, { ...settings, mode: "separate" }) : names;
+      // Two clips writing one file would silently lose the first; the panel blocks this
+      // live, and planning refuses it in case a stale request slips past.
+      if (settings.mode === "separate" && duplicateNames(names).size) throw new Error("Some clips export to the same file name. Give each clip its own name.");
       const cuts = await this.analyze(source, settings, signal);
       const analyses = new Map<string, CutAnalysis[]>();
       const items = [];

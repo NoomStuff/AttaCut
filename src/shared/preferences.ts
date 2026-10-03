@@ -26,11 +26,21 @@ export const preferencesSchema = z.object({
    keptOnly: z.boolean().default(false),
    keepPlaying: z.boolean().default(false),
    audioScrub: z.boolean().default(true),
+   // Hidden feature: the timeline waveform is parked until its load-time behavior holds up
+   // on real recordings. The stored value is intentionally ignored.
+   waveform: z
+      .boolean()
+      .default(false)
+      .transform(() => false),
    snapping: z.boolean().default(false),
    holdToSnap: z.enum(["Alt", "Shift", "Control", "none"]).default("Alt"),
    volume: z.number().min(0).max(1).default(0.7),
+   resume: z.boolean().default(true),
+   updateCheck: z.boolean().default(true),
    shortcuts: z.record(z.string(), z.array(z.string())).default({}),
    exportMode: z.enum(["separate", "combined"]).default("separate"),
+   clipNamePattern: z.string().default("{source} ({n})"),
+   combinedNamePattern: z.string().default("{source} (Trim)"),
    playbackAudio: audioSelectionPreferenceSchema.default({ mode: "default", sourceTrackCount: 0, tracks: [] }),
    exportAudio: audioSelectionPreferenceSchema.default({ mode: "default", sourceTrackCount: 0, tracks: [] }),
    frameFormat: z.enum(["png", "jpg"]).default("png"),

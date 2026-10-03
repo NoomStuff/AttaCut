@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { preferencesSchema } from "./preferences";
 import { savedSessionSchema } from "./editing";
-import { frameRequestSchema, frameTimeRequestSchema, scrubRequestSchema, previewRequestSchema } from "./media-requests";
+import { frameRequestSchema, frameTimeRequestSchema, scrubRequestSchema, previewRequestSchema, waveformRequestSchema } from "./media-requests";
 import { planRequestSchema, analyzeRequestSchema, exportApprovalSchema } from "./export";
 
 /** The main-process boundary validates these once before invoking a typed route. */
@@ -33,6 +33,8 @@ export const ipcRequestSchemas = {
    "preview:cancel": z.void(),
    "audio:scrub": scrubRequestSchema,
    "audio:cancel": z.void(),
+   "waveform:start": waveformRequestSchema,
+   "waveform:cancel": z.void(),
    "frame:export": frameRequestSchema,
    "export:plan": planRequestSchema,
    "export:check-destinations": planRequestSchema,

@@ -48,6 +48,8 @@ export function installMenu(window: BrowserWindow): void {
             item("Preview clip", "preview"),
             { type: "separator" },
             item("Fullscreen video", "fullscreen"),
+            { type: "separator" },
+            item("Settings…", "options"),
             ...(!isPackagedApp() ? [{ type: "separator" as const }, { role: "toggleDevTools" as const }] : []),
          ],
       },

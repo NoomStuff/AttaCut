@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { navigateTabs } from "../lib/tabs";
-import { faMoon, faSun, faDesktop, faCheck, faPlus, faXmark } from "@fortawesome/free-solid-svg-icons";
+import { faMoon, faSun, faDesktop, faCheck, faPlus, faXmark, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import type { Preferences } from "../../../shared/types";
+import type { Clip, MediaSource, Preferences } from "../../../shared/types";
+import { applyNamePattern, duplicateNames, hasNameToken, nameTokens } from "../../../shared/filename";
+import type { NamePatternContext } from "../../../shared/filename";
 import { commandDefinitions, bindingsFor, displayBinding, bindingFromEvent } from "../editor/commands";
 import type { CommandId } from "../editor/commands";
 import { Button, Modal, Toggle } from "./Controls";
@@ -18,20 +20,198 @@ const shortcutGroups = [...new Set(Object.values(commandDefinitions).map(({ grou
    commands: (Object.keys(commandDefinitions) as CommandId[]).filter((id) => commandDefinitions[id].group === group),
 }));
 
+const clipNamePresets = [
+   { value: "{source} ({n})", label: "Numbered" },
+   { value: "{source} {start}-{end}", label: "Timestamped" },
+];
+const mergedNamePresets = [
+   { value: "{source} (Trim)", label: "Default" },
+   { value: "{source} {start}-{end}", label: "Timestamped" },
+   { value: "{source} ({duration})", label: "Duration" },
+];
+
+// One naming pattern editor. The field edits the persisted pattern directly, the preset
+// picker covers the common shapes, and the token chips are always visible so building a
+// custom pattern never means hunting through a hidden panel. The example line uses the
+// open recording's real clips when there are any, and a fixed stand-in recording only
+// when there is nothing real to show. Patterns that would collide outputs, or name one
+// exactly like the source video, say so right here.
+function PatternEditor({
+   label,
+   ariaLabel,
+   value,
+   onChange,
+   presets,
+   kind,
+   source,
+   clips,
+}: {
+   label: string;
+   ariaLabel: string;
+   value: string;
+   onChange: (value: string) => void;
+   presets: { value: string; label: string }[];
+   kind: "clips" | "merged";
+   source: MediaSource | null;
+   clips: Clip[];
+}) {
+   const input = useRef<HTMLInputElement>(null);
+   // The field is uncontrolled on purpose: React never rewrites it while the user works,
+   // so the browser's own undo stack covers typing, backspacing, and inserted tokens
+   // alike, across focus changes. Outside changes (presets, reloads) land when idle.
+   useEffect(() => {
+      const element = input.current;
+      if (element && document.activeElement !== element && element.value !== value) element.value = value;
+   }, [value]);
+   const insert = (token: string) => {
+      const element = input.current;
+      if (!element) {
+         onChange(value + token);
+         return;
+      }
+      element.focus();
+      // Inserting through the editor command keeps the native undo stack, so Ctrl+Z
+      // removes an inserted token like any other typing.
+      const start = element.selectionStart ?? value.length;
+      const end = element.selectionEnd ?? start;
+      element.setSelectionRange(start, end);
+      if (!document.execCommand("insertText", false, token)) {
+         const next = value.slice(0, start) + token + value.slice(end);
+         element.value = next;
+         onChange(next);
+         element.setSelectionRange(start + token.length, start + token.length);
+      }
+   };
+   const date = new Date();
+   const stem = source && hasNameToken(value) ? source.name.slice(0, -source.extension.length) : null;
+   const contexts: NamePatternContext[] =
+      kind === "clips"
+         ? clips.length > 0
+            ? [
+                 {
+                    source: stem ?? "recording",
+                    index: 0,
+                    count: clips.length,
+                    start: clips[0]!.start,
+                    end: clips[0]!.end,
+                    total: source?.duration ?? 0,
+                    date,
+                 },
+              ]
+            : [0, 1, 2].map((index) => ({
+                 source: "my-recording",
+                 index,
+                 count: 5,
+                 start: 312.4 + index * 102.5,
+                 end: 402.1 + index * 102.5,
+                 total: 634.8,
+                 date,
+              }))
+         : clips.length > 0
+           ? [
+                {
+                   source: stem ?? "recording",
+                   index: 0,
+                   count: 1,
+                   start: Math.min(...clips.map((clip) => clip.start)),
+                   end: Math.max(...clips.map((clip) => clip.end)),
+                   total: source?.duration ?? 0,
+                   date,
+                },
+             ]
+           : [{ source: "my-recording", index: 0, count: 1, start: 312.4, end: 498.8, total: 634.8, date }];
+   const names = contexts.map((context) => applyNamePattern(value, context));
+   // A scheme that hands several clips one name, or reuses the source's own name, would
+   // collide at export; say so before the user ever opens the panel.
+   const everyClipName =
+      kind === "clips" && clips.length > 0
+         ? clips.map((clip, index) =>
+              applyNamePattern(value, {
+                 source: stem ?? "recording",
+                 index,
+                 count: clips.length,
+                 start: clip.start,
+                 end: clip.end,
+                 total: source?.duration ?? 0,
+                 date,
+              })
+           )
+         : [];
+   const collision = duplicateNames(names).size > 0 || duplicateNames(everyClipName).size > 0;
+   const overwritten = stem !== null && names.some((name) => name.toLowerCase() === stem.toLowerCase());
+   const warning = collision
+      ? "This pattern gives several clips the same file name."
+      : overwritten
+        ? "This pattern names an output exactly like the source video."
+        : null;
+   const preset = presets.find((entry) => entry.value === value);
+   return (
+      <div className="pattern-editor">
+         <div className="pattern-head">
+            <span>{label}</span>
+            <DropdownSelect
+               label={`${label} preset`}
+               options={presets}
+               value={[preset?.value ?? ""]}
+               onChange={(values) => onChange(values[0] ?? value)}
+               trigger={preset?.label ?? "Custom"}
+            />
+         </div>
+         <span className="pattern-input">
+            <input
+               ref={input}
+               aria-label={ariaLabel}
+               defaultValue={value}
+               aria-invalid={warning ? true : undefined}
+               aria-describedby={warning ? `${ariaLabel}-warning` : undefined}
+               onInput={(event) => onChange(event.currentTarget.value)}
+            />
+            {warning && (
+               <span className="pattern-warning-icon" role="img" aria-label={warning} tabIndex={0}>
+                  <FontAwesomeIcon icon={faTriangleExclamation} />
+                  <span className="pattern-warning-tooltip" role="tooltip" id={`${ariaLabel}-warning`}>
+                     {warning}
+                  </span>
+               </span>
+            )}
+         </span>
+         <div className="pattern-tokens" role="group" aria-label={`Insert into ${ariaLabel}`}>
+            {nameTokens.map((entry) => (
+               <button key={entry.token} type="button" title={entry.description} onClick={() => insert(entry.token)}>
+                  {entry.label}
+               </button>
+            ))}
+         </div>
+         <small className="pattern-preview">Example: {names.join(", ")}</small>
+      </div>
+   );
+}
+
 export function SettingsPanel({
    preferences,
    onChange,
    onClose,
    mac,
    initialTab,
+   onTabChange,
+   source,
+   clips,
 }: {
    preferences: Preferences;
    onChange: (value: Preferences) => void;
    onClose: () => void;
    mac: boolean;
-   initialTab: "general" | "shortcuts";
+   initialTab: "general" | "editing" | "shortcuts";
+   onTabChange: (tab: "general" | "editing" | "shortcuts") => void;
+   source: MediaSource | null;
+   clips: Clip[];
 }) {
    const [tab, setTab] = useState(initialTab);
+   // Tab switches report up so "open settings" lands on the tab that was last open.
+   const switchTab = (next: "general" | "editing" | "shortcuts") => {
+      setTab(next);
+      onTabChange(next);
+   };
    const [query, setQuery] = useState("");
    const searchRef = useRef<HTMLInputElement>(null);
    const [recording, setRecording] = useState<{ id: CommandId; index: number | null } | null>(null);
@@ -93,77 +273,135 @@ export function SettingsPanel({
                   aria-selected={tab === "general"}
                   tabIndex={tab === "general" ? 0 : -1}
                   onClick={() => {
-                     setTab("general");
+                     switchTab("general");
                      setRecording(null);
                   }}
                >
                   General
                </button>
-               <button role="tab" aria-selected={tab === "shortcuts"} tabIndex={tab === "shortcuts" ? 0 : -1} onClick={() => setTab("shortcuts")}>
+               <button
+                  role="tab"
+                  aria-selected={tab === "editing"}
+                  tabIndex={tab === "editing" ? 0 : -1}
+                  onClick={() => {
+                     switchTab("editing");
+                     setRecording(null);
+                  }}
+               >
+                  Editing
+               </button>
+               <button role="tab" aria-selected={tab === "shortcuts"} tabIndex={tab === "shortcuts" ? 0 : -1} onClick={() => switchTab("shortcuts")}>
                   Keyboard shortcuts
                </button>
             </div>
             <div className="modal-body" key={tab}>
                {tab === "general" ? (
                   <>
-                     <div className="setting-row">
-                        <div>
-                           Theme<small>System follows your device's appearance.</small>
+                     <section className="settings-group" aria-labelledby="settings-appearance">
+                        <h3 id="settings-appearance">Appearance</h3>
+                        <div className="setting-row">
+                           <div>
+                              Theme<small>System follows your device's appearance.</small>
+                           </div>
+                           <div className="theme-picker" role="group" aria-label="Appearance">
+                              {(["dark", "system", "light"] as const).map((theme) => (
+                                 <button
+                                    key={theme}
+                                    aria-label={`${theme[0]!.toUpperCase()}${theme.slice(1)} theme`}
+                                    aria-pressed={preferences.theme === theme}
+                                    onClick={() => onChange({ ...preferences, theme })}
+                                 >
+                                    <FontAwesomeIcon icon={theme === "dark" ? faMoon : theme === "system" ? faDesktop : faSun} />
+                                    <span>
+                                       {theme[0]!.toUpperCase()}
+                                       {theme.slice(1)}
+                                    </span>
+                                 </button>
+                              ))}
+                           </div>
                         </div>
-                        <div className="theme-picker" role="group" aria-label="Appearance">
-                           {(["dark", "system", "light"] as const).map((theme) => (
-                              <button
-                                 key={theme}
-                                 aria-label={`${theme[0]!.toUpperCase()}${theme.slice(1)} theme`}
-                                 aria-pressed={preferences.theme === theme}
-                                 onClick={() => onChange({ ...preferences, theme })}
-                              >
-                                 <FontAwesomeIcon icon={theme === "dark" ? faMoon : theme === "system" ? faDesktop : faSun} />
-                                 <span>
-                                    {theme[0]!.toUpperCase()}
-                                    {theme.slice(1)}
-                                 </span>
-                              </button>
-                           ))}
+                        <div className="setting-row">
+                           <div>
+                              Accent colour<small>Used for buttons, active controls, and focus.</small>
+                           </div>
+                           <div className="accent-picker" role="group" aria-label="Accent colour">
+                              {["Blue", "Purple", "Green", "Yellow", "Red"].map((name, accent) => (
+                                 <button
+                                    key={name}
+                                    aria-label={`${name} accent`}
+                                    title={name}
+                                    aria-pressed={preferences.accent === accent}
+                                    style={{ background: `var(--clip-${accent})` }}
+                                    onClick={() => onChange({ ...preferences, accent })}
+                                 >
+                                    {preferences.accent === accent && <FontAwesomeIcon icon={faCheck} />}
+                                 </button>
+                              ))}
+                           </div>
                         </div>
-                     </div>
-                     <div className="setting-row">
-                        <div>
-                           Accent colour<small>Used for buttons, active controls, and focus.</small>
-                        </div>
-                        <div className="accent-picker" role="group" aria-label="Accent colour">
-                           {["Blue", "Purple", "Green", "Yellow", "Red"].map((name, accent) => (
-                              <button
-                                 key={name}
-                                 aria-label={`${name} accent`}
-                                 title={name}
-                                 aria-pressed={preferences.accent === accent}
-                                 style={{ background: `var(--clip-${accent})` }}
-                                 onClick={() => onChange({ ...preferences, accent })}
-                              >
-                                 {preferences.accent === accent && <FontAwesomeIcon icon={faCheck} />}
-                              </button>
-                           ))}
-                        </div>
-                     </div>
-                     <Toggle
-                        label="Play kept clips only"
-                        description="Skip deleted ranges when playing them in the editor."
-                        checked={preferences.keptOnly}
-                        onChange={(keptOnly) => onChange({ ...preferences, keptOnly })}
-                     />
-                     <Toggle
-                        label="Keep playing while editing"
-                        description="Don't stop playing after seeking, trimming or splitting."
-                        checked={preferences.keepPlaying}
-                        onChange={(keepPlaying) => onChange({ ...preferences, keepPlaying })}
-                     />
-                     <Toggle
-                        label="Audio scrubbing"
-                        description="Play a short audio burst at the playhead while scrubbing and stepping with playback paused."
-                        checked={preferences.audioScrub}
-                        onChange={(audioScrub) => onChange({ ...preferences, audioScrub })}
-                     />
+                     </section>
+                     <section className="settings-group" aria-labelledby="settings-startup">
+                        <h3 id="settings-startup">Startup</h3>
+                        <Toggle
+                           label="Pick up where you left off"
+                           description="Reopen your latest video and timeline when AttaCut starts."
+                           checked={preferences.resume}
+                           onChange={(resume) => onChange({ ...preferences, resume })}
+                        />
+                        <Toggle
+                           label="Check for updates"
+                           description="Look for new AttaCut releases while the app starts. You can check anytime from the Help menu."
+                           checked={preferences.updateCheck}
+                           onChange={(updateCheck) => onChange({ ...preferences, updateCheck })}
+                        />
+                     </section>
+                  </>
+               ) : tab === "editing" ? (
+                  <>
+                     <section className="settings-group" aria-labelledby="settings-playback">
+                        <h3 id="settings-playback">Playback</h3>
+                        <Toggle
+                           label="Play kept clips only"
+                           description="Skip deleted ranges when playing them in the editor."
+                           checked={preferences.keptOnly}
+                           onChange={(keptOnly) => onChange({ ...preferences, keptOnly })}
+                        />
+                        <Toggle
+                           label="Keep playing while editing"
+                           description="Don't stop playing after seeking, trimming or splitting."
+                           checked={preferences.keepPlaying}
+                           onChange={(keepPlaying) => onChange({ ...preferences, keepPlaying })}
+                        />
+                        <Toggle
+                           label="Audio scrubbing"
+                           description="Play a short audio burst at the playhead while scrubbing and stepping with playback paused."
+                           checked={preferences.audioScrub}
+                           onChange={(audioScrub) => onChange({ ...preferences, audioScrub })}
+                        />
+                     </section>
+                     <section className="settings-group" aria-labelledby="settings-export">
+                        <h3 id="settings-export">Export</h3>
+                        <PatternEditor
+                           label="Clip names"
+                           ariaLabel="Clip name pattern"
+                           value={preferences.clipNamePattern}
+                           onChange={(value) => onChange({ ...preferences, clipNamePattern: value })}
+                           presets={clipNamePresets}
+                           kind="clips"
+                           source={source}
+                           clips={clips}
+                        />
+                        <PatternEditor
+                           label="Merged video name"
+                           ariaLabel="Merged video name pattern"
+                           value={preferences.combinedNamePattern}
+                           onChange={(value) => onChange({ ...preferences, combinedNamePattern: value })}
+                           presets={mergedNamePresets}
+                           kind="merged"
+                           source={source}
+                           clips={clips}
+                        />
+                     </section>
                   </>
                ) : (
                   <>

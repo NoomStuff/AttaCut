@@ -89,6 +89,118 @@
    }
 }
 
+.settings-group + .settings-group {
+   margin-top: 14px;
+}
+
+.settings-group h3 {
+   margin: 0 0 2px;
+   color: var(--muted);
+   font-size: 11px;
+   font-weight: 600;
+   letter-spacing: 0.04em;
+}
+
+.settings-group :is(.setting-row, .toggle-row, .pattern-editor):last-child {
+   border-bottom: 0;
+}
+
+.pattern-editor {
+   padding: 16px 0;
+   border-bottom: 1px solid var(--line);
+}
+
+.pattern-head {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   gap: 12px;
+   font-size: 13px;
+}
+
+.pattern-input {
+   position: relative;
+   display: block;
+}
+
+.pattern-input input {
+   width: 100%;
+   margin-top: 9px;
+   padding-right: 30px;
+   font-size: 12px;
+}
+
+/* Same in-field warning as the export panel: a danger triangle inside the box, with the
+   reason on hover or focus. */
+.pattern-warning-icon {
+   position: absolute;
+   top: 50%;
+   right: 9px;
+   transform: translateY(calc(-50% + 4px));
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+   color: var(--danger);
+   font-size: 12px;
+   cursor: help;
+}
+
+.pattern-warning-icon .pattern-warning-tooltip {
+   position: absolute;
+   z-index: 100;
+   right: 0;
+   bottom: calc(100% + 7px);
+   width: max-content;
+   max-width: min(260px, calc(100vw - 50px));
+   padding: 7px 10px;
+   border: 1px solid var(--line);
+   border-radius: 6px;
+   background: var(--surface-raised);
+   box-shadow: 0 6px 18px #0003;
+   color: var(--text);
+   font-size: 11px;
+   line-height: 1.4;
+   opacity: 0;
+   visibility: hidden;
+   transition: opacity 120ms ease-out;
+   pointer-events: none;
+}
+
+.pattern-warning-icon:hover .pattern-warning-tooltip,
+.pattern-warning-icon:focus .pattern-warning-tooltip {
+   opacity: 1;
+   visibility: visible;
+}
+
+.pattern-tokens {
+   display: flex;
+   flex-wrap: wrap;
+   gap: 6px;
+   margin-top: 9px;
+}
+
+.pattern-tokens button {
+   padding: 4px 9px;
+   border: 1px solid var(--line);
+   border-radius: 5px;
+   background: var(--surface);
+   color: var(--muted);
+   font-size: 11px;
+}
+
+.pattern-tokens button:hover {
+   color: var(--text);
+   background: var(--surface-hover);
+}
+
+.pattern-preview {
+   display: block;
+   color: var(--muted);
+   font-size: 11px;
+   margin-top: 9px;
+   overflow-wrap: anywhere;
+}
+
 .shortcut-list {
    margin-bottom: 20px;
 }

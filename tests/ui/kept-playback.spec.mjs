@@ -58,7 +58,8 @@ test("kept playback", async ({ launchApp, profile }) => {
    await clickTime(9);
    await page.getByRole("button", { name: "Add clip in gap", exact: true }).click();
    await trim(11, 13);
-   await page.getByRole("button", { name: "Playback settings", exact: true }).click();
+   await page.getByRole("button", { name: "Settings", exact: true }).click();
+   await page.getByRole("tab", { name: "Editing" }).click();
    await page.getByRole("switch", { name: "Play kept clips only", exact: true }).check();
    await page.keyboard.press("Escape");
    await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
@@ -80,7 +81,8 @@ test("kept playback", async ({ launchApp, profile }) => {
    await observedAt(1);
    await page.getByRole("button", { name: "Pause", exact: true }).click();
 
-   await page.getByRole("button", { name: "Playback settings", exact: true }).click();
+   await page.getByRole("button", { name: "Settings", exact: true }).click();
+   await page.getByRole("tab", { name: "Editing" }).click();
    await page.getByRole("switch", { name: "Keep playing while editing", exact: true }).check();
    await page.keyboard.press("Escape");
    await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });

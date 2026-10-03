@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { substantialEncoding } from "../../../shared/export-policy";
-import { sanitizeName } from "../../../shared/filename";
+import { applyNamePattern, duplicateNames, sanitizeName } from "../../../shared/filename";
 import type { Clip, ExportJob, ExportPlan, CutReport, MediaSource, Preferences } from "../../../shared/types";
 import { errorText, isCancellation } from "../lib/errors";
 import { rememberAudioSelection, resolveAudioSelection } from "../playback/audioSelection";
@@ -11,7 +11,8 @@ export interface ExportDraft {
    mode: Preferences["exportMode"];
    audioTracks: number[];
    name: string;
-   rows: { clipId: string; included: boolean; name: string }[];
+   nameAltered: boolean;
+   rows: { clipId: string; included: boolean; name: string; altered: boolean }[];
 }
 
 export interface ExportOptions {
@@ -48,14 +49,43 @@ export function useExport({
       updateAudioTracks(selected);
       onPreferences((current) => ({ ...current, exportAudio: rememberAudioSelection(sourceAudio, selected, true) }));
    };
-   const [name, setName] = useState(saved?.name ?? `${source.name.slice(0, -source.extension.length)} (Trim)`);
+   const sourceStem = source.name.slice(0, -source.extension.length);
+   // The patterns from settings are defaults: every output name follows its template until
+   // it is edited by hand, and clearing a field hands the name back to the template. So a
+   // template change in settings reaches every name that was never touched.
+   const patternDefaults = { source: sourceStem, total: source.duration, date: new Date() };
+   const generatedCombined = () =>
+      applyNamePattern(preferences.combinedNamePattern, {
+         ...patternDefaults,
+         index: 0,
+         count: 1,
+         start: Math.min(...clips.map((clip) => clip.start)),
+         end: Math.max(...clips.map((clip) => clip.end)),
+      });
+   const generatedName = (clip: Clip, index: number) =>
+      applyNamePattern(preferences.clipNamePattern, { ...patternDefaults, index, count: clips.length, start: clip.start, end: clip.end });
+   const [nameAltered, setNameAltered] = useState(saved?.nameAltered ?? false);
+   const [name, setName] = useState(() => (saved?.nameAltered && saved?.name ? saved.name : generatedCombined()));
    const [rows, setRows] = useState(() =>
-      clips.map((clip, index) => ({
-         clip,
-         included: saved?.rows.find((row) => row.clipId === clip.id)?.included ?? true,
-         name: saved?.rows.find((row) => row.clipId === clip.id)?.name ?? `${source.name.slice(0, -source.extension.length)} (${index + 1})`,
-      }))
+      clips.map((clip, index) => {
+         const savedRow = saved?.rows.find((row) => row.clipId === clip.id);
+         return {
+            clip,
+            included: savedRow?.included ?? true,
+            altered: savedRow?.altered ?? false,
+            name: savedRow?.altered && savedRow?.name ? savedRow.name : generatedName(clip, index),
+         };
+      })
    );
+   const setCombinedName = (value: string) => {
+      // An emptied field stays empty while typing (clearing to retype must not snap back);
+      // leaving the field empty is what hands the name to the template, on blur.
+      setNameAltered(value.trim() !== "");
+      setName(value);
+   };
+   const setRowName = (index: number, value: string) => {
+      setRows((current) => current.map((row, i) => (i === index ? { ...row, altered: value.trim() !== "", name: value } : row)));
+   };
    useEffect(() => {
       onDraft({
          sourceId: source.id,
@@ -63,29 +93,46 @@ export function useExport({
          mode: clips.length === 1 ? preferences.exportMode : mode,
          audioTracks,
          name,
-         rows: rows.map(({ clip, included, name }) => ({ clipId: clip.id, included, name })),
+         nameAltered,
+         rows: rows.map(({ clip, included, name, altered }) => ({ clipId: clip.id, included, name, altered })),
       });
-   }, [source.id, directory, mode, clips.length, preferences.exportMode, audioTracks, name, rows, onDraft]);
+   }, [source.id, directory, mode, clips.length, preferences.exportMode, audioTracks, name, nameAltered, rows, onDraft]);
    // A single clip requires combined mode but must not overwrite the multi-clip preference.
    useEffect(() => {
       if (clips.length > 1) onPreferences((current) => (current.exportMode === mode ? current : { ...current, exportMode: mode }));
    }, [clips.length, mode, onPreferences]);
    const [confirmation, setConfirmation] = useState<ExportPlan | null>(null);
+   // Clicking off a name field sanitizes what was typed, and an emptied field hands the
+   // name back to its template. Collisions are never rewritten silently: every clip
+   // sharing a name is flagged dangerous and Export stays blocked until the names differ,
+   // since an automatic suffix would decide which clip survives.
    const normalizeName = (index?: number) => {
       if (index === undefined) {
+         if (name.trim() === "") {
+            setNameAltered(false);
+            setName(generatedCombined());
+            return;
+         }
          setName(sanitizeName(name));
          return;
       }
-      setRows((current) => {
-         const stem = sanitizeName(current[index]!.name);
-         const others = new Set(current.filter((_, i) => i !== index).map((row) => sanitizeName(row.name).toLowerCase()));
-         let result = stem;
-         for (let suffix = 2; others.has(result.toLowerCase()); suffix++) result = `${stem} (${suffix})`;
-         return current.map((row, i) => (i === index ? { ...row, name: result } : row));
-      });
+      setRows((current) =>
+         current.map((row, i) => {
+            if (i !== index) return row;
+            if (row.name.trim() === "") return { ...row, altered: false, name: generatedName(row.clip, i) };
+            return { ...row, name: sanitizeName(row.name) };
+         })
+      );
    };
    const [replaceSourceChecked, setReplaceSourceChecked] = useState(false);
    const [conflicts, setConflicts] = useState<Map<string, string | null>>(() => new Map());
+   const [dangers, setDangers] = useState<Map<string, boolean>>(() => new Map());
+   // Batch-internal name collisions are computed live: two clips headed for one file would
+   // overwrite each other, which no confirmation should ever have to referee.
+   const collisions = useMemo(
+      () => (mode === "separate" ? duplicateNames(rows.filter((row) => row.included).map((row) => row.name)) : new Set<string>()),
+      [mode, rows]
+   );
    const request = useMemo(
       () => ({
          sourceId: source.id,
@@ -118,7 +165,11 @@ export function useExport({
          void window.desktop.cancelExportAnalysis();
       };
    }, [source.id, clips, mode, audioTracks]);
-   const valid = request.items.length > 0 && !!directory.trim() && (mode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim()));
+   const valid =
+      request.items.length > 0 &&
+      !!directory.trim() &&
+      (mode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim())) &&
+      collisions.size === 0;
    // Main reports conflicts per clip, so the panel never replicates export naming rules.
    // While a recheck is pending the previous results stay shown: clearing them would replay
    // every row's warning animation on unrelated edits, and the recheck itself is debounced.
@@ -126,13 +177,19 @@ export function useExport({
       let cancelled = false;
       if (!valid) {
          setConflicts(new Map());
+         setDangers(new Map());
          return;
       }
       const timer = window.setTimeout(() => {
          void window.desktop
             .checkExportDestinations(request)
             .then((result) => {
-               if (!cancelled) setConflicts(new Map(result.items.map((item) => [item.clipId ?? "combined", item.conflict])));
+               if (!cancelled) {
+                  setConflicts(new Map(result.items.map((item) => [item.clipId ?? "combined", item.conflict])));
+                  const nextDangers = new Map<string, boolean>();
+                  for (const item of result.items) if (item.danger) nextDangers.set(item.clipId ?? "combined", true);
+                  setDangers(nextDangers);
+               }
             })
             .catch(() => {
                // Final planning shows destination errors when Export is pressed.
@@ -196,7 +253,8 @@ export function useExport({
       audioTracks,
       setAudioTracks,
       name,
-      setName,
+      setName: setCombinedName,
+      setRowName,
       normalizeName,
       rows,
       setRows,
@@ -205,6 +263,8 @@ export function useExport({
       replaceSourceChecked,
       setReplaceSourceChecked,
       conflicts,
+      dangers,
+      collisions,
       request,
       error,
       setError,

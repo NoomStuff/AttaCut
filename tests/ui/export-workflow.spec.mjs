@@ -72,7 +72,8 @@ test("export workflow", async ({ launchApp, profile }) => {
    await page.getByRole("slider", { name: "Preview volume", exact: true }).fill("0.2");
    await page.getByRole("button", { name: "Mute preview", exact: true }).click();
    await expect(page.locator("video")).toHaveJSProperty("muted", true);
-   await page.getByRole("button", { name: "Playback settings", exact: true }).click();
+   await page.getByRole("button", { name: "Settings", exact: true }).click();
+   await page.getByRole("tab", { name: "Editing" }).click();
    await page.getByRole("switch", { name: "Play kept clips only" }).check();
    await page.keyboard.press("Escape");
    await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
@@ -156,7 +157,7 @@ test("compact layout keeps transport controls within the window", async ({ launc
       .toBeLessThanOrEqual(560);
    await expect
       .poll(async () => {
-         const volume = await page.getByRole("button", { name: "Playback settings", exact: true }).boundingBox();
+         const volume = await page.getByRole("button", { name: "Settings", exact: true }).boundingBox();
          return volume.x + volume.width;
       })
       .toBeLessThanOrEqual(800);

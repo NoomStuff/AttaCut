@@ -1,7 +1,7 @@
 import { CommandContext, commandDefinitions, bindingsFor, displayBindings } from "../editor/commands";
 import type { CommandId } from "../editor/commands";
 import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { faXmark } from "@fortawesome/free-solid-svg-icons";
@@ -92,10 +92,13 @@ export function Button({ command, icon, shortcut, active, variant = "quiet", too
 interface IconButtonProps extends Omit<ButtonProps, "icon"> {
    icon: IconDefinition;
    label: string;
+   /** Shows a command's shortcut in the tooltip without wiring the click to it. */
+   shortcutFrom?: CommandId;
 }
-export function IconButton({ command, icon, label, shortcut, className = "", ...props }: IconButtonProps) {
+export function IconButton({ command, shortcutFrom, icon, label, shortcut, className = "", ...props }: IconButtonProps) {
    const context = useContext(CommandContext);
-   if (command && context) shortcut ??= displayBindings(bindingsFor(command, context.overrides), context.mac);
+   const lookup = command ?? shortcutFrom;
+   if (lookup && context) shortcut ??= displayBindings(bindingsFor(lookup, context.overrides), context.mac);
    const id = useId();
    return (
       <TooltipHost>
@@ -146,6 +149,14 @@ export function Modal({
       ref.current?.close();
       timer.current = window.setTimeout(onClose, 140);
    };
+   // A click fires wherever the pointer came up, so a drag that starts inside the panel and
+   // releases on the backdrop would look like an outside click. Only a press that started
+   // outside may close.
+   const downOutside = useRef(false);
+   const outside = (event: ReactMouseEvent<HTMLDialogElement>) => {
+      const rect = event.currentTarget.getBoundingClientRect();
+      return event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom;
+   };
    return (
       <dialog
          ref={ref}
@@ -156,11 +167,11 @@ export function Modal({
             event.preventDefault();
             requestClose();
          }}
+         onPointerDown={(event) => {
+            downOutside.current = event.target === event.currentTarget && outside(event);
+         }}
          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-               const rect = event.currentTarget.getBoundingClientRect();
-               if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) requestClose();
-            }
+            if (downOutside.current && event.target === event.currentTarget && outside(event)) requestClose();
          }}
       >
          <div className="modal-header">

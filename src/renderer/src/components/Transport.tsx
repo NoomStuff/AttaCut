@@ -103,6 +103,7 @@ export function Transport({
    onVolume,
    onBoundary,
    onFullscreen,
+   onSettings,
    audioIndices,
    onAudio,
    snapping,
@@ -117,6 +118,7 @@ export function Transport({
    onVolume: (value: number, restore: number) => void;
    onBoundary: (side: "start" | "end", value: number) => number;
    onFullscreen: () => void;
+   onSettings: () => void;
    audioIndices: number[];
    onAudio: (indices: number[]) => void;
    snapping: boolean;
@@ -191,7 +193,7 @@ export function Transport({
                disabled={readingKeys}
             />
             <IconButton command="fullscreen" icon={faExpand} label="Fullscreen video" onClick={onFullscreen} />
-            <IconButton command="settings" icon={faSliders} label="Playback settings" />
+            <IconButton icon={faSliders} label="Settings" onClick={onSettings} shortcutFrom="options" />
          </div>
       </div>
    );

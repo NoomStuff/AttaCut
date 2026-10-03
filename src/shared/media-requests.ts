@@ -26,3 +26,11 @@ export const previewRequestSchema = z.object({
    transcode: z.boolean(),
 });
 export type PreviewRequest = z.infer<typeof previewRequestSchema>;
+export const waveformRequestSchema = z.object({
+   sourceId: z.string(),
+   streamIndices: z.array(z.number().int()).min(1),
+   /** The media id to decode from: the source itself, or a prepared preview (compact and
+       indexed) for recordings the browser cannot play directly. */
+   decodeMediaId: z.string().optional(),
+});
+export type WaveformRequest = z.infer<typeof waveformRequestSchema>;

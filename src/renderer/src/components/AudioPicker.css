@@ -21,14 +21,13 @@
 .audio-picker .select-trigger > span {
    display: flex;
    align-items: center;
-   gap: 4px;
+   gap: 2px;
    overflow: visible;
 }
 .audio-picker .select-trigger > span svg {
    font-size: 14px;
 }
 .audio-picker .select-trigger b {
-   min-width: 10px;
    font-size: 9px;
    font-weight: 600;
    color: var(--muted);

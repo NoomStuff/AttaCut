@@ -147,7 +147,8 @@ test("time fields and editing preserve active playback", async ({ launchApp, pro
    await expect(page.getByRole("option", { name: "Game audio", exact: true })).toHaveCount(0);
    await page.getByRole("button", { name: "Preview audio tracks", exact: true }).click();
    await page.getByRole("option", { name: "Microphone", exact: true }).click();
-   await page.getByRole("button", { name: "Playback settings", exact: true }).click();
+   await page.getByRole("button", { name: "Settings", exact: true }).click();
+   await page.getByRole("tab", { name: "Editing" }).click();
    await page.getByRole("switch", { name: "Keep playing while editing", exact: true }).check();
    await page.keyboard.press("Escape");
    await page.getByRole("button", { name: "Play", exact: true }).click();
@@ -251,7 +252,8 @@ test("excluded-end feedback and default edit pause", async ({ launchApp, profile
    await expect(page.locator(".editor-dock")).not.toHaveClass(/trim-animating/);
    await seek(17.5);
    await expect(page.locator(".player-excluded")).not.toHaveClass(/hidden/);
-   await page.getByRole("button", { name: "Playback settings", exact: true }).click();
+   await page.getByRole("button", { name: "Settings", exact: true }).click();
+   await page.getByRole("tab", { name: "Editing" }).click();
    await page.getByRole("switch", { name: "Keep playing while editing", exact: true }).uncheck();
    await page.keyboard.press("Escape");
    await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });

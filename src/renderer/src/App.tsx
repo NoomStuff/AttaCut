@@ -49,6 +49,7 @@ import type { ExportDraft } from "./export/useExport";
 import type { HelpTab } from "./components/HelpPanel";
 import { prefetchModules } from "./lib/prefetch";
 import { useKeyframes } from "./lib/keyframes";
+import { useWaveform } from "./lib/waveform";
 import { useTemporarySnapping } from "./lib/temporarySnapping";
 import { errorText } from "./lib/errors";
 import { useExitValue, usePressFeedback } from "./lib/motion";
@@ -102,9 +103,13 @@ export default function App() {
    /** Errors interrupt work and deserve the red banner; warnings only explain a recoverable state. */
    const showError = useCallback((message: string | null) => setError(message === null ? null : { text: message, tone: "error" }), []);
    const [update, setUpdate] = useState<AvailableUpdate | null>(null);
-   // The startup check stays quiet; only an explicit check reports when nothing was found.
+   // The startup check stays quiet, runs once, and only an explicit check reports when
+   // nothing was found.
+   const startupUpdateCheck = useRef(false);
    useEffect(() => {
-      if (!ready) return;
+      if (!ready || startupUpdateCheck.current) return;
+      startupUpdateCheck.current = true;
+      if (!preferences.updateCheck) return;
       let active = true;
       void window.desktop
          .checkForUpdate()
@@ -115,7 +120,7 @@ export default function App() {
       return () => {
          active = false;
       };
-   }, [ready]);
+   }, [ready, preferences.updateCheck]);
    const checkForUpdates = useCallback(() => {
       void window.desktop
          .checkForUpdate()
@@ -156,9 +161,20 @@ export default function App() {
       clock,
       seeker,
       scrubber,
-      preparePreview,
+      preparePreview: preparePreviewPlayback,
       changeAudio,
    } = usePlayback({ source, preferences, setPreferences, setError: showError });
+   // Any preview preparation outranks the waveform: flag it so a running waveform decode
+   // is cancelled and later redone from the finished preview instead of fighting the
+   // transcode for disk and CPU.
+   const [waveformPending, setWaveformPending] = useState(false);
+   const preparePreview = useCallback(
+      (target: MediaSource, tracks: number[], transcode = false, resume = false) => {
+         setWaveformPending(true);
+         return preparePreviewPlayback(target, tracks, transcode, resume);
+      },
+      [preparePreviewPlayback]
+   );
    const [job, setJob] = useState<ExportJob | null>(null);
    const [notifications, setNotifications] = useState<ExportJob[]>([]);
    const receiveJob = useCallback((updated: ExportJob, starting = false) => {
@@ -363,6 +379,9 @@ export default function App() {
          // Chromium may silently omit an unsupported audio track while playing video.
          const needsAudioPreview = selectedAudio.length > 1 || (!!firstAudio && !nativeAudioCodecs.has(firstAudio.codec));
          setAudioIndices(selectedAudio);
+         // Such recordings get their waveform from the prepared preview (compact and
+         // indexed) rather than a slow walk over the huge source; the prepare call flags
+         // the waveform to hold until it lands.
          if (needsAudioPreview) void preparePreview(media, selectedAudio);
          dispatch({
             type: "load",
@@ -416,7 +435,7 @@ export default function App() {
       setDragDraft(null);
       setError(null);
       const snapshot = sessionFor(source, editor, restore, projectRef.current);
-      setRestore(keepRecovery && snapshot ? discardProjectChanges(snapshot) : null);
+      setRestore(keepRecovery && preferences.resume && snapshot ? discardProjectChanges(snapshot) : null);
       setProject(undefined);
       void window.desktop.closeSource().catch((value) => showError(errorText(value)));
       setLoading(false);
@@ -454,15 +473,21 @@ export default function App() {
       return prefetchModules([loadSettingsPanel, loadFramePanel, loadHelpPanel, loadAboutPanel]);
    }, [ready, loading, preparing]);
    const { keyframes, reading: readingKeys } = useKeyframes({ source, snapping, loading, preparing, videoRef, onError: showError });
+   // The player's media id: the source itself, or the prepared preview once a recording
+   // that needs a transcode swapped to it.
+   const waveformMediaId = url.startsWith("media://source/") ? decodeURIComponent(new URL(url).pathname.slice(1)) : null;
+   const waveformDecodeId =
+      source && (waveformPending ? (waveformMediaId && waveformMediaId !== source.id ? waveformMediaId : null) : (waveformMediaId ?? source.id));
+   const waveform = useWaveform({ source, enabled: preferences.waveform, audioIndices, decodeMediaId: waveformDecodeId });
    useDesktopLifecycle({
       onBootstrap: async (data, signal) => {
          setPreferences(data.preferences);
          setPlatform(data.platform);
          setVersion(data.version);
-         setRestore(data.session);
+         setRestore(data.preferences.resume ? data.session : null);
          setReady(true);
          if (data.initialFile) await openPath(data.initialFile, undefined, data.preferences.playbackAudio, false);
-         else if (data.session) await openPath(data.session.path, data.session, data.preferences.playbackAudio, false);
+         else if (data.preferences.resume && data.session) await openPath(data.session.path, data.session, data.preferences.playbackAudio, false);
          if (!signal.aborted && data.warning) {
             const warning = data.warning;
             setError((current) => current ?? { text: warning, tone: "error" });
@@ -548,6 +573,11 @@ export default function App() {
    const openPanel = (next: Panel) => {
       setFullscreen(false);
       setPanel(next);
+   };
+   const [settingsTab, setSettingsTab] = useState<"general" | "editing" | "shortcuts">("general");
+   const openSettings = (tab: "general" | "editing") => {
+      setSettingsTab(tab);
+      openPanel("settings");
    };
    const setBoundary = (side: "start" | "end", value: number, target = clip) => {
       const clip = target;
@@ -759,7 +789,8 @@ export default function App() {
             setViewRequest((current) => ({ id: current.id + 1, start: clip.start, end: clip.end, zoom: true }));
          },
       },
-      settings: { enabled: () => ready, run: () => openPanel("settings") },
+      options: { enabled: () => ready, run: () => openSettings("general") },
+      settings: { enabled: () => ready, run: () => openSettings("editing") },
       shortcuts: { enabled: () => ready, run: () => openPanel("shortcuts") },
       closeProject: {
          enabled: () => (!!source || loading) && !savingProject,
@@ -799,7 +830,7 @@ export default function App() {
    const menuSections: Record<string, CommandId[][]> = {
       File: [["open"], ["frame", "export"], ["saveProject", "saveProjectAs", "closeProject"], ["quit"]],
       Edit: [["undo", "redo"], ["split", "merge"], ["setStart", "setEnd", "add", "delete"], ["preview"], ["settings"]],
-      View: [["zoomIn", "zoomOut", "fit", "focusClip"], ["preview"], ["fullscreen"]],
+      View: [["zoomIn", "zoomOut", "fit", "focusClip"], ["preview"], ["fullscreen"], ["options"]],
       Help: [["help", "shortcuts", "about"], ["updates", "releases"], ["reset"]],
    };
    const errorPresence = useExitValue(error, 190);
@@ -991,6 +1022,7 @@ export default function App() {
                         keyframes={keyframes}
                         snapping={snapping}
                         playing={playing || playWhenReady}
+                        waveform={preferences.waveform ? waveform : null}
                         onSelect={(id) => remember(editor.document.clips.find((item) => item.id === id))}
                         onCommit={commit}
                         onSeek={seek}
@@ -1008,6 +1040,7 @@ export default function App() {
                         onVolume={updateVolume}
                         onBoundary={setBoundary}
                         onFullscreen={() => setFullscreen(true)}
+                        onSettings={() => openPanel("settings")}
                         zoom={zoom}
                         snapping={snapping}
                         readingKeys={readingKeys}
@@ -1020,14 +1053,7 @@ export default function App() {
                   </div>
                )}
             </main>
-            <Suspense
-               key={panel}
-               fallback={
-                  <div className="panel-loading" role="status">
-                     Opening panel...
-                  </div>
-               }
-            >
+            <Suspense key={panel} fallback={null}>
                {panel === "export" && source && (
                   <ExportPanel
                      draft={exportDraft}
@@ -1079,7 +1105,10 @@ export default function App() {
                      onChange={setPreferences}
                      onClose={() => setPanel((current) => (current === panel ? null : current))}
                      mac={mac}
-                     initialTab={panel === "shortcuts" ? "shortcuts" : "general"}
+                     initialTab={panel === "shortcuts" ? "shortcuts" : settingsTab}
+                     onTabChange={setSettingsTab}
+                     source={source}
+                     clips={editor.document.clips}
                   />
                )}
                {(panel === "help" || (panel === "export" && exportHelp)) && (

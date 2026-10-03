@@ -1,4 +1,4 @@
-import type { FrameRequest } from "./media-requests";
+import type { FrameRequest, WaveformRequest } from "./media-requests";
 import type { Preferences } from "./preferences";
 import type { SavedSession } from "./editing";
 import type { MediaSource, ScrubAudio } from "./media";
@@ -47,6 +47,9 @@ export interface DesktopApi {
    keyframes(sourceId: string): Promise<number[]>;
    scrubAudio(sourceId: string, streamIndices: number[], time?: number): Promise<ScrubAudio | null>;
    cancelScrub(): Promise<void>;
+   waveformStart(request: WaveformRequest): Promise<{ peaks: Uint8Array } | null>;
+   cancelWaveform(): Promise<void>;
+   onWaveformChunk(listener: (chunk: { sourceId: string; offset: number; peaks: Uint8Array }) => void): () => void;
    frameTime(sourceId: string, time: number, direction: -1 | 0 | 1): Promise<number>;
    cancelExportPlanning(): Promise<void>;
    cancelExportAnalysis(): Promise<void>;

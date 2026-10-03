@@ -47,6 +47,30 @@ test("a delayed open result cannot replace the newer project", async ({ launchAp
    await expect(page.locator(".title-filename")).toHaveText("fixture.mkv");
 });
 
+test("turning off 'Pick up where you left off' keeps the session but starts fresh on restart", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   await page.getByRole("textbox", { name: "Clip start", exact: true }).fill("00:02.00");
+   await page.getByRole("textbox", { name: "Clip start", exact: true }).press("Tab");
+   await page.getByRole("button", { name: "Settings", exact: true }).click();
+   const toggle = page.getByRole("switch", { name: "Pick up where you left off", exact: true });
+   await expect(toggle).toBeChecked();
+   await toggle.click();
+   await page.keyboard.press("Escape");
+   await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
+   await app.close();
+   // Opting out stops the restore, not the saving: the edit is still on disk for later.
+   const saved = JSON.parse(await readFile(join(profile, "session.json"), "utf8"));
+   expect(saved.session.clips[0].start).toBe(2);
+   const restarted = await launchApp(profile, "");
+   const next = await restarted.firstWindow();
+   await expect(next.getByRole("button", { name: "Open file", exact: true })).toBeVisible();
+   // A restore attempt would have opened the source within a second of boot.
+   await next.waitForTimeout(1500);
+   await expect(next.locator("video")).toHaveCount(0);
+});
+
 test("restart with a missing source explains the problem and allows a new import", async ({ launchApp, profile }) => {
    const path = join(profile, "moved.mp4");
    await copyFile(resolve("work/fixture.mp4"), path);
@@ -56,7 +80,19 @@ test("restart with a missing source explains the problem and allows a new import
    await app.close();
    const saved = JSON.parse(await readFile(join(profile, "session.json"), "utf8"));
    expect(saved.session.path).toBe(path);
-   await rm(path);
+   // The cancelled waveform decode can hold the file for a beat after close, like the
+   // video decoder's handle in the tests below.
+   await expect
+      .poll(async () => {
+         try {
+            await rm(path);
+            return true;
+         } catch (error) {
+            if (error.code === "EBUSY" || error.code === "EPERM") return false;
+            throw error;
+         }
+      })
+      .toBe(true);
    const restored = await launchApp(profile, "");
    const next = await restored.firstWindow();
    await expect(next.getByRole("status")).toContainText("can't be found");

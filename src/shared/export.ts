@@ -55,6 +55,8 @@ export interface DestinationConflict {
    /** Clip the conflict belongs to, or null for a combined export's single output. */
    clipId: string | null;
    conflict: string | null;
+   /** Conflicts that would destroy the source or another output are dangerous, not just notable. */
+   danger: boolean;
 }
 export interface ExportDestinations {
    items: DestinationConflict[];

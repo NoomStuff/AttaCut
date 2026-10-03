@@ -7,7 +7,7 @@ import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 interface DiagnosticEvent {
-   action: keyof IpcCalls | "ffmpeg" | "ffprobe" | "export:stage";
+   action: keyof IpcCalls | "ffmpeg" | "ffprobe" | "export:stage" | "waveform:first-chunk" | "waveform:decode";
    stage?: ExportStage;
    elapsedMs: number;
    outcome: "ok" | FailureCode;

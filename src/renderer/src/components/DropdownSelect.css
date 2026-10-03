@@ -65,6 +65,15 @@
    bottom: calc(100% + 7px);
    transform-origin: left bottom;
 }
+/* Near the right edge the menu anchors to the trigger's right instead of overflowing. */
+.custom-select.flip .select-menu {
+   left: auto;
+   right: 0;
+   transform-origin: right top;
+}
+.custom-select.up.flip .select-menu {
+   transform-origin: right bottom;
+}
 .select-menu.closing {
    animation: select-menu-out 110ms ease-in both;
    pointer-events: none;

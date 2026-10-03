@@ -9,7 +9,7 @@ import { probeSource } from "./probe.ts";
 import { isHdrTransfer, tonemapToBt709 } from "./formats.ts";
 import { removeTemporary } from "./publish.ts";
 /** All cached and unfinished previews share this disk limit. */
-const previewByteLimit = 4 * 1024 * 1024 * 1024;
+const previewByteLimit = 8 * 1024 * 1024 * 1024;
 const longRecordingSeconds = 2 * 60 * 60;
 const leases = new Set<string>();
 let preparation: Promise<unknown> = Promise.resolve();

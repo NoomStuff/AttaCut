@@ -25,6 +25,8 @@ interface IpcResponses {
    "preview:cancel": void;
    "audio:scrub": Result<"scrubAudio">;
    "audio:cancel": void;
+   "waveform:start": { peaks: Uint8Array } | null;
+   "waveform:cancel": void;
    "frame:export": string;
    "export:plan": Result<"planExport">;
    "export:check-destinations": Result<"checkExportDestinations">;
@@ -46,6 +48,7 @@ export type IpcRequest<K extends keyof IpcCalls> = z.output<(typeof ipcRequestSc
 export const IpcEvents = {
    jobProgress: "export:progress",
    updateStatus: "update:status",
+   waveformChunk: "waveform:chunk",
    flush: "app:flush",
    flushStarted: "app:flush-started",
    openFile: "app:open-file",

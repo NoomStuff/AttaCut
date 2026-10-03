@@ -33,7 +33,7 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
       label: "Introduction",
       body: (
          <>
-            <p>Welcome to the AttaCut!</p>
+            <p>Welcome to AttaCut!</p>
             <h3>What is this thing?</h3>
             <p>It's a simple app designed for cutting clips out of a video as fast as possible. Open the file, grab the part you want, save it, done.</p>
             <p>
@@ -60,7 +60,10 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
             </ol>
             <h3>Good to know</h3>
             <ul>
-               <li>Your latest recording and its cuts are remembered, so restarting AttaCut restores your edit.</li>
+               <li>
+                  Your latest recording and its cuts are remembered, so restarting AttaCut restores your edit. The "Pick up where you left off" setting turns
+                  that off.
+               </li>
                <li>
                   Use Save project or <Shortcut command="saveProject" /> to keep an edit in an .attacut file. Open that file to reopen the video and clips.
                   Systems that limit extensions to three characters can use .atc instead. Project files reference the original video, so keep it too.

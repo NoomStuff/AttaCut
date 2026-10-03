@@ -15,7 +15,7 @@ import { publishOutput } from "./media/publish";
 import { withTemporaryOutput } from "./media/transaction";
 import { fileURLToPath } from "node:url";
 import { ipcRequestSchemas } from "../shared/ipc-requests";
-import type { IpcCalls, IpcRequest } from "../shared/ipc";
+import { IpcEvents, type IpcCalls, type IpcRequest } from "../shared/ipc";
 import { exportFrame } from "./media/frame.ts";
 import { videoExtensions } from "./media/formats.ts";
 import { fetchAvailableUpdate, UpdateManager } from "./updates.ts";
@@ -229,6 +229,26 @@ export function registerIpc({
       return sourceSession.scrubAudio(source.id, request.streamIndices, request.time);
    });
    handle("audio:cancel", () => sourceSession.cancelScrub());
+   handle("waveform:start", async (value) => {
+      const request = value;
+      const source = getSource(request.sourceId);
+      if (request.streamIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
+         throw new Error("Audio track not found.");
+      // Only decode from a prepared preview when it is the source's own id or one whose
+      // audio selection matches the request; anything else decodes from the source.
+      let decodePath: string | undefined;
+      if (request.decodeMediaId && request.decodeMediaId !== source.id) {
+         const previewPath = sourceSession.mediaPaths.get(request.decodeMediaId);
+         const matched = sourceSession.waveformDecodePath(request.streamIndices);
+         if (previewPath && matched === previewPath) decodePath = previewPath;
+      } else if (!request.decodeMediaId) {
+         decodePath = sourceSession.waveformDecodePath(request.streamIndices);
+      }
+      return sourceSession.startWaveform(source.id, request.streamIndices, decodePath, (chunk) => {
+         if (!window.isDestroyed()) window.webContents.send(IpcEvents.waveformChunk, { ...chunk, sourceId: source.id });
+      });
+   });
+   handle("waveform:cancel", () => sourceSession.cancelWaveform());
    handle("export:cancel-planning", () => exportsService.cancelPlanning());
    handle("export:cancel-analysis", () => exportsService.cancelAnalysis());
    handle("state:flush", async (value) => {
