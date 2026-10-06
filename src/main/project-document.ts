@@ -1,13 +1,17 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { projectFileSchema } from "../shared/project";
+import { encodeSession } from "../shared/session-codec";
 import type { ProjectFile } from "../shared/project";
 import type { MediaSource, SavedSession } from "../shared/types";
 import { protectSource, publishOutput } from "./media/publish";
 import { withTemporaryOutput } from "./media/transaction";
 
+// Legacy projects can contain full undo snapshots; keep them readable during migration.
+const maxProjectBytes = 128 * 1024 * 1024;
+
 export async function readProject(path: string): Promise<ProjectFile> {
-   if ((await stat(path)).size > 16 * 1024 * 1024) throw new Error("This project file is too large to open.");
+   if ((await stat(path)).size > maxProjectBytes) throw new Error("This project file is too large to open.");
    const text = await readFile(path, "utf8");
    let value: unknown;
    try {
@@ -15,7 +19,15 @@ export async function readProject(path: string): Promise<ProjectFile> {
    } catch {
       throw new Error("This project file is damaged or incomplete.");
    }
-   if (typeof value === "object" && value !== null && "format" in value && value.format === "AttaCut" && "version" in value && value.version !== 1)
+   if (
+      typeof value === "object" &&
+      value !== null &&
+      "format" in value &&
+      value.format === "AttaCut" &&
+      "version" in value &&
+      value.version !== 1 &&
+      value.version !== 2
+   )
       throw new Error("This project was saved with a different project format. Update AttaCut to open it.");
    const result = projectFileSchema.safeParse(value);
    if (!result.success) throw new Error("This file is not a valid AttaCut project.");
@@ -43,19 +55,21 @@ export async function writeProject(path: string, session: SavedSession): Promise
    const saved = { ...session };
    delete saved.project;
    const sourceRelative = relative(dirname(path), session.path);
-   const document: ProjectFile = {
+   const document = {
       format: "AttaCut",
-      version: 1,
+      version: 2,
       relativeSource: sourceRelative && !isAbsolute(sourceRelative) ? sourceRelative.replaceAll("\\", "/") : null,
-      session: saved,
+      session: encodeSession(saved),
    };
    projectFileSchema.parse(document);
+   const text = `${JSON.stringify(document, null, 2)}\n`;
+   if (Buffer.byteLength(text) > maxProjectBytes) throw new Error("This project file is too large to save.");
    const normalize = (value: string) => (process.platform === "win32" ? resolve(value).toLowerCase() : resolve(value));
    if (normalize(path) === normalize(session.path)) throw new Error("A project file cannot replace the source video. Choose a different filename.");
    await protectSource(session.path, path);
    await withTemporaryOutput(dirname(path), ".attacut-project-", async (directory) => {
       const temporary = join(directory, "project.json");
-      await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`);
+      await writeFile(temporary, text);
       await publishOutput(temporary, path, true, session.path);
    });
    return { ...session, project: { path: resolve(path), savedClips: session.clips } };

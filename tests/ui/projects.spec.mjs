@@ -60,7 +60,8 @@ test("save, save as, cancel and import preserve clips and undo history", async (
    await expect(page.locator(".title-filename")).toHaveText("first.attacut");
    const first = JSON.parse(await readFile(project, "utf8"));
    expect(first.session.clips[0].end).toBe(8.5);
-   expect(first.session.past).toHaveLength(1);
+   expect(first.version).toBe(2);
+   expect(first.session.history.past).toHaveLength(1);
    expect(first.session.path).toBe(resolve("work/fixture.mp4"));
    expect(first.relativeSource).toBe(relative(profile, first.session.path).replaceAll("\\", "/"));
    await trim(page, "00:07.00");
@@ -110,7 +111,8 @@ test("absolute fallback repairs the relative path, then moving both files repair
    await waitForVideo(page);
    let updated = JSON.parse(await readFile(movedProject, "utf8"));
    expect(updated.relativeSource).toBe("../source.mp4");
-   expect(updated.session).toEqual(document.session);
+   const { past, future, ...timeline } = document.session;
+   expect(updated.session).toEqual({ ...timeline, history: { version: 1, past, future } });
    await app.close();
    const root = join(profile, "relocated");
    await mkdir(root);
@@ -125,7 +127,7 @@ test("absolute fallback repairs the relative path, then moving both files repair
    expect(updated.session.path).toBe(join(root, "source.mp4"));
    expect(updated.relativeSource).toBe("../source.mp4");
    expect(updated.session.clips).toEqual(document.session.clips);
-   expect(updated.session.past).toEqual(document.session.past);
+   expect(updated.session.history.past).toEqual(document.session.past);
 });
 
 test("missing media can be located, while changed media and malformed projects preserve the current edit", async ({ launchApp, profile }) => {

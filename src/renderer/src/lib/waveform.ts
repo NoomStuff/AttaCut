@@ -144,9 +144,9 @@ export function useWaveform({
             // and diagnostics already recorded the ffmpeg outcome.
          }
       };
-      // The waveform reads the source file directly and must not wait for the preview: a
-      // recording that needs a transcode would otherwise hold the waveform hostage for the
-      // whole encode. A short settle keeps the very first open frame responsive.
+      // No preview in flight: the waveform reads the source file directly, so a failed or
+      // absent preview never leaves it blank. A short settle keeps the very first open
+      // frame responsive.
       cancelIdle = afterIdle(() => void read(), 150);
       return () => {
          cancelled = true;

@@ -21,7 +21,7 @@ import {
    containerKeepsData,
    supportsInterlacedEncoding,
 } from "./formats.ts";
-import { ffconcatList, isLosslessAudio, dispositionFlags } from "./mux.ts";
+import { ffconcatList, dropOutside, isLosslessAudio, dispositionFlags } from "./mux.ts";
 import { resolveFrameTime } from "../../shared/frames.ts";
 
 export interface Span {
@@ -318,13 +318,13 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                   "-c:v",
                   "copy",
                   "-bsf:v",
-                  `noise=drop='lt(pts*tb,${absoluteStart - epsilon})+gte(pts*tb,${absoluteEnd - epsilon})',setts=pts=PTS-${absoluteStart}/TB:dts=DTS-${absoluteStart}/TB`
+                  `${dropOutside(absoluteStart - epsilon, absoluteEnd - epsilon)},setts=pts=PTS-${absoluteStart}/TB:dts=DTS-${absoluteStart}/TB`
                );
             args.push("-t", String(span.encode ? span.end - span.start : absoluteEnd));
             if (video.codec === "mpeg4" && !span.encode)
                args.push(
                   "-bsf:v",
-                  `noise=drop='lt(pts*tb,${absoluteStart - epsilon})+gte(pts*tb,${absoluteEnd - epsilon})',setts=pts=PTS-${absoluteStart}/TB:dts=DTS-${absoluteStart}/TB,dump_extra=freq=keyframe`
+                  `${dropOutside(absoluteStart - epsilon, absoluteEnd - epsilon)},setts=pts=PTS-${absoluteStart}/TB:dts=DTS-${absoluteStart}/TB,dump_extra=freq=keyframe`
                );
             args.push("-avoid_negative_ts", segmentType === ".ts" ? "make_zero" : "disabled");
             if (segmentType === ".ts") args.push("-mpegts_flags", "+resend_headers", "-f", "mpegts");
@@ -394,9 +394,9 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
          ];
          if (isMp4Container(extname(destination))) args.push(...containerFlags(video));
          else {
-            args.push("-bsf:a", `noise=drop='lt(pts*tb,0)+gte(pts*tb,${duration})'`, "-avoid_negative_ts", "disabled");
+            args.push("-bsf:a", dropOutside(0, duration), "-avoid_negative_ts", "disabled");
             if (source.streams.some((stream) => stream.type === "subtitle" && !textSubtitleCodecs.has(stream.codec)))
-               args.push("-bsf:s", `noise=drop='lt(pts*tb,0)+gte(pts*tb,${duration})'`);
+               args.push("-bsf:s", dropOutside(0, duration));
          }
          for (const [index, audio] of selectedAudio.entries()) {
             if (isLosslessAudio(audio.codec)) {

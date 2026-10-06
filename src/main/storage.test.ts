@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { defaultPreferences, preferencesSchema, savedSessionSchema } from "../shared/types.ts";
 import { Storage, storageVersion } from "./storage.ts";
+import { encodeSession } from "../shared/session-codec";
 
 const folder = async () => mkdtemp(join(tmpdir(), "attacut-storage-"));
 const session = savedSessionSchema.parse({
@@ -16,6 +17,31 @@ const session = savedSessionSchema.parse({
 });
 
 describe("Storage", () => {
+   it("migrates legacy recovery history and recovers it after a malformed compact save", async () => {
+      const directory = await folder();
+      try {
+         const legacy = JSON.stringify({ version: 1, session });
+         await writeFile(join(directory, "session.json"), legacy);
+         const storage = new Storage(directory);
+         await storage.load();
+         expect(storage.session).toEqual(session);
+         await storage.save();
+         const saved = JSON.parse(await readFile(join(directory, "session.json"), "utf8"));
+         expect(saved).toEqual({ version: 2, session: encodeSession(session) });
+         expect(await readFile(join(directory, "session.backup.json"), "utf8")).toBe(legacy);
+         saved.session.history.past[0].remove = ["missing"];
+         await writeFile(join(directory, "session.json"), JSON.stringify(saved));
+         const recovered = new Storage(directory);
+         await recovered.load();
+         expect(recovered.session).toEqual(session);
+         expect(recovered.warning).toBeTruthy();
+         await recovered.save();
+         const retained = (await readdir(directory)).find((name) => name.startsWith("session.unreadable-"))!;
+         expect(JSON.parse(await readFile(join(directory, retained), "utf8"))).toEqual(saved);
+      } finally {
+         await rm(directory, { recursive: true, force: true });
+      }
+   });
    it("discards stale saves during reset and flushes the completed reset", async () => {
       const directory = await folder();
       try {

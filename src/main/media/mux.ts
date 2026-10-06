@@ -11,6 +11,11 @@ export function ffconcatList(paths: string[], durations: number[]): string {
       .join("\n")}\n`;
 }
 
+/** Drop packets outside [start, end), in seconds on the stream's presentation clock. */
+export function dropOutside(start: number, end: number): string {
+   return `noise=drop='lt(pts*tb,${start})+gte(pts*tb,${end})'`;
+}
+
 /** Disposition flags for one output stream; "0" tells ffmpeg to inherit nothing. */
 export function dispositionFlags(disposition: Record<string, number>): string {
    return (

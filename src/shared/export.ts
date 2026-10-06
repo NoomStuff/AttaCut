@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { clipSchema } from "./editing";
+import { clipLimit } from "./defaults";
 import type { Clip } from "./editing";
 import type { AppFailure } from "./failure";
 export const exportItemSchema = z.object({ clip: clipSchema, name: z.string().min(1).max(240) });
 export const planRequestSchema = z.object({
    sourceId: z.string(),
    directory: z.string().min(1),
-   items: z.array(exportItemSchema).min(1).max(1000),
+   items: z.array(exportItemSchema).min(1).max(clipLimit),
    mode: z.enum(["separate", "combined"]).default("separate"),
    audioTracks: z.array(z.number().int().nonnegative()).max(100).nullable().default(null),
    name: z.string().max(240).default("combined"),

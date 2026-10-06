@@ -127,6 +127,20 @@ export function useExitValue<T>(value: T | null, ms = 140): { value: T | null; m
 }
 
 /**
+ * Fires the press ripple from a button-local point. Removing the classes and forcing a
+ * reflow restarts the animation even when the same button is pressed again mid-press.
+ */
+export function pressRipple(button: HTMLButtonElement, x: number, y: number): void {
+   const rect = button.getBoundingClientRect();
+   button.style.setProperty("--press-x", `${x}px`);
+   button.style.setProperty("--press-y", `${y}px`);
+   button.style.setProperty("--press-reach", `${Math.ceil(Math.hypot(Math.max(x, rect.width - x), Math.max(y, rect.height - y)))}px`);
+   button.classList.remove("pressing", "releasing");
+   void button.offsetWidth;
+   button.classList.add("pressing");
+}
+
+/**
  * Delegated press feedback: a soft circle expands from the click point on every button
  * except drag surfaces, which need their pointer events uninterrupted. Buttons also release
  * focus after pointer use so keyboard highlights only ever follow keyboard navigation.
@@ -161,16 +175,8 @@ export function usePressFeedback(): void {
          const button = usable(event.target);
          if (!button) return;
          const rect = button.getBoundingClientRect();
-         const x = event.clientX - rect.left;
-         const y = event.clientY - rect.top;
-         const reach = Math.hypot(Math.max(x, rect.width - x), Math.max(y, rect.height - y));
-         button.style.setProperty("--press-x", `${x}px`);
-         button.style.setProperty("--press-y", `${y}px`);
-         button.style.setProperty("--press-reach", `${Math.ceil(reach)}px`);
          finishPress();
-         button.classList.remove("pressing", "releasing");
-         void button.offsetWidth;
-         button.classList.add("pressing");
+         pressRipple(button, event.clientX - rect.left, event.clientY - rect.top);
          pressed = { button, pointerId: event.pointerId };
       };
       const release = (event: PointerEvent) => {

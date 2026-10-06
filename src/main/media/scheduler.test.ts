@@ -1,6 +1,17 @@
 import { expect, it } from "vitest";
 import { scheduleMedia } from "./scheduler";
 
+it("releases capacity after tasks throw before returning a promise", async () => {
+   for (let attempt = 0; attempt < 4; attempt++) {
+      await expect(
+         scheduleMedia(() => {
+            throw new Error("Cannot start");
+         }, "background")
+      ).rejects.toThrow("Cannot start");
+   }
+   await expect(scheduleMedia(async () => "next", "background")).resolves.toBe("next");
+});
+
 it("reserves seek capacity and removes cancelled queued work", async () => {
    const started: string[] = [];
    const finish = new Map<string, () => void>();

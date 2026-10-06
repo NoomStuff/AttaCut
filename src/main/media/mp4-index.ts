@@ -10,7 +10,7 @@ export type { SampleTimes } from "./mp4-sample-table";
 export function indexedSampleTimes(source: ProbedSource, signal?: AbortSignal): Promise<SampleTimes | null> {
    signal?.throwIfAborted();
    const samples = source.duration * (primaryVideo(source)?.frameRate || 30);
-   if (!process.versions.electron || samples < 200_000 || ![".mp4", ".m4v", ".mov"].includes(source.extension)) {
+   if (!process.versions.electron || samples < 200_000 || ![".mp4", ".m4v", ".mov"].includes(source.extension.toLowerCase())) {
       return readSampleTimes(source, signal);
    }
    return new Promise((resolve, reject) => {

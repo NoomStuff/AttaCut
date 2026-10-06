@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, RefObject } from "react";
 import type { Clip, MediaSource } from "../../../shared/types";
 import type { PlaybackClock } from "../playback/clock";
@@ -344,7 +344,12 @@ export function Player({
                      return;
                   }
                }
-               if (videoRef.current && playWhenReady) void videoRef.current.play().catch(onFailure);
+               if (videoRef.current && playWhenReady)
+                  void videoRef.current.play().catch((value: unknown) => {
+                     // Pausing while a pending play() is still starting rejects with a routine
+                     // AbortError; only a real playback failure falls back to a preview.
+                     if (!(value instanceof DOMException && value.name === "AbortError")) onFailure();
+                  });
             }}
          />
          <canvas ref={snapshotRef} className={`preview-held-frame${frameHeld ? " visible" : ""}`} aria-hidden="true" />
@@ -408,20 +413,24 @@ function FullscreenProgress({ clock, duration, clips, onSeek }: { clock: Playbac
       onSeek(clamp((clientX - rect.left) / rect.width, 0, 1) * duration);
    };
    // Kept ranges take their timeline colors; the played span brightens everything it covers.
-   const segments = (className: string) =>
-      clips.map((clip) => (
-         <span
-            key={clip.id}
-            className={className}
-            style={
-               {
-                  left: `${(clip.start / duration) * 100}%`,
-                  width: `${((clip.end - clip.start) / duration) * 100}%`,
-                  "--clip-color": clipColor(clip.color),
-               } as CSSProperties
-            }
-         />
-      ));
+   // One element list renders twice: once in the track, once inside the played-span fill.
+   const segments = useMemo(
+      () =>
+         clips.map((clip) => (
+            <span
+               key={clip.id}
+               className="fullscreen-progress-segment"
+               style={
+                  {
+                     left: `${(clip.start / duration) * 100}%`,
+                     width: `${((clip.end - clip.start) / duration) * 100}%`,
+                     "--clip-color": clipColor(clip.color),
+                  } as CSSProperties
+               }
+            />
+         )),
+      [clips, duration]
+   );
    const fraction = duration > 0 ? clamp(time / duration, 0, 1) : 0;
    return (
       <div
@@ -471,9 +480,9 @@ function FullscreenProgress({ clock, duration, clips, onSeek }: { clock: Playbac
             }
          }}
       >
-         <div className="fullscreen-progress-track">{segments("fullscreen-progress-segment")}</div>
+         <div className="fullscreen-progress-track">{segments}</div>
          <div className="fullscreen-progress-fill" style={{ clipPath: `inset(0 ${100 - fraction * 100}% 0 0)` }}>
-            {segments("fullscreen-progress-segment")}
+            {segments}
          </div>
          <i className="fullscreen-progress-knob" style={{ left: `${fraction * 100}%` }} />
       </div>

@@ -9,7 +9,7 @@ import { exportCut } from "./cut.ts";
 import type { CutAnalysis, CutOptions } from "./cut.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
 import { isMp4Container, containerFlags, containerKeepsData } from "./formats.ts";
-import { ffconcatList, isLosslessAudio, dispositionFlags, serializeChapters } from "./mux.ts";
+import { ffconcatList, dropOutside, isLosslessAudio, dispositionFlags, serializeChapters } from "./mux.ts";
 import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
 
 export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], destination: string, options: CutOptions): Promise<void> {
@@ -54,7 +54,7 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
                "0:d?",
                "-c",
                "copy",
-               ...(selectedAudio.length ? ["-bsf:a", `noise=drop='lt(pts*tb,0)+gte(pts*tb,${cut.clip.end - cut.clip.start})'`] : []),
+               ...(selectedAudio.length ? ["-bsf:a", dropOutside(0, cut.clip.end - cut.clip.start)] : []),
                "-avoid_negative_ts",
                "disabled",
                path,

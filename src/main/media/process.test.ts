@@ -48,6 +48,20 @@ it("does not spawn already cancelled work", async () => {
    expect(spawn).not.toHaveBeenCalled();
 });
 
+it.each([true, false])("rejects failing line consumers and waits for closure, newline %s", async (newline) => {
+   const child = childProcess();
+   const pending = runMedia("ffprobe", [], {
+      onLines: () => {
+         throw new Error("Invalid timestamp");
+      },
+   });
+   const rejected = expect(pending).rejects.toThrow("Invalid timestamp");
+   child.stdout.write(`timestamp${newline ? "\n" : ""}`);
+   expect(child.kill).toHaveBeenCalledTimes(newline ? 1 : 0);
+   child.emit("close", 0);
+   await rejected;
+});
+
 it("reports a missing executable without waiting for close", async () => {
    const child = childProcess();
    Object.assign(child, { pid: undefined });

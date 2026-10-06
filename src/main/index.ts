@@ -41,7 +41,6 @@ app.on("open-file", (event, path) => {
 app.setName("AttaCut");
 if (process.platform === "win32") app.setAppUserModelId("dev.attacut.app");
 app.commandLine.appendSwitch("enable-blink-features", "AudioVideoTracks");
-// EXPERIMENT: disable-zero-copy-dxgi-video goes here when validated.
 protocol.registerSchemesAsPrivileged([
    { scheme: "media", privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
    { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -165,13 +164,28 @@ async function start(): Promise<void> {
    let applyUpdate: (() => void) | null = null;
    let closing = false;
    let resolveFlush: ((proceed: boolean) => void) | null = null;
+   let rejectFlush: ((error: Error) => void) | null = null;
    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+   const disarmFlush = () => {
+      if (flushTimer) clearTimeout(flushTimer);
+      flushTimer = null;
+   };
+   // A save dialog can stay open as long as the user needs. The initial timer only
+   // guards delivery of the flush request; renderer loss is handled separately.
+   const failFlush = () => {
+      disarmFlush();
+      const reject = rejectFlush;
+      resolveFlush = null;
+      rejectFlush = null;
+      reject?.(new Error("The editor did not finish saving. Try closing again."));
+   };
    ipcMain.on(IpcEvents.flushStarted, (event) => {
       if (event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame && flushTimer) {
-         clearTimeout(flushTimer);
-         flushTimer = null;
+         disarmFlush();
       }
    });
+   window.webContents.on("render-process-gone", failFlush);
+   window.webContents.on("destroyed", failFlush);
    window.on("close", (event) => {
       if (confirmedClose) return;
       event.preventDefault();
@@ -196,16 +210,14 @@ async function start(): Promise<void> {
          }
          if (rendererReady && !window.webContents.isDestroyed()) {
             const proceed = await new Promise<boolean>((resolve, reject) => {
-               flushTimer = setTimeout(() => {
-                  flushTimer = null;
-                  resolveFlush = null;
-                  reject(new Error("The editor did not finish saving. Try closing again."));
-               }, 10000);
+               flushTimer = setTimeout(failFlush, 10000);
                resolveFlush = (proceed) => {
-                  if (flushTimer) clearTimeout(flushTimer);
-                  flushTimer = null;
+                  disarmFlush();
+                  resolveFlush = null;
+                  rejectFlush = null;
                   resolve(proceed);
                };
+               rejectFlush = reject;
                window.webContents.send(IpcEvents.flush);
             });
             if (!proceed) {
@@ -231,10 +243,12 @@ async function start(): Promise<void> {
       exportsService.cancel();
       // Give killed children and their cleanup handlers a bounded window to finish so
       // temporary export folders are removed instead of stranded beside the user's output.
-      void Promise.race([exportsService.waitForIdle(), new Promise((resolve) => setTimeout(resolve, 15_000))]).finally(() => {
-         if (applyUpdate) applyUpdate();
-         else app.quit();
-      });
+      void Promise.race([exportsService.waitForIdle(), new Promise((resolve) => setTimeout(resolve, 15_000))])
+         .catch(() => undefined)
+         .finally(() => {
+            if (applyUpdate) applyUpdate();
+            else app.quit();
+         });
    });
    installMenu(window);
    registerIpc({
@@ -251,7 +265,6 @@ async function start(): Promise<void> {
       },
       onFlushed: (proceed = true) => {
          resolveFlush?.(proceed);
-         resolveFlush = null;
       },
       onApplyUpdate: (install) => {
          applyUpdate = install;

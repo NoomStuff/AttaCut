@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { appEnv, test, waitForVideo } from "./app.mjs";
+import { appEnv, test, waitForVideo, waitForPlaybackTime } from "./app.mjs";
 import { resolve } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -202,4 +202,84 @@ test("playback leaves the root idle and close flushes the final edit", async ({ 
    const restored = await launchApp(profile, "");
    page = await restored.firstWindow();
    await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", "1.3");
+});
+
+test("handle drafts update the transport without rendering the root and Escape restores the cut", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const start = page.getByRole("textbox", { name: "Clip start", exact: true });
+   const slider = page.getByRole("slider", { name: "Clip 1 start", exact: true });
+   const viewport = await page.locator(".timeline-viewport").boundingBox();
+   const handle = await slider.boundingBox();
+   const y = handle.y + handle.height / 2;
+   await page.mouse.move(handle.x + handle.width / 2, y);
+   await page.mouse.down();
+   await page.mouse.move(viewport.x + viewport.width / 18, y);
+   await expect(start).toHaveValue("00:01.00");
+   await page.evaluate(() => {
+      globalThis.dragRootRenders = 0;
+      const observer = new globalThis.PerformanceObserver((list) => {
+         globalThis.dragRootRenders += list.getEntries().filter((entry) => entry.name === "attacut:editor-commit").length;
+      });
+      observer.observe({ type: "mark" });
+   });
+   await page.mouse.move(viewport.x + (viewport.width * 3) / 18, y, { steps: 20 });
+   await expect(start).toHaveValue("00:03.00");
+   const renders = await page.evaluate(() => globalThis.dragRootRenders);
+   expect(renders).toBeLessThanOrEqual(2);
+   console.log(`Editor commits during handle drag: ${renders}`);
+   await page.keyboard.press("Escape");
+   await page.mouse.up();
+   await expect(slider).toHaveAttribute("aria-valuenow", "0");
+   await expect(start).toHaveValue("00:00.00");
+});
+
+test("the clip limit explains rejected edits and allows editing again after a deletion", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   await expect.poll(async () => !!(await page.evaluate(() => globalThis.desktop.bootstrap())).session).toBe(true);
+   await page.evaluate(async () => {
+      const { session } = await globalThis.desktop.bootstrap();
+      const clips = Array.from({ length: 1000 }, (_, index) => ({
+         id: `limit-${index}`,
+         color: index % 5,
+         start: index === 0 ? 0 : 9 + ((index - 1) * 9) / 999,
+         end: index === 0 ? 7 : 9 + (index * 9) / 999,
+      }));
+      await globalThis.desktop.saveSession({ ...session, clips, selectedId: clips[0].id, past: [], future: [] });
+   });
+   await page.reload();
+   await waitForVideo(page);
+   await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(1000);
+   await page.keyboard.press("ArrowRight");
+   await waitForPlaybackTime(page, 1);
+   await page.keyboard.press("s");
+   const warning = page.getByText("This timeline has reached 1,000 clips. Merge or delete a clip before adding another.");
+   await expect(warning).toBeVisible();
+   await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(1000);
+   await page.getByRole("button", { name: "Dismiss error", exact: true }).click();
+   await page.locator(".title-filename").click();
+   for (let step = 0; step < 7; step++) await page.keyboard.press("ArrowRight");
+   await waitForPlaybackTime(page, 8);
+   await page.keyboard.press("w");
+   await expect(warning).toBeVisible();
+   await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(1000);
+   await page.getByRole("button", { name: "Dismiss error", exact: true }).click();
+   await page.locator(".title-filename").click();
+   for (let step = 0; step < 7; step++) await page.keyboard.press("ArrowLeft");
+   await waitForPlaybackTime(page, 1);
+   await page.keyboard.press("Delete");
+   await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(999);
+   await page.keyboard.press("w");
+   await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(1000);
+   await page.keyboard.press("ControlOrMeta+z");
+   await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(999);
+   await page.keyboard.press("ControlOrMeta+Shift+z");
+   await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(1000);
+   await app.close();
+   const saved = JSON.parse(await readFile(resolve(profile, "session.json"), "utf8"));
+   expect(saved.session.clips).toHaveLength(1000);
+   expect(saved.session.history.past).toHaveLength(2);
 });

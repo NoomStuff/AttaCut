@@ -1,4 +1,5 @@
 import { createContext, useEffect, useRef } from "react";
+import { pressRipple } from "../lib/motion";
 export const commandDefinitions = {
    open: { label: "Open file…", bindings: ["Mod+O"], group: "File" },
    saveProject: { label: "Save project", bindings: ["Mod+S"], group: "File" },
@@ -134,12 +135,8 @@ export function useCommands(
       const flashPress = (button: HTMLElement) => {
          if (!(button instanceof HTMLButtonElement) || button.disabled || button.getAttribute("aria-disabled") === "true") return;
          const rect = button.getBoundingClientRect();
-         button.style.setProperty("--press-x", "50%");
-         button.style.setProperty("--press-y", "50%");
-         button.style.setProperty("--press-reach", `${Math.ceil(Math.hypot(rect.width, rect.height) / 2)}px`);
-         button.classList.remove("pressing", "releasing");
-         void button.offsetWidth;
-         button.classList.add("pressing", "releasing");
+         pressRipple(button, rect.width / 2, rect.height / 2);
+         button.classList.add("releasing");
       };
       const execute = (id: string, resolved?: () => void) => {
          // The dialog's open attribute clears the moment a panel dismisses, even though its

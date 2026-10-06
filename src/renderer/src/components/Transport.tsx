@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { MediaSource } from "../../../shared/types";
 import type { EditDocument } from "../editor/model";
 import { selectedClip } from "../editor/model";
+import type { DraftStore } from "../editor/draftStore";
 import { formatTime, parseTime } from "../../../shared/time";
 import { Button, IconButton } from "./Controls";
 import {
@@ -96,6 +97,7 @@ function TimeField({ label, value, onChange }: { label: string; value: number; o
 }
 export function Transport({
    document,
+   draftStore,
    source,
    playing,
    volume,
@@ -111,6 +113,8 @@ export function Transport({
    zoom,
 }: {
    document: EditDocument;
+   /** Subscribes to the live handle-drag draft, which outranks the committed document. */
+   draftStore: DraftStore;
    source: MediaSource;
    playing: boolean;
    volume: number;
@@ -125,8 +129,12 @@ export function Transport({
    readingKeys: boolean;
    zoom: number;
 }) {
-   const clip = selectedClip(document);
-   const index = document.clips.findIndex((item) => item.id === document.selectedId);
+   // While a handle drag is live, its draft is the truth: the transport keeps showing the
+   // dragged clip with live start, end, and duration instead of flickering to the gap
+   // message when the moving boundary crosses out of the committed document.
+   const live = useSyncExternalStore(draftStore.subscribe, draftStore.get) ?? document;
+   const clip = selectedClip(live);
+   const index = live.clips.findIndex((item) => item.id === live.selectedId);
    return (
       <div className="transport">
          <div className="clip-details">
@@ -134,8 +142,8 @@ export function Transport({
                <>
                   <span className="selected-clip-label">
                      <i style={{ background: clipColor(clip.color) }} />
-                     {document.clips.length === 1 ? "Clip" : `Clip ${index + 1}`}
-                     {document.clips.length > 1 && <span className="muted">of {document.clips.length}</span>}
+                     {live.clips.length === 1 ? "Clip" : `Clip ${index + 1}`}
+                     {live.clips.length > 1 && <span className="muted">of {live.clips.length}</span>}
                   </span>
                   <div className="clip-boundaries">
                      <TimeField key={`${clip.id}:start`} label="Start" value={clip.start} onChange={(value) => onBoundary("start", value)} />

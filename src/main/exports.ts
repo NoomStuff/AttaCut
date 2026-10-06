@@ -91,17 +91,13 @@ export class ExportService {
       const audio = source.streams.filter((stream) => stream.type === "audio");
       const tracks = exportAudioTracks(source, settings.audioTracks);
       const items = [...settings.items].sort((a, b) => a.clip.start - b.clip.start);
-      const results: CutAnalysis[] = new Array(items.length);
-      let next = 0;
-      await Promise.all(
-         Array.from({ length: Math.min(2, items.length) }, async () => {
-            while (next < items.length) {
-               const index = next++;
-               const item = items[index]!;
-               const extension = exportExtensionFor(source, item.clip, { separate: settings.mode === "separate", allAudio: tracks.length === audio.length });
-               results[index] = await this.cut(source, item.clip, tracks, extension, settings.mode, signal);
-            }
-         })
+      const results = await mapConcurrent(
+         items,
+         (item) => {
+            const extension = exportExtensionFor(source, item.clip, { separate: settings.mode === "separate", allAudio: tracks.length === audio.length });
+            return this.cut(source, item.clip, tracks, extension, settings.mode, signal);
+         },
+         2
       );
       signal.throwIfAborted();
       return results;
@@ -128,8 +124,9 @@ export class ExportService {
       };
       if (settings.mode === "combined") return { items: [{ clipId: null, ...(await conflictFor(join(directoryPath, names[0]!))) }] };
       const sorted = [...settings.items].sort((a, b) => a.clip.start - b.clip.start);
-      const items: DestinationConflict[] = [];
-      for (const [index, item] of sorted.entries()) items.push({ clipId: item.clip.id, ...(await conflictFor(join(directoryPath, names[index]!))) });
+      const items = await mapConcurrent(sorted, (item, index) =>
+         conflictFor(join(directoryPath, names[index]!)).then((conflict) => ({ clipId: item.clip.id, ...conflict }))
+      );
       return { items };
    }
    async plan(source: ProbedSource, request: PlanRequest): Promise<ExportPlan> {
@@ -145,8 +142,7 @@ export class ExportService {
       if (directory) await access(directoryPath, constants.W_OK);
       const names = outputNames(source, settings);
       const itemNames = settings.mode === "combined" ? outputNames(source, { ...settings, mode: "separate" }) : names;
-      // Two clips writing one file would silently lose the first; the panel blocks this
-      // live, and planning refuses it in case a stale request slips past.
+      // The panel blocks collisions live; planning also rejects stale or direct IPC requests.
       if (settings.mode === "separate" && duplicateNames(names).size) throw new Error("Some clips export to the same file name. Give each clip its own name.");
       const cuts = await this.analyze(source, settings, signal);
       const analyses = new Map<string, CutAnalysis[]>();
@@ -189,12 +185,16 @@ export class ExportService {
          analyses.set(first.id, cuts);
          items.splice(0, items.length, combined);
       }
-      const existingPaths: string[] = [];
+      const destinations = await mapConcurrent(items, async (item) => ({
+         source: await protectSource(source.path, item.outputPath, true),
+         exists: await exists(item.outputPath),
+      }));
       let sourcePath: string | null = null;
-      for (const item of items) {
-         if (await protectSource(source.path, item.outputPath, true)) sourcePath = item.outputPath;
-         if (await exists(item.outputPath)) existingPaths.push(item.outputPath);
-      }
+      const existingPaths: string[] = [];
+      items.forEach((item, index) => {
+         if (destinations[index]!.source) sourcePath = item.outputPath;
+         if (destinations[index]!.exists) existingPaths.push(item.outputPath);
+      });
       const plan: ExportPlan = {
          id: randomUUID(),
          sourceId: source.id,
@@ -341,17 +341,12 @@ function outputNames(source: ProbedSource, request: ReturnType<typeof planReques
    }
    const audio = source.streams.filter((stream) => stream.type === "audio");
    const allAudio = (request.audioTracks ?? audio.map((stream) => stream.index)).length === audio.length;
-   const used = new Set<string>();
    return [...request.items]
       .sort((a, b) => a.clip.start - b.clip.start)
       .map((item) => {
          const extension = exportExtensionFor(source, item.clip, { separate: true, allAudio });
          const stem = sanitizeName(item.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
-         let name = `${stem}${extension}`;
-         let suffix = 2;
-         while (used.has(name.toLowerCase())) name = `${stem} (${suffix++})${extension}`;
-         used.add(name.toLowerCase());
-         return name;
+         return `${stem}${extension}`;
       });
 }
 async function exists(path: string): Promise<boolean> {
@@ -362,4 +357,18 @@ async function exists(path: string): Promise<boolean> {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
       throw error;
    }
+}
+/** Keep large clip batches from issuing hundreds of filesystem requests at once. */
+async function mapConcurrent<T, R>(items: T[], visit: (item: T, index: number) => Promise<R>, concurrency = 16): Promise<R[]> {
+   const results = new Array<R>(items.length);
+   let next = 0;
+   await Promise.all(
+      Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+         while (next < items.length) {
+            const index = next++;
+            results[index] = await visit(items[index]!, index);
+         }
+      })
+   );
+   return results;
 }

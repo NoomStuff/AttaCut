@@ -1,5 +1,5 @@
 import type { Clip } from "../../../shared/types";
-import { undoLimit } from "../../../shared/defaults";
+import { clipLimit, undoLimit } from "../../../shared/defaults";
 import { clamp } from "../../../shared/time";
 import { nextClipColor } from "./colors";
 
@@ -99,6 +99,7 @@ export function insideClip(clips: Clip[], time: number, duration: number): boole
  * from the playhead, never re-derived inside these functions.
  */
 export function canSplit(document: EditDocument, id: string, time: number, step = timeEpsilon): boolean {
+   if (document.clips.length >= clipLimit) return false;
    const clip = document.clips.find((item) => item.id === id);
    // Frame timestamps round to microseconds; do not reject a whole frame for that rounding.
    const precision = 0.000001;
@@ -149,6 +150,7 @@ export function gapAt(document: EditDocument, time: number, duration: number): {
    return duration - start > timeEpsilon && time >= start - timeEpsilon && time <= duration + timeEpsilon ? { start, end: duration } : null;
 }
 export function addGap(document: EditDocument, time: number, duration: number): EditDocument {
+   if (document.clips.length >= clipLimit) return document;
    const gap = gapAt(document, time, duration);
    if (!gap) return document;
    const index = document.clips.findIndex((clip) => clip.start >= gap.end);

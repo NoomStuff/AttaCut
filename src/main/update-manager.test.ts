@@ -21,6 +21,7 @@ const automatic = await vi.hoisted(async () => {
 vi.mock("electron-updater", () => ({ autoUpdater: automatic }));
 const folders: string[] = [];
 afterEach(async () => {
+   vi.useRealTimers();
    vi.unstubAllEnvs();
    vi.resetAllMocks();
    automatic.removeAllListeners();
@@ -51,7 +52,7 @@ it.skipIf(process.platform === "darwin")("handles automatic progress, readiness,
    vi.stubEnv("PORTABLE_EXECUTABLE_FILE", "");
    vi.stubEnv("APPIMAGE", "/test/app");
    Object.defineProperty(process, "resourcesPath", { value: tmpdir(), configurable: true });
-   automatic.checkForUpdates.mockResolvedValue({});
+   automatic.checkForUpdates.mockResolvedValue({ downloadPromise: Promise.resolve([]) });
    const { manager: updates, send } = manager();
    expect(() => updates.install()).toThrow("not ready");
    await updates.offer(release);
@@ -60,10 +61,73 @@ it.skipIf(process.platform === "darwin")("handles automatic progress, readiness,
    expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ phase: "downloading", percent: 42 }));
    automatic.emit("error", new Error("network lost"));
    expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ phase: "error" }));
-   automatic.emit("update-downloaded");
+   automatic.emit("update-downloaded", { version: release.version });
    expect(updates.isReady).toBe(true);
    updates.install();
    expect(automatic.quitAndInstall).toHaveBeenCalledWith(false, true);
+});
+
+it.skipIf(process.platform === "darwin")("keeps one automatic download active and associates readiness with the downloaded version", async () => {
+   vi.stubEnv("PORTABLE_EXECUTABLE_FILE", "");
+   vi.stubEnv("APPIMAGE", "/test/app");
+   Object.defineProperty(process, "resourcesPath", { value: tmpdir(), configurable: true });
+   let finish!: () => void;
+   automatic.checkForUpdates.mockResolvedValueOnce({
+      downloadPromise: new Promise<void>((resolve) => {
+         finish = resolve;
+      }),
+   });
+   const { manager: updates, send } = manager();
+   await updates.offer(release);
+   await vi.waitFor(() => expect(automatic.checkForUpdates).toHaveBeenCalledTimes(1));
+   await updates.offer(release);
+   const next = { ...release, version: "0.16.0" };
+   await updates.offer(next);
+   expect(automatic.checkForUpdates).toHaveBeenCalledTimes(1);
+   automatic.emit("download-progress", { percent: 50 });
+   expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ version: release.version, phase: "downloading" }));
+   automatic.emit("update-downloaded", { version: release.version });
+   expect(updates.isReady).toBe(false);
+   expect(() => updates.install()).toThrow("not ready");
+   automatic.checkForUpdates.mockResolvedValueOnce({ downloadPromise: Promise.resolve([]) });
+   finish();
+   await vi.waitFor(() => expect(automatic.checkForUpdates).toHaveBeenCalledTimes(2));
+   automatic.emit("update-downloaded", { version: next.version });
+   expect(updates.isReady).toBe(true);
+   await updates.offer(next);
+   expect(automatic.checkForUpdates).toHaveBeenCalledTimes(2);
+   expect(automatic.listenerCount("download-progress")).toBe(1);
+   expect(automatic.listenerCount("update-downloaded")).toBe(1);
+});
+
+it.skipIf(process.platform !== "win32").each(["headers", "release body", "download body"])("cancels stalled portable %s and allows a retry", async (stage) => {
+   vi.stubEnv("PORTABLE_EXECUTABLE_FILE", "portable.exe");
+   const folder = await mkdtemp(join(tmpdir(), "attacut-update-"));
+   folders.push(folder);
+   vi.mocked(app.getPath).mockReturnValue(folder);
+   const name = `AttaCut-${release.version}-win-${process.arch}.exe`;
+   const response =
+      stage === "release body"
+         ? new Response(new ReadableStream())
+         : Response.json({
+              assets: [{ name, browser_download_url: "https://example.com/app", digest: "sha256:" + "a".repeat(64) }],
+           });
+   if (stage === "headers") vi.mocked(net.fetch).mockImplementationOnce(() => new Promise(() => {}));
+   else vi.mocked(net.fetch).mockResolvedValueOnce(response);
+   vi.mocked(net.fetch).mockResolvedValueOnce(new Response(new ReadableStream()));
+   const { manager: updates } = manager();
+   await updates.offer(release);
+   vi.useFakeTimers();
+   const pending = updates.downloadPortable(release.version);
+   const rejected = expect(pending).rejects.toThrow("stalled");
+   // File creation uses real I/O before the body watchdog starts.
+   if (stage === "download body") await vi.waitFor(() => expect(net.fetch).toHaveBeenCalledTimes(2));
+   await vi.advanceTimersByTimeAsync(31_000);
+   await rejected;
+   expect(vi.mocked(net.fetch).mock.calls[0]![1]!.signal!.aborted).toBe(true);
+   expect((await readdir(folder)).some((file) => file.endsWith(".part"))).toBe(false);
+   vi.mocked(net.fetch).mockReset().mockRejectedValue(new Error("Retry reached network"));
+   await expect(updates.downloadPortable(release.version)).rejects.toThrow("Retry reached network");
 });
 it.skipIf(process.platform !== "win32").each(["checksum", "interrupted", "http", "malformed", "success"])("portable download: %s", async (scenario) => {
    vi.stubEnv("PORTABLE_EXECUTABLE_FILE", "portable.exe");
@@ -122,4 +186,20 @@ it.skipIf(process.platform === "darwin").each(["missing", "rejected"])("automati
    await vi.waitFor(() => expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ phase: "error" })));
    expect(updates.isReady).toBe(false);
    expect(() => updates.install()).toThrow("not ready");
+});
+
+it.skipIf(process.platform === "darwin")("reports an outdated automatic feed instead of leaving the offered release downloading forever", async () => {
+   vi.stubEnv("PORTABLE_EXECUTABLE_FILE", "");
+   vi.stubEnv("APPIMAGE", "/test/app");
+   Object.defineProperty(process, "resourcesPath", { value: tmpdir(), configurable: true });
+   automatic.checkForUpdates.mockImplementationOnce(async () => ({
+      downloadPromise: Promise.resolve().then(() => {
+         automatic.emit("update-downloaded", { version: "0.14.2" });
+         return [];
+      }),
+   }));
+   const { manager: updates, send } = manager();
+   await updates.offer(release);
+   await vi.waitFor(() => expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ version: release.version, phase: "error" })));
+   expect(updates.isReady).toBe(false);
 });

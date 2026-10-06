@@ -12,12 +12,9 @@ export function useFrameBoundaries(
    dispatch: Dispatch<EditAction>,
    onError: (message: string) => void,
    onResolved: (times: Map<number, number>) => void
-): boolean {
+): void {
    const index = useMemo(() => ({ sourceId: source?.id, times: new Map<number, number>() }), [source?.id]);
    const times = index.times;
-   const requested = [...new Set(document.clips.flatMap((clip) => [clip.start, clip.end]))].filter(
-      (time) => source && time !== 0 && time !== source.duration && !times.has(time)
-   );
    useEffect(() => {
       if (!source) return;
       const pending = [...new Set(document.clips.flatMap((clip) => [clip.start, clip.end]))].filter(
@@ -55,5 +52,4 @@ export function useFrameBoundaries(
          current = false;
       };
    }, [source, document, times, dispatch, onError, onResolved]);
-   return requested.length > 0;
 }

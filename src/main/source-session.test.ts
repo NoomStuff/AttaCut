@@ -6,7 +6,7 @@ import { extractScrubPcm } from "./media/scrub-audio.ts";
 import type { ProbedSource } from "./media/probe.ts";
 vi.mock("./media/probe.ts", () => ({
    setSourceLifetime: vi.fn(),
-   probeSource: vi.fn(async (path: string) => ({ id: path, path, duration: 36000 }) as ProbedSource),
+   probeSource: vi.fn(async (path: string) => ({ id: path, path, duration: 36000, extension: ".mkv" }) as ProbedSource),
    sourceKeyframes: vi.fn(async () => [0, 2]),
    sourceFrames: vi.fn(async () => null),
    packetsAround: vi.fn(async () => []),

@@ -53,7 +53,7 @@ export class SourceSession {
       this.mediaPaths.set(source.id, source.path);
       // Warm what the first seek needs: the in-memory frame index for MP4-family sources,
       // the first small packet window for everything else.
-      if ([".mp4", ".m4v", ".mov"].includes(source.extension)) void sourceFrames(source, this.signal).catch(() => undefined);
+      if ([".mp4", ".m4v", ".mov"].includes(source.extension.toLowerCase())) void sourceFrames(source, this.signal).catch(() => undefined);
       else void packetsAround(source, 0, this.signal, "seek").catch(() => undefined);
       return source;
    }

@@ -2,8 +2,10 @@ import type { Preferences } from "./preferences";
 
 // Renderer defaults must stay independent of the main process validation library.
 export const clipColorCount = 5;
+/** Maximum supported timeline size, shared by editing, saving, and export. */
+export const clipLimit = 1000;
 /** Deepest undo stack, both in memory and on disk. */
-export const undoLimit = 200;
+export const undoLimit = 500;
 export const defaultPreferences: Preferences = {
    theme: "dark",
    accent: 0,

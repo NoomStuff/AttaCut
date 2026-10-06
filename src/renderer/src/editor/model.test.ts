@@ -17,6 +17,7 @@ import {
 } from "./model";
 import type { EditDocument } from "./model";
 import { undoLimit } from "../../../shared/types";
+import { clipLimit } from "../../../shared/defaults";
 const source: EditDocument = { clips: [{ id: "a", start: 0, end: 120, color: 0 }], selectedId: "a" };
 /** The runtime equivalent of the removed clipAt helper: playhead targeting through ClipPriority. */
 function priorityTarget(document: EditDocument, time: number) {
@@ -25,6 +26,16 @@ function priorityTarget(document: EditDocument, time: number) {
    return priority.resolve(document, time);
 }
 describe("source-time editing", () => {
+   it("keeps splits and gap restoration within the saved and exported clip limit", () => {
+      const clips = Array.from({ length: clipLimit }, (_, index) => ({ id: `clip-${index}`, start: index * 2, end: index * 2 + 1, color: index % 5 }));
+      const document = { clips, selectedId: clips[0]!.id };
+      expect(canSplit(document, clips[0]!.id, 0.5)).toBe(false);
+      expect(splitClip(document, clips[0]!.id, 0.5)).toBe(document);
+      expect(addGap(document, 1.5, clipLimit * 2)).toBe(document);
+      const reduced = deleteClip(document, clips[1]!.id);
+      expect(splitClip(reduced, clips[0]!.id, 0.5).clips).toHaveLength(clipLimit);
+      expect(addGap(reduced, 1.5, clipLimit * 2).clips).toHaveLength(clipLimit);
+   });
    it("resolves committed timestamps without adding undo steps or accepting a late reply", () => {
       const requested = trimClip(source, "a", "start", 1.25, 120);
       const committed = editorReducer({ ...emptyEditor, document: source }, { type: "commit", document: requested });
@@ -71,10 +82,11 @@ describe("source-time editing", () => {
          state = editorReducer(state, { type: "commit", document: trimClip(source, "a", "end", 120 - index / 10, 120) });
       expect(state.past.length).toBe(undoLimit);
       expect(state.past[0]!.clips[0]!.end).toBeCloseTo(115);
-      expect(state.past.at(-1)!.clips[0]!.end).toBeCloseTo(95.1);
+      const finalEnd = 120 - (undoLimit + 50) / 10;
+      expect(state.past.at(-1)!.clips[0]!.end).toBeCloseTo(finalEnd + 0.1);
       const undone = editorReducer(state, { type: "undo" });
-      expect(undone.document.clips[0]!.end).toBeCloseTo(95.1);
-      expect(undone.future[0]!.clips[0]!.end).toBeCloseTo(95);
+      expect(undone.document.clips[0]!.end).toBeCloseTo(finalEnd + 0.1);
+      expect(undone.future[0]!.clips[0]!.end).toBeCloseTo(finalEnd);
    });
    it("restores undo and redo history with a loaded document", () => {
       const past = [{ clips: [], selectedId: null }];

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { savedSessionSchema } from "./editing";
+import { legacySessionSchema, storedSessionSchema } from "./session-storage";
 import type { SavedSession } from "./editing";
 
 export const projectExtension = "attacut";
@@ -7,12 +7,14 @@ export const projectExtension = "attacut";
 export const projectFallbackExtension = "atc";
 export const projectExtensions = [projectExtension, projectFallbackExtension];
 export const isProjectPath = (path: string): boolean => projectExtensions.some((extension) => path.toLowerCase().endsWith(`.${extension}`));
-export const projectFileSchema = z.object({
+const projectShape = {
    format: z.literal("AttaCut"),
-   version: z.literal(1),
    relativeSource: z.string().min(1).nullable(),
-   session: savedSessionSchema,
-});
+};
+export const projectFileSchema = z.union([
+   z.object({ ...projectShape, version: z.literal(1), session: legacySessionSchema }),
+   z.object({ ...projectShape, version: z.literal(2), session: storedSessionSchema }),
+]);
 export type ProjectFile = z.infer<typeof projectFileSchema>;
 
 export function projectHasChanges(session: SavedSession): boolean {

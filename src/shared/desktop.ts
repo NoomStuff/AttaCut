@@ -1,6 +1,7 @@
 import type { FrameRequest, WaveformRequest } from "./media-requests";
 import type { Preferences } from "./preferences";
 import type { SavedSession } from "./editing";
+import type { SessionInput } from "./session-codec";
 import type { MediaSource, ScrubAudio } from "./media";
 import type { PlanRequest, AnalyzeRequest, ExportApproval, ExportPlan, ExportDestinations, CutReport, ExportJob } from "./export";
 export interface Bootstrap {
@@ -33,13 +34,13 @@ export interface DesktopApi {
    chooseSource(): Promise<string | null>;
    openSource(path: string): Promise<MediaSource>;
    openProject(path: string): Promise<{ source: MediaSource; session: SavedSession } | null>;
-   saveProject(session: SavedSession, saveAs?: boolean): Promise<SavedSession | null>;
-   confirmProject(session: SavedSession): Promise<"save" | "discard" | "cancel">;
+   saveProject(session: SessionInput, saveAs?: boolean): Promise<SavedSession | null>;
+   confirmProject(session: SessionInput): Promise<"save" | "discard" | "cancel">;
    closeSource(): Promise<void>;
    filePath(file: File): string;
    chooseDirectory(current: string): Promise<string | null>;
    savePreferences(value: Preferences): Promise<void>;
-   saveSession(value: SavedSession): Promise<void>;
+   saveSession(value: SessionInput): Promise<void>;
    factoryReset(): Promise<void>;
    setWindowTitle(title: string): Promise<void>;
    preparePreview(sourceId: string, audioIndices: number[], transcode: boolean): Promise<string>;
@@ -53,7 +54,7 @@ export interface DesktopApi {
    frameTime(sourceId: string, time: number, direction: -1 | 0 | 1): Promise<number>;
    cancelExportPlanning(): Promise<void>;
    cancelExportAnalysis(): Promise<void>;
-   flushState(value: { preferences: Preferences; session: SavedSession | null; closing?: boolean; cancelClose?: boolean }): Promise<void>;
+   flushState(value: { preferences: Preferences; session: SessionInput | null; closing?: boolean; cancelClose?: boolean }): Promise<void>;
    onFlush(listener: () => void): () => void;
    flushStarted(): void;
    onOpenFile(listener: (path: string) => void): () => void;

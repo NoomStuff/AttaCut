@@ -3,6 +3,7 @@ import { link, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/pro
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { savedSessionSchema } from "../shared/editing";
+import { undoLimit } from "../shared/defaults";
 import { isProjectPath, projectHasChanges } from "../shared/project";
 import { readProject, projectSourcePaths, updateProjectSource, validateProjectSource, writeProject } from "./project-document";
 
@@ -44,6 +45,26 @@ it("round trips clips and history with both source paths, without recovery metad
    expect(await readFile(session.path, "utf8")).toBe("source bytes");
 });
 
+it("reopens a saved project with 1,000 clips and a full undo history", async () => {
+   const { session, path } = await fixture();
+   const clips = Array.from({ length: 1000 }, (_, index) => ({ id: crypto.randomUUID(), start: index, end: index + 0.75, color: index % 5 }));
+   const selectedId = clips[0]!.id;
+   const past = Array.from({ length: undoLimit }, (_, index) => ({
+      clips: [{ ...clips[0]!, end: 0.5 + index / 1000 }, ...clips.slice(1)],
+      selectedId,
+   }));
+   const largeSession = { ...session, clips, selectedId, past, future: [] };
+   await writeFile(path, JSON.stringify({ format: "AttaCut", version: 1, relativeSource: "video.mp4", session: largeSession }, null, 2));
+   expect((await stat(path)).size).toBeGreaterThan(16 * 1024 * 1024);
+   expect((await readProject(path)).session).toEqual(largeSession);
+   await writeProject(path, largeSession);
+   expect((await stat(path)).size).toBeLessThan(300 * 1024);
+   const document = await readProject(path);
+   expect(document.session.clips).toEqual(clips);
+   expect(document.session.past).toHaveLength(undoLimit);
+   expect(document.session.past.at(-1)!.clips).toEqual(past.at(-1)!.clips);
+});
+
 it("accepts the three-letter fallback extension for save and open", async () => {
    const { session, directory } = await fixture();
    expect(isProjectPath("edit.attacut")).toBe(true);
@@ -65,7 +86,7 @@ it("updates changed path references while preserving every saved edit", async ()
    const movedFolder = join(directory, "moved");
    await mkdir(movedFolder);
    const movedProject = join(movedFolder, "edit.attacut");
-   await writeFile(movedProject, JSON.stringify(document));
+   await writeFile(movedProject, await readFile(path));
    expect(projectSourcePaths(movedProject, document)).toEqual([join(movedFolder, "video.mp4"), session.path]);
    await updateProjectSource(movedProject, document, session.path);
    const updated = await readProject(movedProject);
@@ -87,7 +108,7 @@ it("rejects malformed, inconsistent and unsupported projects with useful message
    const document = await readProject(path);
    await writeFile(path, "{");
    await expect(readProject(path)).rejects.toThrow("damaged or incomplete");
-   await writeFile(path, JSON.stringify({ ...document, version: 2 }));
+   await writeFile(path, JSON.stringify({ ...document, version: 3 }));
    await expect(readProject(path)).rejects.toThrow("Update AttaCut");
    await writeFile(path, JSON.stringify({ ...document, session: { ...session, clips: [{ id: "bad", start: 4, end: 3, color: 0 }] } }));
    await expect(readProject(path)).rejects.toThrow("not a valid AttaCut project");

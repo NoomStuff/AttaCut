@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { undoLimit } from "./defaults";
+import { clipLimit, undoLimit } from "./defaults";
 export const clipSchema = z
    .object({
       id: z.string().min(1),
@@ -9,10 +9,6 @@ export const clipSchema = z
    })
    .refine((clip) => clip.end > clip.start, "A clip must have a positive duration.");
 export type Clip = z.infer<typeof clipSchema>;
-
-/** Sanity bound for saved documents; frame-slicing long recordings can legitimately stack
-    hundreds of clips, so the ceiling stays far above normal use. */
-const clipLimit = 1000;
 
 const savedDocumentShape = {
    clips: z.array(clipSchema).max(clipLimit),
@@ -24,14 +20,12 @@ const savedDocumentInvariant = (document: { clips: Clip[]; selectedId: string | 
    (document.selectedId === null || document.clips.some((clip) => clip.id === document.selectedId));
 export const savedDocumentSchema = z.object(savedDocumentShape).refine(savedDocumentInvariant, "Saved clips are inconsistent.");
 export type SavedDocument = z.infer<typeof savedDocumentSchema>;
-export const savedSessionSchema = z
+export const savedSessionSnapshotSchema = z
    .object({
       path: z.string(),
       size: z.number(),
       modified: z.number(),
       ...savedDocumentShape,
-      past: z.array(savedDocumentSchema).max(undoLimit).default([]),
-      future: z.array(savedDocumentSchema).max(undoLimit).default([]),
       project: z
          .object({
             path: z.string().min(1),
@@ -43,4 +37,8 @@ export const savedSessionSchema = z
          .optional(),
    })
    .refine(savedDocumentInvariant, "Saved clips are inconsistent.");
+export const savedSessionSchema = savedSessionSnapshotSchema.safeExtend({
+   past: z.array(savedDocumentSchema).max(undoLimit).default([]),
+   future: z.array(savedDocumentSchema).max(undoLimit).default([]),
+});
 export type SavedSession = z.infer<typeof savedSessionSchema>;

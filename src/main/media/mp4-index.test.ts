@@ -12,7 +12,7 @@ function box(name: string, data: Buffer): Buffer {
    data.copy(result, 8);
    return result;
 }
-async function readTable(count: number, keys?: number[], options: { scale?: number; delta?: number; mediaTime?: number } = {}) {
+async function readTable(count: number, keys?: number[], options: { scale?: number; delta?: number; mediaTime?: number; extension?: string } = {}) {
    const { scale = 30, delta = 1, mediaTime } = options;
    const directory = await mkdtemp(join(tmpdir(), "attacut-table-"));
    try {
@@ -54,7 +54,7 @@ async function readTable(count: number, keys?: number[], options: { scale?: numb
       return await indexedSampleTimes({
          path,
          size: bytes.length,
-         extension: ".mp4",
+         extension: options.extension ?? ".mp4",
          duration: (count * delta) / scale,
          startOffset: 0,
          streams: [],
@@ -63,6 +63,10 @@ async function readTable(count: number, keys?: number[], options: { scale?: numb
       await rm(directory, { recursive: true, force: true });
    }
 }
+it("indexes recordings with uppercase extensions", async () => {
+   const result = await readTable(3, undefined, { extension: ".MP4" });
+   expect(Array.from(result!.frames!)).toEqual([0, 1 / 30, 2 / 30]);
+});
 it("shares frame and keyframe storage for implicit and explicit all-sync tables", async () => {
    for (const keys of [undefined, [1, 2, 3]]) {
       const result = await readTable(3, keys);

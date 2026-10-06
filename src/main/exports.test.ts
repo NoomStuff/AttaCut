@@ -128,6 +128,12 @@ describe("export destination confirmation", () => {
    });
 });
 describe("output filenames", () => {
+   it("rejects names that collide after sanitizing instead of silently adding suffixes", async () => {
+      const { source, request, service } = await fixture();
+      const items = [request.items[0]!, { name: "CLIP", clip: { id: "b", color: 1, start: 1, end: 2 } }];
+      await expect(service.plan(source, { ...request, items })).rejects.toThrow("same file name");
+      expect(analyzeCut).not.toHaveBeenCalled();
+   });
    it("removes filesystem syntax and reserved Windows device names", () => {
       expect(sanitizeName("a:b?c")).toBe("a_b_c");
       expect(sanitizeName("CON")).toBe("clip-CON");

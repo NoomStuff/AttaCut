@@ -182,7 +182,7 @@ async function readBody(scanner: Scanner, base: number, element: EbmlElement, li
 }
 
 export async function indexedMkvKeyframes(source: ProbedSource, signal?: AbortSignal): Promise<number[] | null> {
-   if (![".mkv", ".webm"].includes(source.extension)) return null;
+   if (![".mkv", ".webm"].includes(source.extension.toLowerCase())) return null;
    const handle = await open(source.path, "r");
    const budget = { remaining: readLimit };
    try {

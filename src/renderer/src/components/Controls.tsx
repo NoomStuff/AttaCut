@@ -113,7 +113,6 @@ export function IconButton({ command, shortcutFrom, icon, label, shortcut, class
 export function Modal({
    title,
    description,
-   headerIcon,
    onClose,
    children,
    className = "",
@@ -121,7 +120,6 @@ export function Modal({
 }: {
    title: string;
    description?: string;
-   headerIcon?: ReactNode;
    onClose: () => void;
    children: ReactNode;
    className?: string;
@@ -175,11 +173,6 @@ export function Modal({
          }}
       >
          <div className="modal-header">
-            {headerIcon && (
-               <div className="modal-header-icon" aria-hidden="true">
-                  {headerIcon}
-               </div>
-            )}
             <div>
                <h2 id={titleId}>{title}</h2>
                {description && <p>{description}</p>}

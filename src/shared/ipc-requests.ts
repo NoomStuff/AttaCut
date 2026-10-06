@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { preferencesSchema } from "./preferences";
-import { savedSessionSchema } from "./editing";
+import { sessionStorageSchema } from "./session-storage";
 import { frameRequestSchema, frameTimeRequestSchema, scrubRequestSchema, previewRequestSchema, waveformRequestSchema } from "./media-requests";
 import { planRequestSchema, analyzeRequestSchema, exportApprovalSchema } from "./export";
 
@@ -13,17 +13,17 @@ export const ipcRequestSchemas = {
    "source:choose": z.void(),
    "source:open": z.string().min(1),
    "project:open": z.string().min(1),
-   "project:save": z.object({ session: savedSessionSchema, saveAs: z.boolean() }),
-   "project:confirm": savedSessionSchema,
+   "project:save": z.object({ session: sessionStorageSchema, saveAs: z.boolean() }),
+   "project:confirm": sessionStorageSchema,
    "source:close": z.void(),
    "source:keyframes": z.string(),
    "source:frame-time": frameTimeRequestSchema,
    "directory:choose": z.string(),
    "preferences:save": preferencesSchema,
-   "session:save": savedSessionSchema,
+   "session:save": sessionStorageSchema,
    "state:flush": z.object({
       preferences: preferencesSchema,
-      session: savedSessionSchema.nullable(),
+      session: sessionStorageSchema.nullable(),
       closing: z.boolean().optional(),
       cancelClose: z.boolean().optional(),
    }),

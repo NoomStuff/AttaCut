@@ -116,7 +116,12 @@ function runChild(name: "ffmpeg" | "ffprobe", args: string[], options: RunOption
             pendingLine += data;
             const lines = pendingLine.split(/\r?\n/);
             pendingLine = lines.pop() ?? "";
-            for (const line of lines) if (line) options.onLines(line);
+            try {
+               for (const line of lines) if (line) options.onLines(line);
+            } catch (error) {
+               processError ??= error instanceof Error ? error : new Error(String(error));
+               stop();
+            }
             return;
          }
          stdout += data;
@@ -147,7 +152,11 @@ function runChild(name: "ffmpeg" | "ffprobe", args: string[], options: RunOption
          settled = true;
          disarm();
          if (options.onLines && pendingLine) {
-            options.onLines(pendingLine);
+            try {
+               if (!processError && !options.signal?.aborted) options.onLines(pendingLine);
+            } catch (error) {
+               processError = error instanceof Error ? error : new Error(String(error));
+            }
             pendingLine = "";
          }
          if (code === 0 && !processError && !options.signal?.aborted) resolve(stdout);

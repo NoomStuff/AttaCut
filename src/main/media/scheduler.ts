@@ -9,20 +9,17 @@ export function scheduleMedia<T>(task: () => Promise<T>, priority: Priority = "i
    return new Promise((resolve, reject) => {
       const entry = {
          priority,
-         run: () => {
+         run: async () => {
             signal?.removeEventListener("abort", abort);
             active++;
             if (priority !== "interactive") background++;
-            void task().then(
-               (value) => {
-                  finish();
-                  resolve(value);
-               },
-               (error: unknown) => {
-                  finish();
-                  reject(error);
-               }
-            );
+            try {
+               resolve(await task());
+            } catch (error) {
+               reject(error);
+            } finally {
+               finish();
+            }
          },
       };
       const finish = () => {

@@ -110,12 +110,8 @@ export function registerIpc({
    });
    handle("update:check", async () => {
       if (!isPackagedApp()) return null;
-      try {
-         const update = await fetchAvailableUpdate(app.getVersion(), (url, init) => net.fetch(url, init));
-         return update ? updates.offer(update) : null;
-      } catch {
-         return null;
-      }
+      const update = await fetchAvailableUpdate(app.getVersion(), (url, init) => net.fetch(url, init));
+      return update ? updates.offer(update) : null;
    });
    handle("update:download", async (value) => updates.downloadPortable(value));
    handle("update:restart", () => {
@@ -204,6 +200,7 @@ export function registerIpc({
    handle("source:close", () => {
       sourceSession.close();
       exportsService.cancelPlanning();
+      frameOutputs.clear();
       window.setTitle("AttaCut");
    });
    handle("directory:choose", async (value) => {

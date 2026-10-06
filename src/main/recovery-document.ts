@@ -1,6 +1,7 @@
 import { copyFile, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { savedSessionSchema } from "../shared/types";
+import { sessionStorageSchema } from "../shared/session-storage";
+import { encodeSession } from "../shared/session-codec";
 import type { SavedSession } from "../shared/types";
 
 /** One recovery document, including the project's last explicitly saved clips. */
@@ -19,13 +20,13 @@ export class RecoveryDocument {
             const text = await readFile(join(this.directory, name), "utf8");
             found = true;
             const document = JSON.parse(text) as { version: number; session: unknown };
-            if (document.version !== 1) {
+            if (document.version !== 1 && document.version !== 2) {
                if (index === 0) this.unreadable = true;
                continue;
             }
-            const session = savedSessionSchema.nullable().parse(document.session);
+            const session = sessionStorageSchema.nullable().parse(document.session);
             this.valid = index === 0;
-            this.last = session;
+            this.last = document.version === 2 ? session : undefined;
             return { found: true, session, recovered: index !== 0 };
          } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -39,7 +40,7 @@ export class RecoveryDocument {
    async save(session: SavedSession | null): Promise<void> {
       if (session === this.last) return;
       const target = join(this.directory, "session.json");
-      await writeFile(`${target}.tmp`, JSON.stringify({ version: 1, session }));
+      await writeFile(`${target}.tmp`, JSON.stringify({ version: 2, session: session && encodeSession(session) }));
       if (this.unreadable) {
          await copyFile(target, join(this.directory, `session.unreadable-${Date.now()}.json`));
          this.unreadable = false;

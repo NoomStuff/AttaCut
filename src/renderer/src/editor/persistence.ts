@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import type { MediaSource, Preferences, SavedSession } from "../../../shared/types";
 import type { EditorState } from "./model";
 import { sessionFor } from "./session";
+import { encodeSession } from "../../../shared/session-codec";
 import { errorText } from "../lib/errors";
 
 export function usePersistence({
@@ -34,6 +35,7 @@ export function usePersistence({
             const saved = await pending;
             await window.desktop.flushState({
                ...latestSnapshot.current,
+               session: latestSnapshot.current.session && encodeSession(latestSnapshot.current.session),
                closing: !!latestSnapshot.current.session?.project,
                cancelClose: !!pending && !saved,
             });
@@ -54,7 +56,7 @@ export function usePersistence({
       if (!source) return;
       const timer = window.setTimeout(() => {
          const snapshot = sessionFor(source, editor, null, project);
-         if (snapshot) void window.desktop.saveSession(snapshot).catch((value: unknown) => setError(errorText(value)));
+         if (snapshot) void window.desktop.saveSession(encodeSession(snapshot)).catch((value: unknown) => setError(errorText(value)));
       }, 500);
       return () => window.clearTimeout(timer);
    }, [source, editor, project, setError]);
