@@ -243,12 +243,14 @@ test("prepared preview maps a higher source track, persists peaks and reuses the
       );
       console.log(
          await app.evaluate(() =>
-            Object.fromEntries(
-               ["waveform:start", "waveform:cancel", "waveform:activity", "preview:prepare"].map((key) => [
-                  key,
-                  [globalThis.attacutTestIpc.count(key), globalThis.attacutTestIpc.ready(key)],
-               ])
-            )
+            globalThis.attacutTestIpc
+               ? Object.fromEntries(
+                    ["waveform:start", "waveform:cancel", "waveform:activity", "preview:prepare"].map((key) => [
+                       key,
+                       [globalThis.attacutTestIpc.count(key), globalThis.attacutTestIpc.ready(key)],
+                    ])
+                 )
+               : null
          )
       );
       throw error;

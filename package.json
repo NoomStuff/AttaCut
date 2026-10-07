@@ -1,7 +1,7 @@
 {
    "name": "attacut",
    "desktopName": "attacut.desktop",
-   "version": "0.21.0",
+   "version": "0.21.1",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,

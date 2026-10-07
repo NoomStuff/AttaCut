@@ -88,13 +88,13 @@ export const test = base.extend({
          page.on("console", (message) => logs.push(`[renderer ${message.type()}] ${message.text()}\n`));
          // Playwright sends input directly to Chromium; OS foreground focus is unnecessary.
          if (process.env.ATTACUT_TEST_VISIBLE === "1") await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show());
-         else if (process.platform === "win32" || process.platform === "darwin") {
-            // Native hidden windows can stop compositing paused video frames even
-            // with backgroundThrottling disabled. Keep a transparent, inactive
-            // window rendering, without a taskbar entry or native mouse hit target.
+         else {
+            // Hidden windows can stop compositing paused video and OffscreenCanvas
+            // updates even with backgroundThrottling disabled. Keep an inactive
+            // window rendering. Linux CI uses its isolated Xvfb display.
             await app.evaluate(({ BrowserWindow }) => {
                const window = BrowserWindow.getAllWindows()[0];
-               window.setOpacity(0);
+               if (process.platform === "win32" || process.platform === "darwin") window.setOpacity(0);
                window.setIgnoreMouseEvents(true);
                window.setSkipTaskbar(true);
                window.showInactive();
