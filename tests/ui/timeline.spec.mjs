@@ -208,6 +208,147 @@ test("timeline zoom and pan preserve the playhead", async ({ launchApp, profile 
    await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("100%");
 });
 
+for (const startTime of [8, 16]) {
+   test(`playback zoom at ${startTime}s retains wheel events and respects recording and follow bounds`, async ({ launchApp, profile }) => {
+      const app = await launchApp(profile, resolve("work/fixture.mp4"));
+      const page = await app.firstWindow();
+      await waitForVideo(page);
+      const bar = await page.locator(".timeline-viewport").boundingBox();
+      await page.mouse.click(bar.x + (bar.width * startTime) / 18, bar.y + 36);
+      await waitForPlaybackTime(page, startTime);
+      await page.getByRole("button", { name: "Play", exact: true }).click();
+      const wheel = async (delta, count) => {
+         await page.evaluate(
+            ({ delta, count }) => {
+               const section = document.querySelector(".timeline-section");
+               const bounds = document.querySelector(".timeline-viewport").getBoundingClientRect();
+               for (let index = 0; index < count; index++)
+                  section.dispatchEvent(
+                     new globalThis.WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: delta, clientX: bounds.x + bounds.width * 0.05 })
+                  );
+            },
+            { delta, count }
+         );
+      };
+      await page.evaluate(() => {
+         globalThis.zoomBounds = [];
+         globalThis.sampleZoom = true;
+         const sample = () => {
+            const clip = document.querySelector(".clip-range");
+            const left = parseFloat(clip.style.left);
+            const width = parseFloat(clip.style.width);
+            const video = document.querySelector("video");
+            const length = (100 * video.duration) / width;
+            const start = (-left * length) / 100;
+            globalThis.zoomBounds.push({ left, right: left + width, start, length, time: video.currentTime });
+            if (globalThis.sampleZoom) globalThis.requestAnimationFrame(sample);
+         };
+         globalThis.requestAnimationFrame(sample);
+      });
+      // These events share a render batch. Each notch must still change the target.
+      await wheel(-100, 4);
+      await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("182%");
+      await page.waitForFunction(() => globalThis.zoomBounds.length >= 8);
+      await wheel(-100, 4);
+      await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("332%");
+      await page.waitForFunction(() => globalThis.zoomBounds.length >= 16);
+      await wheel(100, 8);
+      await expect(page.getByRole("button", { name: "Fit timeline", exact: true })).toHaveText("100%");
+      await page.waitForFunction(() => globalThis.zoomBounds.length >= 35);
+      const frames = await page.evaluate(() => {
+         globalThis.sampleZoom = false;
+         return globalThis.zoomBounds;
+      });
+      // The full-source clip must cover the viewport throughout each tween.
+      expect(Math.max(...frames.map((frame) => frame.left))).toBeLessThanOrEqual(0.001);
+      expect(Math.min(...frames.map((frame) => frame.right))).toBeGreaterThanOrEqual(99.999);
+      // Zooming towards the far left must not push playback beyond its right margin
+      // and then trigger a corrective pan back. Check the whole animation, not its end.
+      for (const frame of frames) {
+         if (frame.start > 0.01) expect(frame.time - frame.start).toBeGreaterThanOrEqual(frame.length * 0.1 - 0.1);
+         if (frame.start + frame.length < 17.99) expect(frame.time - frame.start).toBeLessThanOrEqual(frame.length * 0.9 + 0.1);
+      }
+   });
+}
+
+for (const cursor of [-0.1, 0.05, 0.95, 1.1]) {
+   test(`zoom-out with an outside cursor at ${cursor} finishes without a sideways snap`, async ({ launchApp, profile }) => {
+      const app = await launchApp(profile, resolve("work/fixture.mp4"));
+      const page = await app.firstWindow();
+      await waitForVideo(page);
+      const bar = await page.locator(".timeline-viewport").boundingBox();
+      await page.mouse.click(bar.x + bar.width / 2, bar.y + 36);
+      await waitForPlaybackTime(page, 9);
+      for (let index = 0; index < 16; index++) await page.keyboard.press("=");
+      await page.waitForTimeout(300);
+      await page.getByRole("button", { name: "Play", exact: true }).click();
+      await page.evaluate(async (cursor) => {
+         const section = document.querySelector(".timeline-section");
+         const bounds = document.querySelector(".timeline-viewport").getBoundingClientRect();
+         globalThis.zoomOutFrames = [];
+         let targetLength = 0.5;
+         for (let pass = 0; pass < 3; pass++) {
+            const before = document.querySelector(".clip-range");
+            const fromLength = 1800 / parseFloat(before.style.width);
+            const start = (-parseFloat(before.style.left) * fromLength) / 100;
+            const fraction = Math.max(0, Math.min(1, cursor));
+            const focus = start + fraction * fromLength;
+            targetLength *= Math.exp(0.45);
+            const time = document.querySelector("video").currentTime;
+            const minimum = Math.max(0, Math.min(18 - targetLength, time - 0.9 * targetLength));
+            const maximum = Math.max(0, Math.min(18 - targetLength, time - 0.1 * targetLength));
+            globalThis.zoomOutAnchor = { start: Math.max(minimum, Math.min(maximum, focus - fraction * targetLength)), length: targetLength };
+            section.dispatchEvent(
+               new globalThis.WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 500, clientX: bounds.x + bounds.width * cursor })
+            );
+            const begin = globalThis.performance.now();
+            // Retarget while the preceding zoom is still running. Its target range
+            // differs from the visible range, especially at the soft follow margins.
+            while (globalThis.performance.now() - begin < (pass === 2 ? 650 : 60)) {
+               await new Promise(globalThis.requestAnimationFrame);
+               const clip = document.querySelector(".clip-range");
+               const length = 1800 / parseFloat(clip.style.width);
+               globalThis.zoomOutFrames.push({
+                  pass,
+                  elapsed: globalThis.performance.now() - begin,
+                  start: (-parseFloat(clip.style.left) * length) / 100,
+                  length,
+                  time: document.querySelector("video").currentTime,
+                  from: { start, length: fromLength },
+                  target: globalThis.zoomOutAnchor,
+               });
+            }
+         }
+      }, cursor);
+      const frames = await page.evaluate(() => globalThis.zoomOutFrames);
+      const expected = await page.evaluate(() => globalThis.zoomOutAnchor);
+      const final = frames.at(-1);
+      const minimum = Math.max(0, Math.min(18 - expected.length, final.time - 0.9 * expected.length));
+      const maximum = Math.max(0, Math.min(18 - expected.length, final.time - 0.1 * expected.length));
+      expect(final.length).toBeCloseTo(expected.length, 5);
+      expect(final.start).toBeCloseTo(Math.max(minimum, Math.min(maximum, expected.start)), 1);
+      for (const frame of frames) {
+         const progress = Math.max(0, Math.min(1, (frame.length - frame.from.length) / (frame.target.length - frame.from.length)));
+         const interpolated = frame.from.start + (frame.target.start - frame.from.start) * progress;
+         const low = Math.max(0, Math.min(18 - frame.length, frame.time - 0.9 * frame.length));
+         const high = Math.max(0, Math.min(18 - frame.length, frame.time - 0.1 * frame.length));
+         const bounded = Math.max(low, Math.min(high, interpolated));
+         // Playback can move the destination during this interpolation. Allow its
+         // elapsed source time, but reject a position animation with a different origin.
+         expect(Math.abs(frame.start - bounded)).toBeLessThanOrEqual(frame.elapsed / 1000 + 0.03);
+      }
+      // Once the zoom settles, only normal playback following should move the view.
+      // Measure source-time movement to allow different display and decoding rates.
+      for (let index = 1; index < frames.length; index++) {
+         const current = frames[index];
+         const previous = frames[index - 1];
+         if (current.pass !== previous.pass || previous.elapsed < 300) continue;
+         const playback = Math.abs(current.time - previous.time);
+         expect(Math.abs(current.start - previous.start)).toBeLessThanOrEqual(playback + current.length * 0.025);
+      }
+   });
+}
+
 test("frame-level zoom quantizes the playhead to source frames", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();

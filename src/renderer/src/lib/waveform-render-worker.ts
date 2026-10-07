@@ -5,17 +5,19 @@ import { WaveformReveal } from "./waveform-reveal";
 const port = globalThis as unknown as { onmessage: (event: MessageEvent<WaveformMessage>) => void };
 let waveform: ReturnType<typeof createWaveformData> | null = null;
 const views = new Map<number, { canvas: OffscreenCanvas; context: OffscreenCanvasRenderingContext2D; view: WaveformView; dirty: boolean }>();
-let timer: ReturnType<typeof setTimeout> | undefined;
+let frame: number | undefined;
 const reveal = new WaveformReveal();
 let paintedSeconds = -1;
 let priorityBands: { from: number; to: number; reveal: WaveformReveal }[] = [];
 let paintedPriority = "";
 
 function schedule(): void {
-   if (timer === undefined && views.size) timer = setTimeout(paint, 33);
+   // Follow display frames just like the clip geometry. A 33ms timer limited the
+   // waveform to 30fps and left it behind the timeline throughout zooms and pans.
+   if (frame === undefined && views.size) frame = requestAnimationFrame(paint);
 }
 function paint(): void {
-   timer = undefined;
+   frame = undefined;
    if (!waveform) return;
    const reducedMotion = [...views.values()].every((entry) => entry.view.reducedMotion);
    const { seconds, active } = reveal.frame(performance.now(), reducedMotion);

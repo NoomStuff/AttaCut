@@ -97,7 +97,8 @@
    top: 2px;
    height: 23px;
    min-width: 1px;
-   background: color-mix(in srgb, var(--clip-color) 20%, var(--surface));
+   --clip-fill: 20%;
+   background: color-mix(in srgb, var(--clip-color) var(--clip-fill), var(--surface));
    border-top: 1px solid color-mix(in srgb, var(--clip-color) 45%, transparent);
    border-bottom: 1px solid color-mix(in srgb, var(--clip-color) 45%, transparent);
    cursor: pointer;
@@ -107,11 +108,11 @@
       box-shadow 150ms ease-out;
 }
 .clip-range:hover {
-   background: color-mix(in srgb, var(--clip-color) 27%, var(--surface));
+   --clip-fill: 27%;
    transition-duration: 0ms;
 }
 .clip-range.selected {
-   background: color-mix(in srgb, var(--clip-color) 35%, var(--surface));
+   --clip-fill: 35%;
    border-color: var(--clip-color);
    box-shadow: 0 0 0 2px color-mix(in srgb, var(--clip-color) 10%, transparent);
 }
@@ -169,11 +170,11 @@
 }
 @keyframes clip-flash {
    0% {
-      filter: brightness(1.55);
+      background-color: color-mix(in srgb, var(--clip-color) 65%, var(--surface));
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--clip-color) 45%, transparent);
    }
    100% {
-      filter: brightness(1);
+      background-color: color-mix(in srgb, var(--clip-color) var(--clip-fill), var(--surface));
       box-shadow: 0 0 0 2px color-mix(in srgb, var(--clip-color) 10%, transparent);
    }
 }
@@ -493,17 +494,9 @@
    --split-offset: -3px;
 }
 
-.trim-animating .clip-range {
-   transition:
-      left 170ms cubic-bezier(0.33, 1, 0.68, 1),
-      width 170ms cubic-bezier(0.33, 1, 0.68, 1);
-}
 @media (prefers-reduced-motion: reduce) {
    .trim-handle,
    .trim-handle span {
-      transition: none;
-   }
-   .trim-animating .clip-range {
       transition: none;
    }
 }

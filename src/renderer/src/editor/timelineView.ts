@@ -3,6 +3,15 @@ import { clamp } from "../../../shared/time";
 
 const zoomLevels = Array.from({ length: 10 }, (_, decade) => [100, 125, 150, 200, 250, 300, 400, 500, 600, 800].map((step) => step * 10 ** decade)).flat();
 
+/** Keep zoom motion inside the recording and, while playing, its follow margins. */
+export function constrainViewStart(start: number, length: number, duration: number, playbackTime?: number): number {
+   const end = Math.max(0, duration - length);
+   if (playbackTime === undefined) return clamp(start, 0, end);
+   const minimum = clamp(playbackTime - length * 0.9, 0, end);
+   const maximum = clamp(playbackTime - length * 0.1, 0, end);
+   return clamp(start, minimum, maximum);
+}
+
 export function zoomLength(length: number, duration: number, direction: number): number {
    if (direction === 0) return duration;
    const percent = (100 * duration) / length;

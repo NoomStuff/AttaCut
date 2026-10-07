@@ -5,6 +5,8 @@ it("reveals a distant priority region without drawing unknown audio and removes 
    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
    const fills: number[][][] = [];
    const fades: number[] = [];
+   const paints: number[] = [];
+   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 16));
    vi.stubGlobal(
       "Path2D",
       class {
@@ -15,7 +17,9 @@ it("reveals a distant priority region without drawing unknown audio and removes 
       }
    );
    const context = {
-      clearRect: () => {},
+      clearRect: () => {
+         paints.push(performance.now());
+      },
       save: () => {},
       restore: () => {},
       translate: () => {},
@@ -40,7 +44,14 @@ it("reveals a distant priority region without drawing unknown audio and removes 
       send({ type: "init", duration: 100 });
       const view = { width: 200, height: 20, bands: [{ from: 50, to: 60, left: 0, width: 200, color: "white", fadeSeconds: 1.6 }] };
       send({ type: "attach", id: 1, canvas, view });
-      vi.advanceTimersByTime(33);
+      vi.advanceTimersByTime(16);
+      expect(paints).toEqual([16]);
+      // Geometry updates coalesce into the next display frame, without a 30fps wait.
+      send({ type: "view", id: 1, view: { ...view, width: 220 } });
+      send({ type: "view", id: 1, view: { ...view, width: 240 } });
+      vi.advanceTimersByTime(16);
+      expect(paints).toEqual([16, 32]);
+      expect(canvas.width).toBe(240);
       expect(fills).toHaveLength(0);
       send({ type: "peaks", offset: 50000, peaks: new Uint8Array(30000).fill(128), priority: true });
       vi.advanceTimersByTime(300);

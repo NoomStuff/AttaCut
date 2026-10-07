@@ -464,6 +464,7 @@ export default function App() {
                         keyframes={keyframes}
                         snapping={snapping}
                         playing={playing || playWhenReady}
+                        trimAnimating={trimAnimating}
                         waveform={preferences.waveform ? waveform : null}
                         onSelect={(id) => remember(editor.document.clips.find((item) => item.id === id))}
                         onCommit={commit}

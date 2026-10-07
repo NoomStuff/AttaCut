@@ -1,5 +1,5 @@
-import { frameLevelActive, quantizeToFrame, visibleKeyframes, zoomLength } from "../editor/timelineView";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { constrainViewStart, frameLevelActive, quantizeToFrame, visibleKeyframes, zoomLength } from "../editor/timelineView";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { EditDocument } from "../editor/model";
 import type { Clip } from "../../../shared/types";
@@ -12,6 +12,8 @@ import { clamp, formatTime } from "../../../shared/time";
 import { resolveBoundary, snapPlayhead, stepBoundary } from "../editor/navigation";
 import { IconButton } from "./Controls";
 import { pointerSmoothingMs, useSmoothValue } from "../lib/motion";
+import { useTimelineMotion } from "../lib/timelineMotion";
+import { useClipMotion } from "../lib/clipMotion";
 import type { Waveform } from "../lib/waveform";
 import { faCaretLeft, faCaretRight, faChevronLeft, faChevronRight } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -33,6 +35,7 @@ interface TimelineProps {
    keyframes: number[];
    snapping: boolean;
    playing: boolean;
+   trimAnimating: boolean;
    /** Audio peaks for the per-clip waveforms; null while hidden or still resolving. */
    waveform: Waveform | null;
    onSelect: (id: string) => void;
@@ -64,6 +67,7 @@ export function Timeline({
    keyframes,
    snapping,
    playing,
+   trimAnimating,
    waveform,
    onSelect,
    onCommit,
@@ -83,16 +87,43 @@ export function Timeline({
       exiting: [] as { clip: Clip; index: number }[],
       flashes: new Map<string, ("start" | "end")[]>(),
       seams: [] as { time: number; color: number }[],
+      feedback: null as ReturnType<typeof clipChanges> | null,
    });
    if (presence.clips !== document.clips) {
       const kept = new Set(document.clips.map((clip) => clip.id));
       const changes = clipChanges(presence.clips, document.clips);
       setPresence({
-         ...changes,
          clips: document.clips,
+         entering: [...new Set([...presence.entering.filter((id) => kept.has(id)), ...changes.entering])],
+         flashes: new Map([...presence.flashes].filter(([id]) => kept.has(id)).concat([...changes.flashes])),
+         seams: [...presence.seams.filter((seam) => !changes.seams.some((next) => next.time === seam.time)), ...changes.seams],
          exiting: [...presence.exiting.filter(({ clip }) => !kept.has(clip.id)), ...changes.exiting],
+         feedback: changes.flashes.size || changes.entering.length || changes.seams.length ? changes : presence.feedback,
       });
    }
+   useLayoutEffect(() => {
+      const feedback = presence.feedback;
+      if (!feedback) return;
+      // Reusing a clip's DOM node also reuses its CSS animations. Restart only the
+      // latest action's feedback, while frame alignment leaves running feedback alone.
+      for (const element of section.current!.querySelectorAll<HTMLElement>("[data-clip-id]")) {
+         const id = element.dataset["clipId"]!;
+         if (!feedback.flashes.has(id) && !feedback.entering.includes(id)) continue;
+         for (const animation of element.getAnimations({ subtree: true })) {
+            if (animation instanceof CSSAnimation && ["clip-flash", "clip-enter", "split-edge"].includes(animation.animationName)) {
+               animation.cancel();
+               animation.play();
+            }
+         }
+      }
+      for (const element of section.current!.querySelectorAll<HTMLElement>(".merging-seam")) {
+         if (!feedback.seams.some((seam) => seam.time === Number(element.dataset["time"]))) continue;
+         for (const animation of element.getAnimations()) {
+            animation.cancel();
+            animation.play();
+         }
+      }
+   }, [presence.feedback]);
    const [hoveredEdge, setHoveredEdge] = useState<{ id: string; side: "start" | "end" } | null>(null);
    const prevSnapping = useRef(snapping);
    const [pop, setPop] = useState<{ time: number; token: number } | null>(null);
@@ -124,22 +155,24 @@ export function Timeline({
    const [panActive, setPanActive] = useState(false);
    const panning = useRef<{ pointerId: number; x: number; start: number; length: number } | null>(null);
    const pressScrub = useRef<number | null>(null);
-   const latest = useRef({ view, duration });
+   const latest = useRef({ view, duration, playing });
    const latestDrawn = useRef({ start: 0, length: duration });
-   // Set while playback keeps panning the view to hold the playhead at the margin. The drawn
-   // view then snaps to its target instead of chasing it: a tween retargeted every frame
-   // settles into a permanent lag that lets the playhead drift past the margin line.
-   const followPan = useRef(false);
    const [viewportWidth, setViewportWidth] = useState(0);
    const [chipWidth, setChipWidth] = useState(0);
    // The drawn view chases its target so zooms, pans, and seeks read as one continuous
    // motion. Pointer-driven edits (scrub, handle drag) use a short chase instead of exact
    // snapping, and middle-button panning stays 1:1.
-   const drawnStart = useSmoothValue(view.start, { duration: 240, snap: () => panning.current !== null || followPan.current });
-   const drawnLength = useSmoothValue(view.length, { duration: 240, snap: () => panning.current !== null || followPan.current });
-   const drawn = { start: drawnStart, length: drawnLength };
+   const drawn = useTimelineMotion(view, {
+      duration,
+      playing,
+      time: clock.get,
+      pointer: panning.current !== null || drag.current !== null || scrubbing.current !== null,
+      immediate: () => panning.current !== null,
+   });
+   const { start: drawnStart, length: drawnLength } = drawn;
    latestDrawn.current = drawn;
    const visible = draft ?? document;
+   const drawnClips = useClipMotion(visible.clips, trimAnimating && drag.current === null);
    const dragging = drag.current;
    // The dragged edge chases the boundary so the clip glides with the pointer. The playhead
    // leaf mirrors this follower, so the edge and the line cannot drift apart.
@@ -166,7 +199,7 @@ export function Timeline({
    // the frame grid so cuts land exactly where the eye points and releases need not snap.
    const frameLevel = frameLevelActive(drawn.length, frameStep);
    const keyframeView = useMemo(() => visibleKeyframes(keyframes, drawn.start, drawn.length, pxPerSecond), [keyframes, drawn.start, drawn.length, pxPerSecond]);
-   latest.current = { view, duration };
+   latest.current = { view, duration, playing };
    useEffect(() => onZoom((100 * duration) / view.length, viewportWidth), [duration, view.length, viewportWidth, onZoom]);
    useEffect(() => {
       setView({ start: 0, length: duration });
@@ -184,17 +217,18 @@ export function Timeline({
          // Focus: put the handles at 10% and 90% of the view. The zoom clamp (a half-second
          // floor, like the wheel) and the timeline ends decide how close that can get.
          const length = clamp((end - start) / 0.8, Math.min(0.5, duration), duration);
-         return { length, start: clamp(start - length * 0.1, 0, duration - length) };
+         return { length, start: constrainViewStart(start - length * 0.1, length, duration, latest.current.playing ? clock.get() : undefined) };
       });
-   }, [viewRequest, duration]);
+   }, [viewRequest, duration, clock]);
    useEffect(() => {
       setView((current) => {
          const length = zoomLength(current.length, duration, zoomRequest.direction);
          // Zoom around the playhead when it is on screen; otherwise hold the view steady.
          const playhead = clock.get();
-         const focus = playhead >= current.start && playhead <= current.start + current.length ? playhead : current.start + current.length / 2;
-         const fraction = (focus - current.start) / current.length;
-         return { length, start: clamp(focus - fraction * length, 0, duration - length) };
+         const visible = latestDrawn.current;
+         const focus = playhead >= visible.start && playhead <= visible.start + visible.length ? playhead : visible.start + visible.length / 2;
+         const fraction = (focus - visible.start) / visible.length;
+         return { length, start: constrainViewStart(focus - fraction * length, length, duration, latest.current.playing ? playhead : undefined) };
       });
    }, [zoomRequest, duration, clock]);
    // Keep the playhead inside the center 80% of a zoomed-in view: when it overflows, page
@@ -207,34 +241,30 @@ export function Timeline({
    // pan actually fires.
    const lastPanTime = useRef(-1);
    useEffect(() => {
-      if (!playing) followPan.current = false;
       return clock.subscribe(() => {
          const current = clock.get();
-         if (scrubbing.current !== null || drag.current || current === lastPanTime.current) return;
+         if (scrubbing.current !== null || drag.current || panning.current || current === lastPanTime.current) return;
          lastPanTime.current = current;
-         const { view: currentView, duration: total } = latest.current;
-         if (currentView.length >= total - 0.0001) {
-            followPan.current = false;
-            return;
-         }
-         const margin = currentView.length * 0.1;
-         let start: number | null = null;
-         if (current < currentView.start + margin) start = current - margin;
-         else if (current > currentView.start + currentView.length - margin) start = current - currentView.length + margin;
-         if (start === null) {
-            followPan.current = false;
-            return;
-         }
-         start = clamp(start, 0, total - currentView.length);
-         if (Math.abs(start - currentView.start) < 0.0001) {
-            followPan.current = false;
-            return;
-         }
-         // Playback snaps the drawn view to each page so the playhead cannot outrun it.
-         // Paused moves tween instead: they are single jumps, and the chase keeps them as
-         // smooth as the pan buttons while repeated shortcuts retarget freely.
-         followPan.current = playing;
-         setView({ start, length: currentView.length });
+         const { duration: total } = latest.current;
+         // Compose with pending wheel/zoom updates rather than replacing them with
+         // the view from the last render.
+         setView((currentView) => {
+            if (currentView.length >= total - 0.0001) {
+               return currentView;
+            }
+            const margin = currentView.length * 0.1;
+            let start: number | null = null;
+            if (current < currentView.start + margin) start = current - margin;
+            else if (current > currentView.start + currentView.length - margin) start = current - currentView.length + margin;
+            if (start === null) {
+               return currentView;
+            }
+            start = clamp(start, 0, total - currentView.length);
+            if (Math.abs(start - currentView.start) < 0.0001) {
+               return currentView;
+            }
+            return { start, length: currentView.length };
+         });
       });
    }, [clock, playing]);
    useEffect(() => {
@@ -244,15 +274,18 @@ export function Timeline({
       const wheel = (event: WheelEvent) => {
          event.preventDefault();
          const element = viewport.current!;
-         const { view: current, duration: total } = latest.current;
+         const { duration: total, playing: running } = latest.current;
          if (event.altKey || event.shiftKey || (!event.ctrlKey && Math.abs(event.deltaX) > Math.abs(event.deltaY))) {
-            setView({
-               ...current,
-               start: clamp(current.start + ((event.deltaY + event.deltaX) * current.length) / 900, 0, total - current.length),
+            setView((current) => {
+               return {
+                  ...current,
+                  start: clamp(current.start + ((event.deltaY + event.deltaX) * current.length) / 900, 0, total - current.length),
+               };
             });
          } else {
             const rect = element.getBoundingClientRect();
             const fraction = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+            const focus = latestDrawn.current.start + fraction * latestDrawn.current.length;
             if (event.deltaY === 0) return;
             const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1);
             // Mice deliver one large delta per detent while trackpads and pinch gestures
@@ -266,13 +299,18 @@ export function Timeline({
                : magnitude >= 60
                  ? Math.sign(delta) * 0.15 * Math.min(magnitude / 100, 3)
                  : Math.sign(delta) * Math.min(magnitude * 0.008, 0.1);
-            const length = clamp(current.length * Math.exp(exponent), Math.min(0.5, total), total);
-            setView({ length, start: clamp(current.start + fraction * (current.length - length), 0, total - length) });
+            setView((current) => {
+               const length = clamp(current.length * Math.exp(exponent), Math.min(0.5, total), total);
+               return {
+                  length,
+                  start: constrainViewStart(focus - fraction * length, length, total, running ? clock.get() : undefined),
+               };
+            });
          }
       };
       sectionElement.addEventListener("wheel", wheel, { passive: false });
       return () => sectionElement.removeEventListener("wheel", wheel);
-   }, []);
+   }, [clock]);
    const cancel = useCallback(() => {
       const current = drag.current;
       drag.current = null;
@@ -452,6 +490,7 @@ export function Timeline({
             {presence.seams.map((seam) => (
                <span
                   key={seam.time}
+                  data-time={seam.time}
                   className="merging-seam"
                   aria-hidden="true"
                   style={{ left: x(seam.time), "--clip-color": clipColor(seam.color) } as CSSProperties}
@@ -484,15 +523,17 @@ export function Timeline({
                // While one of its handles is dragged, render the chasing boundary so the
                // clip glides with the pointer; everything else stays exact.
                const draggingHere = dragging?.id === clip.id;
-               const start = draggingHere && dragging!.side === "start" ? drawEdge : clip.start;
-               const end = draggingHere && dragging!.side === "end" ? drawEdge : clip.end;
+               const displayed = drawnClips[index] ?? clip;
+               const start = draggingHere && dragging!.side === "start" ? drawEdge : displayed.start;
+               const end = draggingHere && dragging!.side === "end" ? drawEdge : displayed.end;
                return (
                   <div
                      key={clip.id}
+                     data-clip-id={clip.id}
                      data-compact={(end - start) * pxPerSecond < 40}
                      className={`clip-range ${clip.id === visible.selectedId ? "selected" : ""}${presence.flashes.has(clip.id) ? " flash" : presence.entering.includes(clip.id) ? " entering" : ""}`}
                      onAnimationEnd={(event) => {
-                        if (event.target !== event.currentTarget) return;
+                        if (event.target !== event.currentTarget || !["clip-flash", "clip-enter"].includes(event.animationName)) return;
                         setPresence((current) => {
                            const flashes = new Map(current.flashes);
                            flashes.delete(clip.id);
@@ -604,7 +645,7 @@ export function Timeline({
             {waveform && (
                <TimelineWaveform
                   waveform={waveform}
-                  clips={visible.clips}
+                  clips={drawnClips}
                   from={drawn.start}
                   to={drawn.start + drawn.length}
                   width={viewportWidth}
@@ -616,6 +657,7 @@ export function Timeline({
       ),
       [
          visible,
+         drawnClips,
          presence,
          hoveredEdge,
          snapping,
@@ -845,11 +887,11 @@ function TimelineWaveform({
    };
    const latestView = useRef(view);
    latestView.current = view;
-   useEffect(() => {
+   useLayoutEffect(() => {
       const canvas = canvasRef.current!;
       return waveform.attach(canvas, latestView.current);
    }, [waveform]);
-   useEffect(() => {
+   useLayoutEffect(() => {
       const canvas = canvasRef.current!;
       waveform.update(canvas, view);
    });

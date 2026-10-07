@@ -1,5 +1,16 @@
 import { expect, it } from "vitest";
-import { frameLevelActive, quantizeToFrame, visibleKeyframes, zoomLength } from "./timelineView";
+import { constrainViewStart, frameLevelActive, quantizeToFrame, visibleKeyframes, zoomLength } from "./timelineView";
+
+it("constrains pointer-centered zooms to playback margins before and during the tween", () => {
+   expect(constrainViewStart(1, 4, 18, 8)).toBeCloseTo(4.4);
+   expect(constrainViewStart(10, 4, 18, 8)).toBeCloseTo(7.6);
+   expect(constrainViewStart(6, 4, 18, 8)).toBe(6);
+   expect(constrainViewStart(6, 16, 18, 17)).toBe(2);
+   expect(constrainViewStart(-5, 4, 18, 0)).toBe(0);
+   expect(constrainViewStart(20, 18, 18, 8)).toBe(0);
+   // Paused zooms can use the full recording without following the playhead.
+   expect(constrainViewStart(1, 4, 18)).toBe(1);
+});
 
 it("keeps viewport endpoints and computes density from every visible point", () => {
    expect(visibleKeyframes([0, 1, 2, 3, 4], 1, 2, 12)).toEqual({ ticks: [1, 2, 3], opacity: 0.5 });
