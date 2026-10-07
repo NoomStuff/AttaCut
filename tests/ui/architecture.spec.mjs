@@ -17,7 +17,7 @@ test("background testing keeps device audio silent while input and decoded frame
    const expected =
       process.env.ATTACUT_TEST_VISIBLE === "1"
          ? { muted: true }
-         : { ...(process.platform === "linux" ? { visible: false } : { opacity: 0 }), focused: false, muted: true };
+         : { ...(process.platform === "linux" ? { visible: true } : { opacity: 0 }), focused: false, muted: true };
    expect(await presentation()).toMatchObject(expected);
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await page.waitForFunction(() => {
@@ -124,7 +124,7 @@ test("a second process preserves active cache files and forwards file opens", as
       expect(
          await app.evaluate(({ BrowserWindow }) => {
             const window = BrowserWindow.getAllWindows()[0];
-            return process.platform === "linux" ? !window.isVisible() : window.getOpacity() === 0 && !window.isFocused();
+            return !window.isFocused() && (process.platform === "linux" ? window.isVisible() : window.getOpacity() === 0);
          })
       ).toBe(true);
    }

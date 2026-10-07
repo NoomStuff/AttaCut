@@ -79,11 +79,8 @@ async function start(): Promise<void> {
       },
    });
    appWindow = window;
-   // Linux background tests hide the window whenever it shows, including first presentation.
-   if (backgroundLinuxTest) {
-      const hide = () => window.hide();
-      window.on("show", hide);
-   }
+   // The test harness maps an inactive window for compositing. Hiding it again
+   // stops Linux screenshot capture and OffscreenCanvas presentation under Xvfb.
    // Silence the device output without changing the renderer's mute/volume state.
    if (process.env["ATTACUT_TESTING"] === "1") window.webContents.setAudioMuted(true);
    const testing = !isPackagedApp() && process.env["ATTACUT_TESTING"] === "1" ? new IpcTestAdapter() : null;
@@ -286,11 +283,8 @@ async function start(): Promise<void> {
       }
       if (value === "close") window.close();
       // Fullscreen takes over the whole screen; the custom player controls stay in-window.
-      // On Linux, entering or leaving fullscreen maps a hidden window directly, bypassing
-      // the show event; keep background test windows invisible through the transition.
       if (value === "enterFullscreen") window.setFullScreen(true);
       if (value === "exitFullscreen") window.setFullScreen(false);
-      if (backgroundLinuxTest && (value === "enterFullscreen" || value === "exitFullscreen")) window.hide();
    });
    if (process.env["ELECTRON_RENDERER_URL"]) await window.loadURL(process.env["ELECTRON_RENDERER_URL"]);
    else await window.loadURL("app://editor/index.html");

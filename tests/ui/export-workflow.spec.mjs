@@ -131,13 +131,13 @@ test("fullscreen stays in-window and keeps playback running", async ({ launchApp
    await page.mouse.click(progress.x + progress.width / 2, progress.y + progress.height / 2);
    await expect.poll(() => page.locator("video").evaluate((video) => video.currentTime)).toBeCloseTo(9, 1);
    if (process.env.ATTACUT_TEST_VISIBLE !== "1") {
-      // Custom fullscreen never touches window state, so a hidden test window stays hidden.
+      // Custom fullscreen retains the inactive test window's presentation.
       expect(
          await app.evaluate(({ BrowserWindow }) => {
             const window = BrowserWindow.getAllWindows()[0];
             return { visible: window.isVisible(), opacity: window.getOpacity(), focused: window.isFocused(), fullscreen: window.isFullScreen() };
          })
-      ).toMatchObject(process.platform === "linux" ? { visible: false, focused: false } : { opacity: 0, focused: false });
+      ).toMatchObject(process.platform === "linux" ? { visible: true, focused: false } : { opacity: 0, focused: false });
    }
    await page.locator(".player-stage.fullscreen").dblclick();
    await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
