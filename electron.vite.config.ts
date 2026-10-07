@@ -15,7 +15,11 @@ export default defineConfig({
    main: {
       build: {
          rollupOptions: {
-            input: { index: resolve("src/main/index.ts"), "media-index-worker": resolve("src/main/media/media-index-worker.ts") },
+            input: {
+               index: resolve("src/main/index.ts"),
+               "media-index-worker": resolve("src/main/media/media-index-worker.ts"),
+               "waveform-worker": resolve("src/main/media/waveform-worker.ts"),
+            },
             output: { entryFileNames: "[name].js" },
             onwarn: ignoreZodCommentNoise,
          },

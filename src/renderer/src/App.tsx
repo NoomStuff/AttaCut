@@ -207,7 +207,7 @@ export default function App() {
    // compact preview. If the preparation fails or never happens, the source itself is
    // decoded in the background.
    const waveformDecodeId = source && (preparing ? null : waveformMediaId && waveformMediaId !== source.id ? waveformMediaId : source.id);
-   const waveform = useWaveform({ source, enabled: preferences.waveform, audioIndices, decodeMediaId: waveformDecodeId });
+   const waveform = useWaveform({ source, enabled: preferences.waveform, audioIndices, decodeMediaId: waveformDecodeId, videoRef, seeker });
    useAppearance(preferences);
    useEffect(() => {
       if (!menu) return;

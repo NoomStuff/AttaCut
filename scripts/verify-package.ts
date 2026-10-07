@@ -127,6 +127,7 @@ const args = [
    "tests/ui/editor-session.spec.mjs",
    "tests/ui/export-workflow.spec.mjs",
    "tests/ui/architecture.spec.mjs",
+   "tests/ui/waveform.spec.mjs",
 ];
 if (process.platform === "linux") execFileSync("xvfb-run", ["--auto-servernum", process.execPath, ...args], { stdio: "inherit", env });
 else execFileSync(process.execPath, args, { stdio: "inherit", env });

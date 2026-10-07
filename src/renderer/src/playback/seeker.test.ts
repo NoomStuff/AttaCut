@@ -2,6 +2,41 @@ import { expect, it, vi } from "vitest";
 import { PlaybackClock } from "./clock";
 import { PlaybackSeeker } from "./seeker";
 
+it("releases completed seeks and advances queued input when animation frames stop", () => {
+   vi.useFakeTimers();
+   vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn(() => 1)
+   );
+   vi.stubGlobal("cancelAnimationFrame", vi.fn());
+   const seeker = new PlaybackSeeker(new PlaybackClock());
+   const video = Object.assign(new EventTarget(), { readyState: 2, seeking: false, currentTime: 0, pause: vi.fn() });
+   const detach = seeker.attach(video as unknown as HTMLVideoElement);
+   try {
+      video.seeking = true;
+      seeker.seek(3);
+      video.seeking = false;
+      video.dispatchEvent(new Event("seeked"));
+      expect(seeker.getWaiting()).toBe(true);
+      vi.advanceTimersByTime(50);
+      expect(video.currentTime).toBe(3);
+      expect(seeker.getWaiting()).toBe(false);
+      video.seeking = true;
+      seeker.seek(4);
+      video.seeking = false;
+      vi.advanceTimersByTime(50);
+      video.dispatchEvent(new Event("seeked"));
+      vi.advanceTimersByTime(50);
+      video.seeking = false;
+      video.dispatchEvent(new Event("seeked"));
+      expect(seeker.getWaiting()).toBe(false);
+   } finally {
+      detach();
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+   }
+});
+
 it("keeps the cutoff position separate from the resolved and presented end frame", async () => {
    const clock = new PlaybackClock();
    const seeker = new PlaybackSeeker(clock);

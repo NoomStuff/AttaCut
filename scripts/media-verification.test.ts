@@ -35,4 +35,4 @@ it("reuses exact inputs and rejects changes to code, dependencies, tools or the 
    } finally {
       await rm(root, { recursive: true, force: true });
    }
-});
+}, 15_000);

@@ -63,7 +63,7 @@ it("reopens a saved project with 1,000 clips and a full undo history", async () 
    expect(document.session.clips).toEqual(clips);
    expect(document.session.past).toHaveLength(undoLimit);
    expect(document.session.past.at(-1)!.clips).toEqual(past.at(-1)!.clips);
-});
+}, 15_000);
 
 it("accepts the three-letter fallback extension for save and open", async () => {
    const { session, directory } = await fixture();

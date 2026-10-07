@@ -7,7 +7,18 @@ import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 interface DiagnosticEvent {
-   action: keyof IpcCalls | "ffmpeg" | "ffprobe" | "export:stage" | "waveform:first-chunk" | "waveform:decode";
+   action:
+      | keyof IpcCalls
+      | "ffmpeg"
+      | "ffprobe"
+      | "export:stage"
+      | "waveform:first-chunk"
+      | "waveform:decode"
+      | "waveform:paused"
+      | "waveform:priority"
+      | "waveform:encode"
+      | "waveform:delivery"
+      | "waveform:read-decode";
    stage?: ExportStage;
    elapsedMs: number;
    outcome: "ok" | FailureCode;

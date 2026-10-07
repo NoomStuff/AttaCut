@@ -1,5 +1,36 @@
 import { expect, it } from "vitest";
-import { scheduleMedia } from "./scheduler";
+import { scheduleMedia, observeForegroundMedia } from "./scheduler";
+
+it("announces foreground work while optional jobs run", async () => {
+   const states: boolean[] = [];
+   const stop = observeForegroundMedia((busy) => states.push(busy));
+   let finish!: () => void;
+   const background = scheduleMedia(
+      () =>
+         new Promise<void>((resolve) => {
+            finish = resolve;
+         }),
+      "background"
+   );
+   await scheduleMedia(async () => {
+      expect(states.at(-1)).toBe(true);
+   });
+   expect(states.at(-1)).toBe(false);
+   finish();
+   await background;
+   stop();
+});
+
+it("releases capacity after tasks throw before returning a promise", async () => {
+   for (let attempt = 0; attempt < 4; attempt++) {
+      await expect(
+         scheduleMedia(() => {
+            throw new Error("Cannot start");
+         }, "background")
+      ).rejects.toThrow("Cannot start");
+   }
+   await expect(scheduleMedia(async () => "next", "background")).resolves.toBe("next");
+});
 
 it("releases capacity after tasks throw before returning a promise", async () => {
    for (let attempt = 0; attempt < 4; attempt++) {

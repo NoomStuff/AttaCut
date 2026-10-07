@@ -2,7 +2,7 @@
 export function afterIdle(task: () => void, delay = 750): () => void {
    let idle = 0;
    const timer = window.setTimeout(() => {
-      idle = window.requestIdleCallback(task);
+      idle = window.requestIdleCallback(task, { timeout: 1000 });
    }, delay);
    return () => {
       window.clearTimeout(timer);

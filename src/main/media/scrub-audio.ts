@@ -1,8 +1,10 @@
 import type { ProbedSource } from "./probe.ts";
 import { runMedia } from "./process.ts";
+import { scrubChunkSeconds } from "../../shared/media";
+import { alignedAudioFilters } from "./audio-filter.ts";
+export { scrubChunkSeconds } from "../../shared/media";
 
 const sampleRate = 22050;
-export const scrubChunkSeconds = 30;
 
 export async function extractScrubPcm(
    source: ProbedSource,
@@ -12,6 +14,11 @@ export async function extractScrubPcm(
 ): Promise<{ sampleRate: number; pcm: ArrayBuffer; start: number } | null> {
    const available = new Set(source.streams.filter((stream) => stream.type === "audio").map((stream) => stream.index));
    if (!streamIndices.length || streamIndices.some((index) => !available.has(index))) return null;
+   const duration = Math.min(scrubChunkSeconds, source.duration - start);
+   if (duration <= 0) return null;
+   const layout = source.streams
+      .filter((stream) => streamIndices.includes(stream.index))
+      .sort((a, b) => (b.channels ?? 0) - (a.channels ?? 0))[0]?.channelLayout;
    const chunks: Buffer[] = [];
    let size = 0;
    await runMedia(
@@ -21,21 +28,21 @@ export async function extractScrubPcm(
          "-loglevel",
          "error",
          "-nostdin",
+         "-threads",
+         "1",
          "-ss",
          String(start),
          "-i",
          source.path,
          "-t",
-         String(scrubChunkSeconds),
+         String(duration),
          "-vn",
-         ...(streamIndices.length === 1
-            ? ["-map", `0:${streamIndices[0]}`]
-            : [
-                 "-filter_complex",
-                 `${streamIndices.map((index) => `[0:${index}]`).join("")}amix=inputs=${streamIndices.length}:duration=longest[a]`,
-                 "-map",
-                 "[a]",
-              ]),
+         ...alignedAudioFilters(
+            streamIndices.map((index) => `0:${index}`),
+            sampleRate,
+            layout,
+            duration
+         ),
          "-ac",
          "1",
          "-ar",

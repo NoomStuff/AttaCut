@@ -28,9 +28,8 @@ export interface RunOptions {
     */
    onLines?: ((line: string) => void) | undefined;
    /** Binary consumers own their bounded buffer; process lifetime remains shared. */
-   onBytes?: (chunk: Buffer) => void;
-   /** Runs the child below normal OS priority, for work that must never compete with
-       interactive decodes or the preview transcode. */
+   onBytes?: (chunk: Buffer) => void | Promise<void>;
+   /** Best-effort CPU priority. This does not isolate disk IO or reserve cores. */
    belowNormal?: boolean;
 }
 /** ffmpeg and ffprobe stream progress or results continuously, so two minutes of total silence means a wedged decoder or stalled disk. */
@@ -68,6 +67,8 @@ function runChild(name: "ffmpeg" | "ffprobe", args: string[], options: RunOption
       let stderr = "";
       let pendingLine = "";
       let processError: Error | null = null;
+      let consuming: Promise<void> | null = null;
+      let consumerPaused = false;
       let settled = false;
       let idleTimer: NodeJS.Timeout | null = null;
       let killTimer: NodeJS.Timeout | null = null;
@@ -86,7 +87,7 @@ function runChild(name: "ffmpeg" | "ffprobe", args: string[], options: RunOption
       // Callers must not remove export files until the child has released them.
       options.signal?.addEventListener("abort", stop, { once: true });
       const armIdle = () => {
-         if (idleLimit <= 0 || killTimer || settled) return;
+         if (idleLimit <= 0 || killTimer || settled || consumerPaused) return;
          if (idleTimer) clearTimeout(idleTimer);
          idleTimer = setTimeout(() => {
             processError ??= new Error(`${name} stopped responding and was stopped.`);
@@ -100,7 +101,26 @@ function runChild(name: "ffmpeg" | "ffprobe", args: string[], options: RunOption
          armIdle();
          if (options.onBytes) {
             try {
-               options.onBytes(data as Buffer);
+               const consumed = options.onBytes(data as Buffer);
+               if (consumed) {
+                  // Backpressure bounds asynchronous consumers to one stdout chunk.
+                  child.stdout.pause();
+                  consumerPaused = true;
+                  if (idleTimer) clearTimeout(idleTimer);
+                  consuming = consumed.then(
+                     () => {
+                        consumerPaused = false;
+                        armIdle();
+                        child.stdout.resume();
+                     },
+                     (error: unknown) => {
+                        consumerPaused = false;
+                        processError ??= error instanceof Error ? error : new Error(String(error));
+                        stop();
+                        child.stdout.resume();
+                     }
+                  );
+               }
             } catch (error) {
                processError ??= error instanceof Error ? error : new Error(String(error));
                stop();
@@ -147,10 +167,11 @@ function runChild(name: "ffmpeg" | "ffprobe", args: string[], options: RunOption
          disarm();
          reject(options.signal?.aborted ? new Error("Cancelled") : processError);
       });
-      child.on("close", (code) => {
+      child.on("close", async (code) => {
          if (settled) return;
          settled = true;
          disarm();
+         await consuming;
          if (options.onLines && pendingLine) {
             try {
                if (!processError && !options.signal?.aborted) options.onLines(pendingLine);

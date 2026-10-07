@@ -4,6 +4,7 @@
  * untouched; bursts are cut short the moment real playback starts.
  */
 import type { ScrubAudio } from "../../../shared/types";
+import { scrubChunkSeconds } from "../../../shared/media";
 type Audition = { time: number; volume: number; side: "start" | "end" };
 export class AudioScrubber {
    private context: AudioContext | null = null;
@@ -20,12 +21,25 @@ export class AudioScrubber {
    private start = 0;
    private generation = 0;
    private loading = -1;
+   private loadTimer = 0;
+   private lastLoad = -Infinity;
    private load: ((time: number) => Promise<ScrubAudio | null>) | null = null;
 
    configure(load: ((time: number) => Promise<ScrubAudio | null>) | null): void {
       this.reset();
       this.load = load;
-      if (load) this.request(0);
+   }
+   /** Warm only after the video's first frame, while playback is idle. */
+   prefetch(time: number): void {
+      if (this.buffer && time >= this.start && time < this.start + this.buffer.duration) return;
+      this.request(time);
+   }
+   /** Playback takes priority over unfinished PCM work, retaining completed chunks. */
+   suspend(): void {
+      this.stop();
+      this.generation++;
+      this.loading = -1;
+      if (this.decoding) this.cancelDecode();
    }
    reset(): void {
       this.generation++;
@@ -35,6 +49,7 @@ export class AudioScrubber {
       this.previous = null;
       this.cancelDecode();
       this.lastScrub = -Infinity;
+      this.lastLoad = -Infinity;
    }
    dispose(): void {
       this.reset();
@@ -42,8 +57,18 @@ export class AudioScrubber {
       this.context = null;
    }
    private request(time: number): void {
-      const start = Math.floor(time / 30) * 30;
+      const start = Math.floor(time / scrubChunkSeconds) * scrubChunkSeconds;
+      window.clearTimeout(this.loadTimer);
+      this.loadTimer = 0;
       if (!this.load || this.loading === start) return;
+      // Keep the first cold request immediate, then coalesce moving across uncached
+      // chunks. Pointer events can arrive faster than FFmpeg can even start.
+      const wait = 100 - (performance.now() - this.lastLoad);
+      if (wait > 0) {
+         this.loadTimer = window.setTimeout(() => this.request(time), wait);
+         return;
+      }
+      this.lastLoad = performance.now();
       const generation = ++this.generation;
       this.loading = start;
       this.stopVoice();
@@ -60,12 +85,12 @@ export class AudioScrubber {
                this.start = data.start;
                this.setPcm(data.pcm, data.sampleRate);
                this.flush();
-            } else this.pending = null;
+            } else if (!this.loadTimer) this.pending = null;
          })
          .catch(() => {
             if (generation === this.generation) {
                this.loading = -1;
-               this.pending = null;
+               if (!this.loadTimer) this.pending = null;
             }
          });
    }
@@ -140,6 +165,8 @@ export class AudioScrubber {
             return;
          }
       }
+      window.clearTimeout(this.loadTimer);
+      this.loadTimer = 0;
       const stamp = performance.now();
       const wait = 50 - (stamp - this.lastScrub);
       if (wait > 0) {
@@ -185,6 +212,8 @@ export class AudioScrubber {
    }
 
    stop(): void {
+      window.clearTimeout(this.loadTimer);
+      this.loadTimer = 0;
       window.clearTimeout(this.auditionTimer);
       this.auditionTimer = 0;
       this.pending = null;

@@ -5,6 +5,8 @@ import type { ProbedSource } from "./media/probe.ts";
 import { preparePreview, leasePreview, releasePreview } from "./media/preview.ts";
 import { extractScrubPcm, scrubChunkSeconds } from "./media/scrub-audio.ts";
 import { extractWaveform } from "./media/waveform.ts";
+import type { WaveformChunk, WaveformResult, WaveformRange } from "./media/waveform-decode.ts";
+import { join } from "node:path";
 
 /** Owns the active source. Export plans retain their own immutable source reference. */
 export class SourceSession {
@@ -13,6 +15,25 @@ export class SourceSession {
    private preview = new AbortController();
    private scrub = new AbortController();
    private wave = new AbortController();
+   private waveRequest: string | null = null;
+   private waveJobs = new Set<Promise<WaveformResult | null>>();
+   async waitForWaveformIdle(): Promise<void> {
+      await Promise.allSettled([...this.waveJobs]);
+   }
+   private waveActivity: ((busy: boolean) => void) | null = null;
+   private waveBusy = false;
+   private waveRegion: WaveformRange | null = null;
+   private waveRegionListener: ((from: number, to: number) => void) | null = null;
+   waveformRegion(requestId: string, from: number, to: number): void {
+      if (requestId !== this.waveRequest) return;
+      this.waveRegion = { from, to };
+      this.waveRegionListener?.(from, to);
+   }
+   waveformActivity(requestId: string, busy: boolean): void {
+      if (requestId !== this.waveRequest) return;
+      this.waveBusy = busy;
+      this.waveActivity?.(busy);
+   }
    private source: ProbedSource | null = null;
    private keys: Promise<number[]> | null = null;
    private pcm: { key: string; value: Promise<ScrubAudio | null> } | null = null;
@@ -82,6 +103,7 @@ export class SourceSession {
    async prepare(id: string, tracks: number[], transcode: boolean): Promise<string> {
       const source = this.get(id);
       this.cancelPreview();
+      this.cancelWaveform();
       const controller = new AbortController();
       this.preview = controller;
       await this.previewReady;
@@ -120,10 +142,9 @@ export class SourceSession {
       this.pcm = { key, value };
       return value;
    }
-   cancelWaveform(): void {
-      this.wave.abort();
+   cancelWaveform(requestId?: string): void {
+      if (!requestId || requestId === this.waveRequest) this.wave.abort();
    }
-   /** One waveform extraction at a time; `onChunk` streams completed peak ranges. */
    /** The file a waveform should decode: the prepared preview when it carries exactly the
        requested tracks (it is compact and indexed), otherwise the source itself. */
    waveformDecodePath(tracks: number[]): string | undefined {
@@ -132,16 +153,53 @@ export class SourceSession {
       if (wanted.length !== this.previewAudio.length || wanted.some((track, index) => track !== this.previewAudio![index])) return undefined;
       return this.previewPath;
    }
+   /** One extraction at a time; `onChunk` streams completed peak ranges. */
    startWaveform(
       id: string,
+      requestId: string,
       tracks: number[],
       decodePath: string | undefined,
-      onChunk: (chunk: { offset: number; peaks: Uint8Array }) => void
-   ): Promise<{ peaks: Uint8Array } | null> {
+      onChunk: (chunk: WaveformChunk) => void
+   ): Promise<WaveformResult | null> {
       const source = this.get(id);
       this.cancelWaveform();
       this.wave = new AbortController();
-      return extractWaveform(source, tracks, this.wave.signal, onChunk, decodePath ? { decodePath } : undefined);
+      this.waveRequest = requestId;
+      this.waveBusy = false;
+      this.waveRegion = null;
+      const signal = this.wave.signal;
+      const pending = extractWaveform(
+         source,
+         tracks,
+         signal,
+         (chunk) => {
+            if (!signal.aborted) onChunk(chunk);
+         },
+         {
+            folder: join(this.previewFolder, "..", "waveforms"),
+            ...(decodePath ? { decodePath } : {}),
+            activity: (listener) => {
+               this.waveActivity = listener;
+               listener(this.waveBusy);
+               return () => {
+                  if (this.waveActivity === listener) this.waveActivity = null;
+               };
+            },
+            region: (listener) => {
+               this.waveRegionListener = listener;
+               if (this.waveRegion) listener(this.waveRegion.from, this.waveRegion.to);
+               return () => {
+                  if (this.waveRegionListener === listener) this.waveRegionListener = null;
+               };
+            },
+         }
+      );
+      this.waveJobs.add(pending);
+      const finished = () => {
+         this.waveJobs.delete(pending);
+      };
+      void pending.then(finished, finished);
+      return pending;
    }
    private release(): void {
       this.lifetime.abort();

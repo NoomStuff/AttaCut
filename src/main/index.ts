@@ -4,6 +4,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { SourceSession } from "./source-session.ts";
+import { pruneWaveforms } from "./media/waveform-cache";
 import { ExportService } from "./exports.ts";
 import { Storage } from "./storage.ts";
 import { serveMedia } from "./media/serve.ts";
@@ -133,7 +134,9 @@ async function start(): Promise<void> {
    await storageReady;
    const previewFolder = resolve(app.getPath("userData"), "previews");
    // Keep recent previews across sessions and sweep interrupted runs; preview writers wait for this below.
-   const previewCleanup = prunePreviews(previewFolder);
+   const previewCleanup = Promise.all([prunePreviews(previewFolder), pruneWaveforms(resolve(app.getPath("userData"), "waveforms"), undefined, true)]).then(
+      () => undefined
+   );
    void previewCleanup.catch(() => undefined);
    const sourceSession = new SourceSession(previewFolder, previewCleanup);
    // Deny-by-default for renderer permissions; nothing in the app currently requests any.
@@ -243,7 +246,10 @@ async function start(): Promise<void> {
       exportsService.cancel();
       // Give killed children and their cleanup handlers a bounded window to finish so
       // temporary export folders are removed instead of stranded beside the user's output.
-      void Promise.race([exportsService.waitForIdle(), new Promise((resolve) => setTimeout(resolve, 15_000))])
+      void Promise.race([
+         Promise.all([exportsService.waitForIdle(), sourceSession.waitForWaveformIdle()]),
+         new Promise((resolve) => setTimeout(resolve, 15_000)),
+      ])
          .catch(() => undefined)
          .finally(() => {
             if (applyUpdate) applyUpdate();

@@ -8,6 +8,7 @@ import type { RunOptions } from "./process.ts";
 import { probeSource } from "./probe.ts";
 import { isHdrTransfer, tonemapToBt709 } from "./formats.ts";
 import { removeTemporary } from "./publish.ts";
+import { alignedAudioFilters } from "./audio-filter.ts";
 /** All cached and unfinished previews share this disk limit. */
 const previewByteLimit = 8 * 1024 * 1024 * 1024;
 const longRecordingSeconds = 2 * 60 * 60;
@@ -40,7 +41,7 @@ function previewId(source: ProbedSource, audioKey: string, transcode: boolean, t
    return createHash("sha256")
       .update(
          JSON.stringify([
-            3,
+            4,
             process.platform === "win32" ? source.path.toLowerCase() : source.path,
             source.size,
             source.modified,
@@ -141,6 +142,9 @@ async function preparePreviewFile(
    // Interlaced previews are deinterlaced for viewing only; the source and every export stay untouched.
    const deinterlace = video.fieldOrder && !["unknown", "progressive"].includes(video.fieldOrder) ? "yadif=2:-1:0," : "";
    const long = source.duration > longRecordingSeconds;
+   const selectedAudio = source.streams.filter((stream) => audioIndices.includes(stream.index));
+   const audioRate = Math.max(48000, ...selectedAudio.map((stream) => stream.sampleRate ?? 0));
+   const audioLayout = [...selectedAudio].sort((a, b) => (b.channels ?? 0) - (a.channels ?? 0))[0]?.channelLayout;
    const audioBitrate = audioIndices.length
       ? Math.max(128000, ...source.streams.filter((stream) => audioIndices.includes(stream.index)).map((stream) => (stream.channels || 2) * 64000))
       : 0;
@@ -173,20 +177,20 @@ async function preparePreviewFile(
          [
             ...ffmpegBase,
             ...(hardwareDecode ? ["-hwaccel", "auto"] : []),
+            "-copyts",
+            "-start_at_zero",
             "-i",
             source.path,
             "-map",
             `0:${video.index}`,
             ...(audioIndices.length === 0
                ? ["-an"]
-               : audioIndices.length === 1
-                 ? ["-map", `0:${audioIndices[0]}`]
-                 : [
-                      "-filter_complex",
-                      `${audioIndices.map((index) => `[0:${index}]`).join("")}amix=inputs=${audioIndices.length}:duration=longest[a]`,
-                      "-map",
-                      "[a]",
-                   ]),
+               : alignedAudioFilters(
+                    audioIndices.map((index) => `0:${index}`),
+                    audioRate,
+                    audioLayout,
+                    source.duration
+                 )),
             ...(convertVideo ? encode : ["-c:v", "copy"]),
             ...(audioIndices.length ? ["-c:a", "aac", "-b:a", String(audioBitrate)] : []),
             "-movflags",

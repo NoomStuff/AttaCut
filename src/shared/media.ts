@@ -1,3 +1,6 @@
+/** Short audio reads keep cold scrubbing from competing with video for a long disk read. */
+export const scrubChunkSeconds = 5;
+
 export interface MediaStream {
    sampleRate?: number;
    channels?: number;
@@ -62,3 +65,7 @@ export interface ScrubAudio {
 export const waveformRate = 1000;
 export const waveformLevels = [1000, 100, 10, 1];
 export const waveformSampleRate = 16000;
+/** Bound fine peaks to 24 MB. Zero means even one bucket per second exceeds that budget. */
+export function waveformResolution(duration: number): number {
+   return waveformLevels.find((rate) => Math.ceil(duration * rate) <= 8_000_000) ?? 0;
+}

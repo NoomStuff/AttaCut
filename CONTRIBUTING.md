@@ -101,6 +101,30 @@ Remove-Item Env:ATTACUT_SEEK_BENCHMARK, Env:ATTACUT_LONG_VIDEO, Env:ATTACUT_SEEK
 
 Use a recording at least 115 minutes long for these fixed seek targets. Without `ATTACUT_LONG_VIDEO`, the test generates a two-hour fixture. Record the machine, storage, codec and sample times when comparing benchmark runs. The target applies to the median, measured inside the renderer after decoding the seek, excluding Playwright command overhead.
 
+The waveform benchmark compares off, first decode and persistent-cache reopening on a real recording:
+
+```powershell
+bun run build
+$env:ATTACUT_WAVEFORM_VIDEO = "D:/recordings/benchmark.mp4"
+bun x --no-install playwright test --project=ui tests/ui/waveform-benchmark.spec.mjs
+Remove-Item Env:ATTACUT_WAVEFORM_VIDEO
+```
+
+It saves JSON measurements and screenshots in `test-results`. Measurements include video readiness, first visible waveform, full decode, five seeks, IPC latency, main event loop delays, renderer frame timing, CPU and memory. On Windows it samples FFmpeg's cumulative CPU and logical IO counters. A fresh profile clears waveform and preview caches. It does not flush the operating system's file cache. Keep other media tests and builds idle during the run.
+
+Measure Play through its first advancing presented frame, plus individual seeks and bursts of 24 pointer moves:
+
+```powershell
+$env:ATTACUT_PERFORMANCE_VIDEO = "D:/recordings/benchmark.mp4"
+bun x --no-install playwright test --project=ui tests/ui/playback-performance.spec.mjs
+bun x --no-install playwright test --project=ui tests/ui/waveform-stress.spec.mjs
+Remove-Item Env:ATTACUT_PERFORMANCE_VIDEO
+```
+
+The first test compares waveform off, a fresh decode and persistent-cache reopening with audio scrubbing enabled. It records renderer long tasks and dropped video frames while playback continues for two seconds at each position. Use `--repeat-each=2` to check completion across repeated fresh profiles. The stress test opens 1,000 clips with distinct colors and exercises playback, zoom and pan. It requires one waveform canvas and checks added frame drops against the control run, allowing five percent for startup and decoder noise. `ATTACUT_PERFORMANCE_CACHE` can point at a completed waveform cache directory for the stress test. `ATTACUT_TEST_ENTRY` can select an archived application build for comparisons on the same runtime and storage. Copy JSON results before the next Playwright run clears `test-results`. Hidden-window animation intervals are scheduling measurements, not display FPS.
+
+The optional `tests/ui/waveform-region.spec.mjs` benchmark uses the same `ATTACUT_PERFORMANCE_VIDEO`. It seeks to a distant edit and records when priority peaks arrive, before the sequential scan reaches that point. Region reads stay below sixty seconds, coalesce after interaction settles, and share the extraction pause gate. Partial regions do not enter the persistent cache. Diagnostic reports separate waveform peak calculation, delivery and cache writes, intentional pauses, priority reads, and the remaining read/decode time. These timing categories include process scheduling and do not measure physical disk throughput in isolation.
+
 ---
 
 ## License

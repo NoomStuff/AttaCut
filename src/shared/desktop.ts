@@ -48,9 +48,13 @@ export interface DesktopApi {
    keyframes(sourceId: string): Promise<number[]>;
    scrubAudio(sourceId: string, streamIndices: number[], time?: number): Promise<ScrubAudio | null>;
    cancelScrub(): Promise<void>;
-   waveformStart(request: WaveformRequest): Promise<{ peaks: Uint8Array } | null>;
-   cancelWaveform(): Promise<void>;
-   onWaveformChunk(listener: (chunk: { sourceId: string; offset: number; peaks: Uint8Array }) => void): () => void;
+   waveformStart(request: WaveformRequest): Promise<{ rate: number; buckets: number } | null>;
+   cancelWaveform(requestId: string): Promise<void>;
+   waveformActivity(requestId: string, busy: boolean): Promise<void>;
+   waveformRegion(requestId: string, from: number, to: number): Promise<void>;
+   onWaveformChunk(
+      listener: (chunk: { sourceId: string; requestId: string; rate: number; offset: number; peaks: Uint8Array; priority?: boolean }) => void
+   ): () => void;
    frameTime(sourceId: string, time: number, direction: -1 | 0 | 1): Promise<number>;
    cancelExportPlanning(): Promise<void>;
    cancelExportAnalysis(): Promise<void>;

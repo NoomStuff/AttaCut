@@ -7,6 +7,7 @@ export class PlaybackSeeker {
    private requestedDirection: -1 | 0 | 1 | undefined;
    private video: HTMLVideoElement | null = null;
    private scheduled = 0;
+   private frameDeadline: ReturnType<typeof setTimeout> | undefined;
    private revision = 0;
    private lifetime = 0;
    private resolving = false;
@@ -37,9 +38,12 @@ export class PlaybackSeeker {
       this.waitingListeners.forEach((listener) => listener());
    }
    private finishIfReady(): void {
-      if (this.requested === null && !this.resolving && !this.scheduled && !this.video?.seeking) this.setWaiting(false);
+      if (this.requested === null && !this.resolving && !this.video?.seeking) this.setWaiting(false);
    }
    configure(resolveTime: ((time: number, direction?: -1 | 0 | 1) => Promise<number>) | null): void {
+      if (this.scheduled) cancelAnimationFrame(this.scheduled);
+      clearTimeout(this.frameDeadline);
+      this.scheduled = 0;
       this.clock.clearFrames();
       this.lifetime++;
       this.revision++;
@@ -59,11 +63,20 @@ export class PlaybackSeeker {
       this.video = video;
       const complete = () => {
          this.bumpProgress();
-         this.scheduled = requestAnimationFrame(() => {
+         cancelAnimationFrame(this.scheduled);
+         clearTimeout(this.frameDeadline);
+         const advance = () => {
+            cancelAnimationFrame(this.scheduled);
+            clearTimeout(this.frameDeadline);
             this.scheduled = 0;
             this.flush();
             this.finishIfReady();
-         });
+         };
+         this.scheduled = requestAnimationFrame(advance);
+         // A hidden or temporarily occluded window can stop delivering animation
+         // frames. Optional painting must not hold a completed seek or waveform idle.
+         this.frameDeadline = setTimeout(advance, 50);
+         this.finishIfReady();
       };
       const ready = () => this.flush();
       video.addEventListener("seeked", complete);
@@ -74,6 +87,7 @@ export class PlaybackSeeker {
          video.removeEventListener("loadedmetadata", ready);
          video.removeEventListener("loadeddata", ready);
          cancelAnimationFrame(this.scheduled);
+         clearTimeout(this.frameDeadline);
          this.scheduled = 0;
          this.requested = null;
          this.video = null;

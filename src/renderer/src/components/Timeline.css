@@ -11,14 +11,14 @@
    /* Generous top inset so the drag-duration readout floats above the ruler unclipped. */
    clip-path: inset(-26px 0 -24px);
 }
-/* Each clip paints its own on-screen slice of audio, tinted with the clip color and kept
-   under the clip number and keyframe ticks. Left and width come from the render, tracking
-   the part of the clip the view can actually see. */
+/* One viewport-sized strip paints the visible clips. Sharing the canvas keeps a long
+   clip list from competing with video playback for hundreds of canvas textures. */
 .clip-waveform {
    position: absolute;
-   top: 0;
-   height: 100%;
-   color: var(--clip-color);
+   bottom: 2px;
+   left: 0;
+   height: 23px;
+   z-index: 1;
    pointer-events: none;
 }
 /* Invisible scrub extension below the viewport: extra grab area without shifting any
@@ -397,6 +397,7 @@
    color: var(--muted);
 }
 .keyframe-tick {
+   z-index: 2;
    position: absolute;
    width: 1px;
    height: 8px;

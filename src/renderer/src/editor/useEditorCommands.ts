@@ -84,7 +84,8 @@ export function useEditorCommands({
       }
       const time = clock.get();
       if (preferences.keptOnly && editor.document.clips.length) {
-         seeker.seek(nextKeptTime(editor.document.clips, time) ?? editor.document.clips[0]!.start, true);
+         const target = nextKeptTime(editor.document.clips, time) ?? editor.document.clips[0]!.start;
+         if (target !== time) seeker.seek(target, true);
       } else if (source && time >= source.duration - 0.02) seeker.seek(0, true);
       playback.request(true);
       if (preparing) return;

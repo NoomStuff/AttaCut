@@ -241,11 +241,13 @@ export function registerIpc({
       } else if (!request.decodeMediaId) {
          decodePath = sourceSession.waveformDecodePath(request.streamIndices);
       }
-      return sourceSession.startWaveform(source.id, request.streamIndices, decodePath, (chunk) => {
-         if (!window.isDestroyed()) window.webContents.send(IpcEvents.waveformChunk, { ...chunk, sourceId: source.id });
+      return sourceSession.startWaveform(source.id, request.requestId, request.streamIndices, decodePath, (chunk) => {
+         if (!window.isDestroyed()) window.webContents.send(IpcEvents.waveformChunk, { ...chunk, sourceId: source.id, requestId: request.requestId });
       });
    });
-   handle("waveform:cancel", () => sourceSession.cancelWaveform());
+   handle("waveform:cancel", (request) => sourceSession.cancelWaveform(request.requestId));
+   handle("waveform:activity", (request) => sourceSession.waveformActivity(request.requestId, request.busy));
+   handle("waveform:region", (request) => sourceSession.waveformRegion(request.requestId, request.from, request.to));
    handle("export:cancel-planning", () => exportsService.cancelPlanning());
    handle("export:cancel-analysis", () => exportsService.cancelAnalysis());
    handle("state:flush", async (value) => {

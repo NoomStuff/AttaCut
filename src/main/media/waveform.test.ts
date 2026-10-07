@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { WaveformEncoder, extractWaveform } from "./waveform";
+import { WaveformEncoder } from "./waveform-encoder";
+import { decodeWaveform } from "./waveform-decode";
 import { waveformRate, waveformSampleRate } from "../../shared/media";
 import { runMedia } from "./process";
 import type { ProbedSource } from "./probe";
@@ -65,9 +66,51 @@ describe("waveform encoding", () => {
 });
 
 describe("waveform extraction", () => {
+   it("maps the mixed preview audio instead of original stream numbers", async () => {
+      const source = {
+         path: "original.mp4",
+         duration: 1,
+         streams: [
+            { type: "audio", index: 3 },
+            { type: "audio", index: 5 },
+         ],
+      } as ProbedSource;
+      await decodeWaveform(source, [5, 3], undefined, async () => {}, { decodePath: "preview.mp4" });
+      const args = vi.mocked(runMedia).mock.calls.at(-1)![1];
+      expect(args[args.indexOf("-i") + 1]).toBe("preview.mp4");
+      expect(args[args.indexOf("-map") + 1]).toBe("0:a:0");
+      expect(args).not.toContain("0:5");
+      expect(args).not.toContain("-filter_complex");
+   });
+   it("aligns and mixes each source track, preserving delayed audio and gaps", async () => {
+      const source = {
+         path: "original.mp4",
+         duration: 10,
+         streams: [
+            { type: "audio", index: 2 },
+            { type: "audio", index: 4 },
+         ],
+      } as ProbedSource;
+      await decodeWaveform(source, [4, 2], undefined, async () => {});
+      const args = vi.mocked(runMedia).mock.calls.at(-1)![1];
+      expect(args).toContain("-copyts");
+      expect(args[args.indexOf("-filter_complex") + 1]).toContain("[0:2]aresample=16000:async=1:first_pts=0[t0];[0:4]aresample=16000:async=1:first_pts=0[t1]");
+      expect(args[args.indexOf("-filter_complex") + 1]).toContain("apad,atrim=end=10");
+   });
+   it("rejects duplicate tracks and cancellation while a consumer is paused", async () => {
+      const source = { path: "source", duration: 1, streams: [{ type: "audio", index: 1 }] } as ProbedSource;
+      expect(await decodeWaveform(source, [1, 1], undefined, async () => {})).toBeNull();
+      const controller = new AbortController();
+      vi.mocked(runMedia).mockImplementationOnce(async (_name, _args, options) => {
+         controller.abort();
+         await options?.onBytes?.(Buffer.alloc(64));
+         return "";
+      });
+      await expect(decodeWaveform(source, [1], controller.signal, async () => {})).rejects.toThrow();
+   });
    it("rejects requests naming no audio stream of the source", async () => {
       const source = { path: "recording.mkv", streams: [{ type: "video", index: 0 }] } as unknown as ProbedSource;
-      await expect(extractWaveform(source, [1], undefined)).resolves.toBeNull();
+      await expect(decodeWaveform(source, [1], undefined, async () => {})).resolves.toBeNull();
    });
 
    it("streams chunks while decoding and resolves the complete peaks", async () => {
@@ -80,18 +123,20 @@ describe("waveform extraction", () => {
          return buffer;
       };
       vi.mocked(runMedia).mockImplementationOnce(async (_name, _args, options) => {
-         options?.onBytes?.(Buffer.from(wave(whole)));
-         options?.onBytes?.(Buffer.from(wave(remainder)));
+         await options?.onBytes?.(Buffer.from(wave(whole)));
+         await options?.onBytes?.(Buffer.from(wave(remainder)));
          return "";
       });
       const chunks: { offset: number; peaks: Uint8Array }[] = [];
       const source = { path: "recording.mkv", duration: 10.5, streams: [{ type: "audio", index: 1 }] } as unknown as ProbedSource;
-      const result = await extractWaveform(source, [1], undefined, (chunk) => chunks.push(chunk));
+      const result = await decodeWaveform(source, [1], undefined, async (chunk) => {
+         chunks.push({ ...chunk, peaks: chunk.peaks.slice() });
+      });
       expect(chunks).toHaveLength(2);
       expect(chunks[0]).toMatchObject({ offset: 0 });
       expect(chunks[0]!.peaks).toHaveLength(3 * 10 * waveformRate);
       expect(chunks[1]).toMatchObject({ offset: 10 * waveformRate });
       expect(chunks[1]!.peaks).toHaveLength(3 * Math.round(0.5 * waveformRate));
-      expect(result!.peaks).toHaveLength(3 * ((whole + remainder) / waveformSampleRate) * waveformRate);
+      expect(result!.buckets).toBe(((whole + remainder) / waveformSampleRate) * waveformRate);
    });
 });

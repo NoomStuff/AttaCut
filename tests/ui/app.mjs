@@ -63,7 +63,10 @@ export const test = base.extend({
       const logs = [];
       await use(async (profile, file) => {
          const app = await electron.launch({
-            args: [...(process.env.ATTACUT_EXECUTABLE ? [] : ["."]), ...(process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : [])],
+            args: [
+               ...(process.env.ATTACUT_EXECUTABLE ? [] : [process.env.ATTACUT_TEST_ENTRY ?? "."]),
+               ...(process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : []),
+            ],
             ...(process.env.ATTACUT_EXECUTABLE ? { executablePath: process.env.ATTACUT_EXECUTABLE } : {}),
             env: {
                ...appEnv,

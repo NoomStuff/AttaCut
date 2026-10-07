@@ -26,12 +26,7 @@ export const preferencesSchema = z.object({
    keptOnly: z.boolean().default(false),
    keepPlaying: z.boolean().default(false),
    audioScrub: z.boolean().default(true),
-   // Hidden feature: the timeline waveform is parked until its load-time behavior holds up
-   // on real recordings. The stored value is intentionally ignored.
-   waveform: z
-      .boolean()
-      .default(false)
-      .transform(() => false),
+   waveform: z.boolean().default(false),
    snapping: z.boolean().default(false),
    holdToSnap: z.enum(["Alt", "Shift", "Control", "none"]).default("Alt"),
    volume: z.number().min(0).max(1).default(0.7),

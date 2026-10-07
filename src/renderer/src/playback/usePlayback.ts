@@ -8,6 +8,7 @@ import { AudioScrubber } from "./scrubber";
 import { PlaybackController } from "./controller";
 import { PlaybackClock } from "./clock";
 import { errorText, isCancellation } from "../lib/errors";
+import { afterIdle } from "../lib/prefetch";
 
 export function usePlayback({
    source,
@@ -46,11 +47,33 @@ export function usePlayback({
       scrubber.configure(
          source && preferences.audioScrub && audioIndices.length > 0 ? (time) => window.desktop.scrubAudio(source.id, audioIndices, time) : null
       );
+      const video = videoRef.current;
+      let cancelIdle = () => {};
+      const warm = () => {
+         cancelIdle();
+         if (!video || video.readyState < 2 || !video.paused || video.seeking || !preferences.audioScrub) return;
+         cancelIdle = afterIdle(() => {
+            if (video.paused && !video.seeking) scrubber.prefetch(clock.get());
+         });
+      };
+      const play = () => {
+         cancelIdle();
+         scrubber.suspend();
+         void window.desktop.cancelScrub();
+      };
+      video?.addEventListener("loadeddata", warm);
+      video?.addEventListener("pause", warm);
+      video?.addEventListener("play", play);
+      warm();
       return () => {
+         cancelIdle();
+         video?.removeEventListener("loadeddata", warm);
+         video?.removeEventListener("pause", warm);
+         video?.removeEventListener("play", play);
          scrubber.reset();
          void window.desktop.cancelScrub();
       };
-   }, [source, audioIndices, preferences.audioScrub, scrubber]);
+   }, [source, audioIndices, preferences.audioScrub, scrubber, clock]);
    useEffect(() => {
       if (muted || preferences.volume <= 0) scrubber.stop();
    }, [muted, preferences.volume, scrubber]);

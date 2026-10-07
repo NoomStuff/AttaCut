@@ -25,8 +25,10 @@ interface IpcResponses {
    "preview:cancel": void;
    "audio:scrub": Result<"scrubAudio">;
    "audio:cancel": void;
-   "waveform:start": { peaks: Uint8Array } | null;
+   "waveform:start": Result<"waveformStart">;
    "waveform:cancel": void;
+   "waveform:activity": void;
+   "waveform:region": void;
    "frame:export": string;
    "export:plan": Result<"planExport">;
    "export:check-destinations": Result<"checkExportDestinations">;

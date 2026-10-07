@@ -1,7 +1,16 @@
 import { z } from "zod";
 import { preferencesSchema } from "./preferences";
 import { sessionStorageSchema } from "./session-storage";
-import { frameRequestSchema, frameTimeRequestSchema, scrubRequestSchema, previewRequestSchema, waveformRequestSchema } from "./media-requests";
+import {
+   frameRequestSchema,
+   frameTimeRequestSchema,
+   scrubRequestSchema,
+   previewRequestSchema,
+   waveformRequestSchema,
+   waveformCancelSchema,
+   waveformActivitySchema,
+   waveformRegionSchema,
+} from "./media-requests";
 import { planRequestSchema, analyzeRequestSchema, exportApprovalSchema } from "./export";
 
 /** The main-process boundary validates these once before invoking a typed route. */
@@ -34,7 +43,9 @@ export const ipcRequestSchemas = {
    "audio:scrub": scrubRequestSchema,
    "audio:cancel": z.void(),
    "waveform:start": waveformRequestSchema,
-   "waveform:cancel": z.void(),
+   "waveform:cancel": waveformCancelSchema,
+   "waveform:activity": waveformActivitySchema,
+   "waveform:region": waveformRegionSchema,
    "frame:export": frameRequestSchema,
    "export:plan": planRequestSchema,
    "export:check-destinations": planRequestSchema,

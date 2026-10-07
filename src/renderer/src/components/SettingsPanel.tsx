@@ -378,6 +378,12 @@ export function SettingsPanel({
                            checked={preferences.audioScrub}
                            onChange={(audioScrub) => onChange({ ...preferences, audioScrub })}
                         />
+                        <Toggle
+                           label="Timeline waveform"
+                           description="Show the selected playback audio inside clips."
+                           checked={preferences.waveform}
+                           onChange={(waveform) => onChange({ ...preferences, waveform })}
+                        />
                      </section>
                      <section className="settings-group" aria-labelledby="settings-export">
                         <h3 id="settings-export">Export</h3>

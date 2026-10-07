@@ -33,12 +33,12 @@ test("default audio scrubbing auditions a held snapped cut once and hover stays 
    await expect(page.locator(".handle-direction.start.active")).toHaveCount(0);
    await page.mouse.down();
    await page.mouse.move(bar.x + (bar.width * 6.2) / 18, bounds.y + bounds.height / 2);
-   await expect.poll(() => page.evaluate(() => window.scrubAuditions.filter(([, offset]) => Math.abs(offset - 5.84) < 0.001).length)).toBe(1);
+   await expect.poll(() => page.evaluate(() => window.scrubAuditions.filter(([, offset]) => Math.abs(offset - 0.84) < 0.001).length)).toBe(1);
    for (let i = 0; i < 16; i++) {
       await page.mouse.move(bar.x + (bar.width * (6.2 + (i % 2 ? 0.1 : -0.1))) / 18, bounds.y + bounds.height / 2);
    }
    await page.screenshot({ path: "work/audio-scrub-playground/handle-hover.png" });
-   expect(await page.evaluate(() => window.scrubAuditions.filter(([, offset]) => Math.abs(offset - 5.84) < 0.001).length)).toBe(1);
+   expect(await page.evaluate(() => window.scrubAuditions.filter(([, offset]) => Math.abs(offset - 0.84) < 0.001).length)).toBe(1);
    await page.mouse.up();
    await page.getByRole("button", { name: "Mute preview", exact: true }).click();
    const before = await page.evaluate(() => window.scrubAuditions.length);

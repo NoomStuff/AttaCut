@@ -27,6 +27,7 @@ export const previewRequestSchema = z.object({
 });
 export type PreviewRequest = z.infer<typeof previewRequestSchema>;
 export const waveformRequestSchema = z.object({
+   requestId: z.string().min(1).max(80),
    sourceId: z.string(),
    streamIndices: z.array(z.number().int()).min(1),
    /** The media id to decode from: the source itself, or a prepared preview (compact and
@@ -34,3 +35,8 @@ export const waveformRequestSchema = z.object({
    decodeMediaId: z.string().optional(),
 });
 export type WaveformRequest = z.infer<typeof waveformRequestSchema>;
+export const waveformCancelSchema = z.object({ requestId: z.string().min(1).max(80) });
+export const waveformActivitySchema = waveformCancelSchema.extend({ busy: z.boolean() });
+export const waveformRegionSchema = waveformCancelSchema
+   .extend({ from: z.number().finite().nonnegative(), to: z.number().finite().nonnegative() })
+   .refine(({ from, to }) => to > from && to - from <= 60, "Waveform region must fit in sixty seconds.");
