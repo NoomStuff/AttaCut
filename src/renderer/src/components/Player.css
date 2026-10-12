@@ -41,8 +41,8 @@
    opacity: 1;
    transition: none;
 }
-/* Custom fullscreen: the stage pins over the whole window, so no OS fullscreen mode is
-   involved and playback keeps the window's normal presentation. */
+/* Video and controls scale together in Chromium's compositor. App retains native
+   fullscreen through the exit, so its viewport stays fixed until the motion ends. */
 .player-stage.fullscreen {
    position: fixed;
    inset: 0;

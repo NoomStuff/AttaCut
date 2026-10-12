@@ -42,6 +42,13 @@ app.on("open-file", (event, path) => {
 app.setName("AttaCut");
 if (process.platform === "win32") app.setAppUserModelId("dev.attacut.app");
 app.commandLine.appendSwitch("enable-blink-features", "AudioVideoTracks");
+if (process.platform === "win32") {
+   // Keep video in Chromium's compositor with the controls. Independent Windows
+   // video overlays can retain stale geometry after fullscreen or occlusion changes.
+   // These GPU driver workarounds leave hardware decoding and GPU rendering enabled.
+   app.commandLine.appendSwitch("disable_direct_composition_video_overlays", "1");
+   app.commandLine.appendSwitch("disable_direct_composition_sw_video_overlays", "1");
+}
 protocol.registerSchemesAsPrivileged([
    { scheme: "media", privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
    { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },

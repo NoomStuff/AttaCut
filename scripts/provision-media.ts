@@ -28,7 +28,7 @@ export async function provisionMedia(): Promise<{ FFMPEG_PATH: string; FFPROBE_P
             "--connect-timeout",
             "30",
             "--max-time",
-            "180",
+            "600",
             "--output",
             path,
             archive.url,
@@ -37,7 +37,7 @@ export async function provisionMedia(): Promise<{ FFMPEG_PATH: string; FFPROBE_P
       );
       const data = await readFile(path);
       if (createHash("sha256").update(data).digest("hex") !== archive.sha256) throw new Error(`Media checksum mismatch: ${archive.url}`);
-      execFileSync("tar", ["-xf", path, "-C", folder], { stdio: "inherit" });
+      execFileSync("tar", ["-xf", path, "-C", folder, ...(archive.files ?? [])], { stdio: "inherit" });
    }
    const files = await readdir(folder, { recursive: true });
    const paths = {} as { FFMPEG_PATH: string; FFPROBE_PATH: string };

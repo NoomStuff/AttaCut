@@ -85,7 +85,17 @@ export default function App() {
    // The player overlays the window while the window itself takes over the screen, so the
    // custom controls stay and window management, multi-monitor layouts, and background
    // presentation behave identically in and out.
-   const [fullscreen, setFullscreen] = useState(false);
+   const [fullscreenState, setFullscreenState] = useState<"off" | "on" | "closing">("off");
+   const fullscreenPresented = fullscreenState !== "off";
+   const setFullscreen = useCallback((value: boolean | ((current: boolean) => boolean)) => {
+      setFullscreenState((current) => {
+         const next = typeof value === "function" ? value(current === "on") : value;
+         return next ? "on" : current === "off" ? "off" : "closing";
+      });
+   }, []);
+   const finishFullscreenExit = useCallback(() => {
+      setFullscreenState((current) => (current === "closing" ? "off" : current));
+   }, []);
    const [dragStore] = useState(createDraftStore);
    const session = useEditorSession({
       setError,
@@ -181,12 +191,31 @@ export default function App() {
       },
       [setMuted, setPreferences]
    );
-   // Drive the OS window state from the renderer's fullscreen flag, and follow native exits
-   // (macOS Escape, system gestures) back into that flag.
-   useEffect(() => window.desktop.onWindowFullscreen(setFullscreen), []);
+   // Keep native fullscreen until the player's animationend, rather than resizing
+   // underneath the exit motion. Native exits also update the requested state.
+   useEffect(
+      () =>
+         window.desktop.onWindowFullscreen((value) => {
+            // Native exits have already resized the window. A late enter notification
+            // must not cancel an exit the user requested while the window was entering.
+            setFullscreenState((current) => (value ? (current === "closing" ? current : "on") : "off"));
+         }),
+      []
+   );
    useEffect(() => {
-      window.desktop.windowAction(fullscreen ? "enterFullscreen" : "exitFullscreen");
-   }, [fullscreen]);
+      // A removed player or reduced-motion mode has no exit animation to await.
+      if (fullscreenState !== "closing") return;
+      const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const finishWithoutMotion = () => {
+         if (!source || motion.matches) finishFullscreenExit();
+      };
+      finishWithoutMotion();
+      motion.addEventListener("change", finishWithoutMotion);
+      return () => motion.removeEventListener("change", finishWithoutMotion);
+   }, [fullscreenState, source, finishFullscreenExit]);
+   useEffect(() => {
+      window.desktop.windowAction(fullscreenPresented ? "enterFullscreen" : "exitFullscreen");
+   }, [fullscreenPresented]);
    // The export panel must never show its loader behind a click, and the idle prefetch
    // below waits out preview preparation first. Import it eagerly once a source exists.
    useEffect(() => {
@@ -409,7 +438,9 @@ export default function App() {
                         onVolume={updateVolume}
                         onSeek={seek}
                         playing={playing}
-                        fullscreen={fullscreen}
+                        fullscreen={fullscreenPresented}
+                        fullscreenClosing={fullscreenState === "closing"}
+                        onFullscreenExited={finishFullscreenExit}
                         onSetFullscreen={setFullscreen}
                         onTogglePlay={togglePlay}
                         onPlaying={(value) => {

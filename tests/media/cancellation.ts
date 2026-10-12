@@ -43,8 +43,10 @@ const controller = new AbortController();
 const audioIndices = source.streams.filter((stream) => stream.type === "audio").map((stream) => stream.index);
 const preview = preparePreview(source, previewFolder, audioIndices, true, {
    signal: controller.signal,
-   onProgress: (value) => {
-      if (value > 0) controller.abort();
+   onProgress: () => {
+      // Cancel when preparation starts. A short ultrafast transcode can finish
+      // before FFmpeg emits a positive periodic progress report.
+      controller.abort();
    },
 });
 await assert.rejects(preview);

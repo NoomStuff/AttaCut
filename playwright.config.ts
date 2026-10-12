@@ -12,8 +12,8 @@ export default defineConfig({
    reporter: "list",
    use: { trace: "retain-on-failure" },
    projects: [
-      { name: "ui", testIgnore: ["**/format-playback.spec.mjs", "**/native-focus.spec.mjs"] },
-      { name: "native", testMatch: "**/native-focus.spec.mjs" },
+      { name: "ui", testIgnore: ["**/format-playback.spec.mjs", "**/native-focus.spec.mjs", "**/fullscreen-native.spec.mjs"] },
+      { name: "native", testMatch: ["**/native-focus.spec.mjs", "**/fullscreen-native.spec.mjs"] },
       { name: "playback", testMatch: "**/format-playback.spec.mjs" },
    ],
 });
