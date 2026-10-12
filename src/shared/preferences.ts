@@ -25,6 +25,7 @@ export const preferencesSchema = z.object({
    outputDirectory: z.string().default(""),
    keptOnly: z.boolean().default(false),
    keepPlaying: z.boolean().default(false),
+   autoPlay: z.boolean().default(false),
    audioScrub: z.boolean().default(true),
    waveform: z.boolean().default(false),
    snapping: z.boolean().default(false),

@@ -1,6 +1,6 @@
 import { expectAudioMatches, expectCopiedFrameMatches, expectFrameMatches, inspectMedia } from "./media-checks.mjs";
 import { expect } from "@playwright/test";
-import { test, waitForPlaybackTime, waitForVideo } from "./app.mjs";
+import { test, waitForPlaybackTime, waitForVideo, configureIpc } from "./app.mjs";
 import { resolve, join } from "node:path";
 import { mkdir, readdir } from "node:fs/promises";
 
@@ -141,6 +141,30 @@ test("fullscreen stays in-window and keeps playback running", async ({ launchApp
    }
    await page.locator(".player-stage.fullscreen").dblclick();
    await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
+});
+
+test("fullscreen survives video replacement and exits when the project closes", async ({ launchApp, profile }) => {
+   test.skip(!!process.env.ATTACUT_EXECUTABLE, "Development fault injection");
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
+   await expect(page.locator(".player-stage.fullscreen")).toBeVisible();
+   const nativeFullscreen = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen());
+   await expect.poll(nativeFullscreen).toBe(true);
+   await configureIpc(app, "source:open", { after: "fullscreen-open" });
+   await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mkv"));
+   await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.waiting("fullscreen-open"))).toBe(true);
+   await expect(page.locator(".player-stage.fullscreen")).toBeVisible();
+   expect(await nativeFullscreen()).toBe(true);
+   await app.evaluate(() => globalThis.attacutTestIpc.release("fullscreen-open"));
+   await expect(page.locator(".title-filename")).toHaveText("fixture.mkv");
+   await waitForVideo(page);
+   await expect(page.locator(".player-stage.fullscreen")).toBeVisible();
+   expect(await nativeFullscreen()).toBe(true);
+   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:command", "closeProject"));
+   await expect(page.locator("video")).toHaveCount(0);
+   await expect.poll(nativeFullscreen).toBe(false);
 });
 
 test("compact layout keeps transport controls within the window", async ({ launchApp, profile }) => {

@@ -91,11 +91,11 @@ export default function App() {
       setError,
       showError,
       onJob: receiveJob,
-      onWorkspaceReset: () => {
+      onWorkspaceReset: (reason) => {
          setMenu(null);
          setPanel(null);
          setExportHelp(false);
-         setFullscreen(false);
+         if (reason === "close") setFullscreen(false);
          dragStore.set(null);
       },
       onDocumentReset: () => remember(undefined),

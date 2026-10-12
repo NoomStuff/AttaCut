@@ -28,7 +28,7 @@ export function useEditorSession({
    setError: Dispatch<SetStateAction<EditorNotice | null>>;
    showError: (message: string | null) => void;
    onJob: (job: ExportJob) => void;
-   onWorkspaceReset: () => void;
+   onWorkspaceReset: (reason: "open" | "close") => void;
    onDocumentReset: () => void;
    onSourceOpened: () => void;
 }) {
@@ -113,13 +113,19 @@ export function useEditorSession({
          return false;
       }
    };
-   const openPath = async (path: string, saved?: SavedSession, playbackAudio = preferences.playbackAudio, confirm = true) => {
+   const openPath = async (
+      path: string,
+      saved?: SavedSession,
+      playbackAudio = preferences.playbackAudio,
+      confirm = true,
+      autoPlay = !saved && preferences.autoPlay
+   ) => {
       if (confirm && !(await confirmProject())) return;
       const sequence = ++openSequence.current;
       playback.invalidate();
       setLoading(true);
       setError(null);
-      onWorkspaceReset();
+      onWorkspaceReset("open");
       scrubber.stop();
       try {
          await saveCurrent();
@@ -149,6 +155,7 @@ export function useEditorSession({
          onDocumentReset();
          clock.set(0);
          setPlaying(false);
+         if (autoPlay) playback.request(false);
          const sourceAudio = media.streams.filter((stream) => stream.type === "audio");
          const selectedAudio = resolveAudioSelection(sourceAudio, playbackAudio);
          const firstAudio = sourceAudio.find((stream) => selectedAudio.includes(stream.index));
@@ -203,7 +210,7 @@ export function useEditorSession({
       // Invalidate any in-flight open so it cannot repopulate the workspace after the close.
       openSequence.current++;
       playback.invalidate();
-      onWorkspaceReset();
+      onWorkspaceReset("close");
       setError(null);
       const snapshot = sessionFor(source, editor, restore, projectRef.current);
       setRestore(keepRecovery && preferences.resume && snapshot ? discardProjectChanges(snapshot) : null);
@@ -240,8 +247,8 @@ export function useEditorSession({
          setVersion(data.version);
          setRestore(data.preferences.resume ? data.session : null);
          setReady(true);
-         if (data.initialFile) await openPath(data.initialFile, undefined, data.preferences.playbackAudio, false);
-         else if (data.preferences.resume && data.session) await openPath(data.session.path, data.session, data.preferences.playbackAudio, false);
+         if (data.initialFile) await openPath(data.initialFile, undefined, data.preferences.playbackAudio, false, data.preferences.autoPlay);
+         else if (data.preferences.resume && data.session) await openPath(data.session.path, data.session, data.preferences.playbackAudio, false, false);
          if (!signal.aborted && data.warning) {
             const warning = data.warning;
             setError((current) => current ?? { text: warning, tone: "error" });

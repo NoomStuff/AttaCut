@@ -12,6 +12,7 @@ export const defaultPreferences: Preferences = {
    outputDirectory: "",
    keptOnly: false,
    keepPlaying: false,
+   autoPlay: false,
    audioScrub: true,
    waveform: false,
    snapping: false,
