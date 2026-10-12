@@ -7,6 +7,7 @@ import { test, waitForVideo, waitForPlaybackTime } from "./app.mjs";
 // DOM bounds alone cannot detect a misplaced Windows video overlay.
 async function expectPresentedFrame(page, testInfo, name) {
    const stage = page.locator(".player-stage");
+   expect(await stage.evaluate((element) => [element.scrollLeft, element.scrollTop]), `${name}: controls must not scroll the video`).toEqual([0, 0]);
    const actual = await stage.screenshot({ animations: "allow" });
    // Capture the video first. Only then add a canvas reference, so adding it cannot
    // repair a stale video overlay before we inspect the actual presentation.
@@ -105,37 +106,26 @@ test("paused fullscreen keeps its frame and position through controls and window
 });
 
 for (const motion of ["no-preference", "reduce"]) {
-   test(`fullscreen exit keeps native geometry until its motion finishes with ${motion}`, async ({ launchApp, profile }) => {
+   test(`fullscreen exits immediately while the preview returns with ${motion}`, async ({ launchApp, profile }) => {
       const app = await launchApp(profile, resolve("work/fixture.mp4"));
       const page = await app.firstWindow();
       await page.emulateMedia({ reducedMotion: motion });
       await waitForVideo(page);
       await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
       await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
-      await app.evaluate(({ BrowserWindow }) => {
-         const window = BrowserWindow.getAllWindows()[0];
-         const setFullscreen = window.setFullScreen.bind(window);
-         window.setFullScreen = (value) => {
-            if (!value) globalThis.fullscreenNativeExitAt = Date.now();
-            setFullscreen(value);
-         };
-      });
       const video = page.locator("video");
       const time = await video.evaluate((video) => video.currentTime);
       const state = await page.evaluate(async () => {
          const stage = document.querySelector(".player-stage");
          await Promise.all(stage.getAnimations().map((animation) => animation.finished));
-         // Observe the closing commit before its short animation can finish.
+         stage.style.animationPlayState = "paused";
+         // Freeze the return animation to prove it cannot delay the native exit.
          const closing = new Promise((resolve) => {
             const observer = new globalThis.MutationObserver(() => {
-               if (!stage.classList.contains("closing")) return;
+               if (!stage.classList.contains("fullscreen-returning")) return;
                observer.disconnect();
                resolve({
-                  width: stage.clientWidth,
-                  height: stage.clientHeight,
-                  viewport: [globalThis.innerWidth, globalThis.innerHeight],
                   animation: globalThis.getComputedStyle(stage).animationName,
-                  closingAt: Date.now(),
                });
             });
             observer.observe(stage, { attributes: true, attributeFilter: ["class"] });
@@ -143,19 +133,21 @@ for (const motion of ["no-preference", "reduce"]) {
          document.querySelector('button[aria-label="Exit fullscreen"]').click();
          return closing;
       });
-      expect([state.width, state.height]).toEqual(state.viewport);
-      expect(state.animation).toBe(motion === "reduce" ? "none" : "fullscreen-out");
+      expect(state.animation).toBe(motion === "reduce" ? "none" : "fullscreen-return");
       await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
       await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
       if (motion === "no-preference") {
-         const exitedAt = await app.evaluate(() => globalThis.fullscreenNativeExitAt);
-         expect(exitedAt - state.closingAt, "native resize must wait for scale-out").toBeGreaterThanOrEqual(150);
+         await expect(page.locator(".player-stage")).toHaveClass(/fullscreen-returning/);
+         await page.locator(".player-stage").evaluate((stage) => {
+            stage.style.animationPlayState = "";
+         });
+         await expect(page.locator(".player-stage")).not.toHaveClass(/fullscreen-returning/);
       }
       expect(await video.evaluate((video) => video.currentTime)).toBe(time);
    });
 }
 
-test("fullscreen can reverse an exit and finish if reduced motion is enabled during it", async ({ launchApp, profile }) => {
+test("fullscreen can re-enter during return motion and finish when reduced motion is enabled", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
@@ -165,14 +157,14 @@ test("fullscreen can reverse an exit and finish if reduced motion is enabled dur
       stage.style.animationPlayState = "paused";
    });
    await page.keyboard.press("Escape");
-   await expect(page.locator(".player-stage")).toHaveClass(/closing/);
+   await expect(page.locator(".player-stage")).toHaveClass(/fullscreen-returning/);
    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("window:fullscreen", true));
-   await expect(page.locator(".player-stage")).toHaveClass(/closing/);
+   await expect(page.locator(".player-stage")).toHaveClass(/fullscreen-returning/);
    await page.keyboard.press("F11");
-   await expect(page.locator(".player-stage")).not.toHaveClass(/closing/);
+   await expect(page.locator(".player-stage")).not.toHaveClass(/fullscreen-returning/);
    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
    await page.keyboard.press("Escape");
-   await expect(page.locator(".player-stage")).toHaveClass(/closing/);
+   await expect(page.locator(".player-stage")).toHaveClass(/fullscreen-returning/);
    await page.emulateMedia({ reducedMotion: "reduce" });
    await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
    await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
@@ -181,4 +173,47 @@ test("fullscreen can reverse an exit and finish if reduced motion is enabled dur
    await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(false));
    await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
+});
+
+test("native fullscreen covers the entire display from normal and maximized windows", async ({ launchApp, profile }) => {
+   test.skip(process.platform !== "win32", "Windows taskbar and activation ordering");
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   await app.evaluate(({ BrowserWindow, screen }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      // Exercise real-window activation ordering without taking desktop focus.
+      process.env.ATTACUT_HIDDEN = "0";
+      window.moveTop = () => {};
+      window.focus = () => {
+         const bounds = window.getBounds();
+         globalThis.fullscreenActivation = { fullscreen: window.isFullScreen(), bounds, display: screen.getDisplayMatching(bounds).bounds };
+      };
+   });
+   for (const maximized of [false, true]) {
+      if (maximized) await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].maximize());
+      await app.evaluate(() => {
+         globalThis.fullscreenActivation = null;
+      });
+      await page.keyboard.press("F11");
+      await expect
+         .poll(() =>
+            app.evaluate(({ BrowserWindow, screen }) => {
+               const window = BrowserWindow.getAllWindows()[0];
+               const bounds = window.getBounds();
+               return {
+                  fullscreen: window.isFullScreen(),
+                  coversDisplay: JSON.stringify(bounds) === JSON.stringify(screen.getDisplayMatching(bounds).bounds),
+                  alwaysOnTop: window.isAlwaysOnTop(),
+               };
+            })
+         )
+         .toEqual({ fullscreen: true, coversDisplay: true, alwaysOnTop: false });
+      const activation = await app.evaluate(() => globalThis.fullscreenActivation);
+      expect(activation.fullscreen).toBe(true);
+      expect(activation.bounds).toEqual(activation.display);
+      await page.keyboard.press("Escape");
+      await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
+      expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMaximized())).toBe(maximized);
+   }
 });

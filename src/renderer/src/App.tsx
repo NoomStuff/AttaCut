@@ -85,16 +85,16 @@ export default function App() {
    // The player overlays the window while the window itself takes over the screen, so the
    // custom controls stay and window management, multi-monitor layouts, and background
    // presentation behave identically in and out.
-   const [fullscreenState, setFullscreenState] = useState<"off" | "on" | "closing">("off");
-   const fullscreenPresented = fullscreenState !== "off";
+   const [fullscreenState, setFullscreenState] = useState<"off" | "on" | "returning">("off");
+   const fullscreenPresented = fullscreenState === "on";
    const setFullscreen = useCallback((value: boolean | ((current: boolean) => boolean)) => {
       setFullscreenState((current) => {
          const next = typeof value === "function" ? value(current === "on") : value;
-         return next ? "on" : current === "off" ? "off" : "closing";
+         return next ? "on" : current === "off" ? "off" : "returning";
       });
    }, []);
-   const finishFullscreenExit = useCallback(() => {
-      setFullscreenState((current) => (current === "closing" ? "off" : current));
+   const finishFullscreenReturn = useCallback(() => {
+      setFullscreenState((current) => (current === "returning" ? "off" : current));
    }, []);
    const [dragStore] = useState(createDraftStore);
    const session = useEditorSession({
@@ -191,28 +191,28 @@ export default function App() {
       },
       [setMuted, setPreferences]
    );
-   // Keep native fullscreen until the player's animationend, rather than resizing
-   // underneath the exit motion. Native exits also update the requested state.
+   // Native fullscreen changes immediately. The return animation belongs to the
+   // windowed preview, so it never holds up window management.
    useEffect(
       () =>
          window.desktop.onWindowFullscreen((value) => {
             // Native exits have already resized the window. A late enter notification
             // must not cancel an exit the user requested while the window was entering.
-            setFullscreenState((current) => (value ? (current === "closing" ? current : "on") : "off"));
+            setFullscreenState((current) => (value ? (current === "returning" ? current : "on") : current === "on" ? "returning" : current));
          }),
       []
    );
    useEffect(() => {
       // A removed player or reduced-motion mode has no exit animation to await.
-      if (fullscreenState !== "closing") return;
+      if (fullscreenState !== "returning") return;
       const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
       const finishWithoutMotion = () => {
-         if (!source || motion.matches) finishFullscreenExit();
+         if (!source || motion.matches) finishFullscreenReturn();
       };
       finishWithoutMotion();
       motion.addEventListener("change", finishWithoutMotion);
       return () => motion.removeEventListener("change", finishWithoutMotion);
-   }, [fullscreenState, source, finishFullscreenExit]);
+   }, [fullscreenState, source, finishFullscreenReturn]);
    useEffect(() => {
       window.desktop.windowAction(fullscreenPresented ? "enterFullscreen" : "exitFullscreen");
    }, [fullscreenPresented]);
@@ -439,8 +439,8 @@ export default function App() {
                         onSeek={seek}
                         playing={playing}
                         fullscreen={fullscreenPresented}
-                        fullscreenClosing={fullscreenState === "closing"}
-                        onFullscreenExited={finishFullscreenExit}
+                        returningFromFullscreen={fullscreenState === "returning"}
+                        onFullscreenReturnEnd={finishFullscreenReturn}
                         onSetFullscreen={setFullscreen}
                         onTogglePlay={togglePlay}
                         onPlaying={(value) => {

@@ -290,8 +290,16 @@ async function start(): Promise<void> {
       }
       if (value === "close") window.close();
       // Fullscreen takes over the whole screen; the custom player controls stay in-window.
-      if (value === "enterFullscreen") window.setFullScreen(true);
-      if (value === "exitFullscreen") window.setFullScreen(false);
+      if (value === "enterFullscreen") {
+         if (!window.isFullScreen()) window.setFullScreen(true);
+         // Activate after the Windows fullscreen resize, so the shell treats this
+         // window as the foreground fullscreen app and lowers the taskbar.
+         if (process.platform === "win32" && process.env["ATTACUT_HIDDEN"] !== "1") {
+            window.moveTop();
+            window.focus();
+         }
+      }
+      if (value === "exitFullscreen" && window.isFullScreen()) window.setFullScreen(false);
    });
    if (process.env["ELECTRON_RENDERER_URL"]) await window.loadURL(process.env["ELECTRON_RENDERER_URL"]);
    else await window.loadURL("app://editor/index.html");

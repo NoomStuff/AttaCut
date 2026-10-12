@@ -66,12 +66,22 @@ test("native fullscreen portrait stays centered through paused controls and occl
       await captureScreen(app, path);
       await testInfo.attach(name, { path, contentType: "image/png" });
       const { data, info } = await sharp(path).grayscale().raw().toBuffer({ resolveWithObject: true });
-      const y = Math.floor(info.height / 2);
+      const content = await app.evaluate(({ BrowserWindow }) => {
+         const window = BrowserWindow.getAllWindows()[0];
+         return { bounds: window.getBounds(), content: window.getContentBounds() };
+      });
+      const fit = await page.locator("video").evaluate((video) => {
+         const rect = video.getBoundingClientRect();
+         const scale = Math.min(rect.width / video.videoWidth, rect.height / video.videoHeight);
+         return { width: video.videoWidth * scale, centerX: rect.x + rect.width / 2, centerY: rect.y + rect.height / 2 };
+      });
+      const pixelRatio = info.width / content.bounds.width;
+      const centerX = (fit.centerX + content.content.x - content.bounds.x) * pixelRatio;
+      const y = Math.floor((fit.centerY + content.content.y - content.bounds.y) * pixelRatio);
       const columns = Array.from({ length: info.width }, (_, x) => x).filter((x) => data[y * info.width + x] > 60);
-      const scale = await page.locator(".player-stage").evaluate((stage) => new globalThis.DOMMatrix(globalThis.getComputedStyle(stage).transform).a);
-      const expectedWidth = Math.round((info.height * 360 * scale) / 640);
+      const expectedWidth = Math.round(fit.width * pixelRatio);
       expect(columns.length, `${name}: portrait width`).toBeCloseTo(expectedWidth, -1);
-      expect((columns[0] + columns.at(-1)) / 2, `${name}: portrait center`).toBeCloseTo(info.width / 2, -1);
+      expect((columns[0] + columns.at(-1)) / 2, `${name}: portrait center`).toBeCloseTo(centerX, -1);
       expect(await page.locator("video").evaluate((video) => video.currentTime)).toBe(time);
    };
    // Freeze entry partway through its scale to inspect the native presented frame.
@@ -113,15 +123,16 @@ test("native fullscreen portrait stays centered through paused controls and occl
       stage.style.animationPlayState = "paused";
       document.querySelector('button[aria-label="Exit fullscreen"]').click();
    });
-   await expect(page.locator(".player-stage")).toHaveClass(/closing/);
+   await expect(page.locator(".player-stage")).toHaveClass(/fullscreen-returning/);
+   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
    await page.locator(".player-stage").evaluate((stage) => {
-      const animation = stage.getAnimations().find((animation) => animation.animationName === "fullscreen-out");
+      const animation = stage.getAnimations().find((animation) => animation.animationName === "fullscreen-return");
       animation.currentTime = 100;
    });
-   await probe("exiting");
-   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
+   await probe("returning");
+   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
    await page.locator(".player-stage").evaluate(async (stage) => {
-      const animation = stage.getAnimations().find((animation) => animation.animationName === "fullscreen-out");
+      const animation = stage.getAnimations().find((animation) => animation.animationName === "fullscreen-return");
       animation.finish();
       await animation.finished;
       stage.style.animationPlayState = "";

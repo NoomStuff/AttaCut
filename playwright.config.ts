@@ -2,6 +2,8 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
    testDir: "./tests/ui",
+   // Keep concurrent verification runs from deleting each other's traces and profiles.
+   outputDir: process.env["ATTACUT_TEST_OUTPUT"] ?? "./test-results",
    // Keep decoding and media fixture work from competing across Electron processes.
    workers: 1,
    // A single fresh Electron process absorbs occasional cold-runner timing failures.

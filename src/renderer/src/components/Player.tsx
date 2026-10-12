@@ -41,8 +41,8 @@ export function Player({
    seeker,
    playing,
    fullscreen,
-   fullscreenClosing,
-   onFullscreenExited,
+   returningFromFullscreen,
+   onFullscreenReturnEnd,
    onSetFullscreen,
    onTogglePlay,
    trimming,
@@ -70,8 +70,8 @@ export function Player({
    seeker: PlaybackSeeker;
    playing: boolean;
    fullscreen: boolean;
-   fullscreenClosing: boolean;
-   onFullscreenExited: () => void;
+   returningFromFullscreen: boolean;
+   onFullscreenReturnEnd: () => void;
    onSetFullscreen: (value: boolean) => void;
    onTogglePlay: () => void;
    trimming: boolean;
@@ -100,8 +100,8 @@ export function Player({
          : null,
       240
    );
-   // App owns both the animation lifetime and native window state, so exiting
-   // cannot resize the video underneath the scale-out animation.
+   // Fullscreen follows the native window immediately. Returning motion runs
+   // inside the normal preview, with the same mounted video and decoded frame.
    const inFullscreen = fullscreen;
    const [controlsShown, setControlsShown] = useState(true);
    const idleTimer = useRef(0);
@@ -237,7 +237,8 @@ export function Player({
    const stageClass = [
       "player-stage",
       !frameReady && !frameHeld && !failed ? "pending" : "",
-      inFullscreen ? `fullscreen${fullscreenClosing ? " closing" : ""}` : "",
+      inFullscreen ? "fullscreen" : "",
+      returningFromFullscreen ? "fullscreen-returning" : "",
       inFullscreen && !controlsShown ? "no-controls" : "",
    ]
       .filter(Boolean)
@@ -247,7 +248,7 @@ export function Player({
       <div
          className={stageClass}
          onAnimationEnd={(event) => {
-            if (event.target === event.currentTarget && event.animationName === "fullscreen-out") onFullscreenExited();
+            if (event.target === event.currentTarget && event.animationName === "fullscreen-return") onFullscreenReturnEnd();
          }}
          onPointerMove={inFullscreen ? wake : undefined}
          onClick={
