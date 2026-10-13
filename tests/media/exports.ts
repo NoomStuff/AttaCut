@@ -190,6 +190,8 @@ assert.equal(selectedOutputAudio[0]!.language, chosenAudio.language);
 assert.equal(selectedOutputAudio[0]!.codec, chosenAudio.codec);
 console.log("PASS selected audio track copied with metadata");
 for (const input of [
+   "formats/h264-rgb.mp4",
+   "formats/hevc-rgb.mp4",
    "formats/vp9.webm",
    "formats/hevc-hdr10.mkv",
    "formats/av1.mp4",
@@ -217,6 +219,7 @@ for (const input of [
    const joinedVideo = joined.streams.find((stream) => stream.type === "video")!;
    assert.equal(joinedVideo.rotation, sourceVideo.rotation);
    assert.equal(joinedVideo.pixelFormat, sourceVideo.pixelFormat);
+   assert.deepEqual(joinedVideo.disposition, sourceVideo.disposition);
    if (sourceVideo.masterDisplay) assert.equal(joinedVideo.masterDisplay, sourceVideo.masterDisplay);
    assert.equal(joined.streams.filter((stream) => stream.type === "audio").length, media.streams.filter((stream) => stream.type === "audio").length);
    assert.ok(Math.abs(joined.duration - 6) < 0.1, `Joined duration for ${input}: ${joined.duration}`);

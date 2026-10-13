@@ -23,6 +23,23 @@ interface Fixture {
 }
 const fixtures: Fixture[] = [
    { name: "h264", extension: ".mp4", video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0", "-crf", "18"] },
+   { name: "h264-rgb", extension: ".mp4", video: ["-c:v", "libx264rgb", "-pix_fmt", "rgb24", "-g", "48", "-sc_threshold", "0", "-crf", "18"] },
+   {
+      name: "hevc-rgb",
+      extension: ".mp4",
+      video: [
+         "-c:v",
+         "libx265",
+         "-pix_fmt",
+         "gbrp",
+         "-colorspace",
+         "rgb",
+         "-x265-params",
+         "keyint=48:min-keyint=48:scenecut=0:open-gop=0:pools=4:log-level=error",
+         "-crf",
+         "18",
+      ],
+   },
    {
       name: "h264-smpte170m",
       extension: ".mp4",

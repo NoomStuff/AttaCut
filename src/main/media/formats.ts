@@ -117,7 +117,8 @@ export function colorArguments(video: MediaStream): string[] {
       ["-color_range", video.colorRange],
       ["-chroma_sample_location", video.chromaLocation],
    ]) {
-      if (value && value !== "unknown" && value !== "unspecified") args.push(flag!, value);
+      // ffprobe calls the identity RGB matrix "gbr"; FFmpeg's codec option calls it "rgb".
+      if (value && value !== "unknown" && value !== "unspecified") args.push(flag!, flag === "-colorspace" && value === "gbr" ? "rgb" : value);
    }
    return args;
 }
@@ -129,9 +130,13 @@ function topFieldFirst(video: MediaStream): boolean {
    return !["bb", "tb"].includes(video.fieldOrder);
 }
 export function encoderArguments(video: MediaStream): string[] | null {
+   const rgbH264 = video.codec === "h264" && video.pixelFormat === "gbrp";
+   // libx264rgb accepts packed 8-bit RGB. Repacking gbrp preserves its samples;
+   // higher-depth RGB cannot use this encoder without losing precision.
+   if (video.codec === "h264" && video.pixelFormat.startsWith("gbr") && !rgbH264) return null;
    const common = [
       "-pix_fmt",
-      video.pixelFormat,
+      rgbH264 ? "rgb24" : video.pixelFormat,
       "-fps_mode",
       "passthrough",
       ...(["h264", "hevc", "av1", "vp9", "vp8"].includes(video.codec) ? ["-enc_time_base", "1:90000"] : []),
@@ -141,7 +146,7 @@ export function encoderArguments(video: MediaStream): string[] | null {
       case "h264":
          return [
             "-c:v",
-            "libx264",
+            rgbH264 ? "libx264rgb" : "libx264",
             "-preset",
             "fast",
             "-crf",

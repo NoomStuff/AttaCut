@@ -57,6 +57,8 @@ await runMedia("ffmpeg", [
    "language=nld",
    "-disposition:a:1",
    "default",
+   "-disposition:v:0",
+   "original+visual_impaired",
    "-disposition:s:0",
    "forced",
    "-attach",
@@ -72,6 +74,7 @@ const output = join(folder, "trimmed.mkv");
 await rm(output, { force: true });
 await exportCut(source, analysis, output);
 const result = await probeSource(output);
+assert.deepEqual(result.streams.find((stream) => stream.type === "video")?.disposition, source.streams.find((stream) => stream.type === "video")?.disposition);
 assert.equal(result.streams.filter((stream) => stream.type === "audio").length, 4);
 assert.equal(result.streams.find((stream) => stream.title === "Commentary")?.language, "nld");
 assert.equal(result.streams.find((stream) => stream.type === "subtitle")?.disposition["forced"], 1);

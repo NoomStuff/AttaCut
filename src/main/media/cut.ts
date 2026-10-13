@@ -386,6 +386,8 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             "1",
             "-map_metadata:s:v:0",
             `1:s:${video.index}`,
+            "-disposition:v:0",
+            dispositionFlags(video.disposition),
 
             "-c",
             "copy",
