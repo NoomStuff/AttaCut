@@ -354,18 +354,18 @@ export function SettingsPanel({
                            checked={preferences.updateCheck}
                            onChange={(updateCheck) => onChange({ ...preferences, updateCheck })}
                         />
-                     </section>
-                  </>
-               ) : tab === "editing" ? (
-                  <>
-                     <section className="settings-group" aria-labelledby="settings-playback">
-                        <h3 id="settings-playback">Playback</h3>
                         <Toggle
                            label="Autoplay opened videos"
                            description="Automatically start playback when a video loads."
                            checked={preferences.autoPlay}
                            onChange={(autoPlay) => onChange({ ...preferences, autoPlay })}
                         />
+                     </section>
+                  </>
+               ) : tab === "editing" ? (
+                  <>
+                     <section className="settings-group" aria-labelledby="settings-playback">
+                        <h3 id="settings-playback">Playback</h3>
                         <Toggle
                            label="Play kept clips only"
                            description="Skip deleted ranges when playing them in the editor."

@@ -10,7 +10,7 @@ test("autoplay applies to opened videos but leaves restored sessions paused", as
 
    const setAutoPlay = async (enabled) => {
       await page.getByRole("button", { name: "Settings", exact: true }).click();
-      await page.getByRole("tab", { name: "Editing" }).click();
+      await page.getByRole("tab", { name: "General" }).click();
       await page.getByRole("switch", { name: "Autoplay opened videos", exact: true }).setChecked(enabled);
       await page.keyboard.press("Escape");
       await page.getByRole("dialog", { name: "Settings" }).waitFor({ state: "detached" });
