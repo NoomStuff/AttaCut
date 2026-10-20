@@ -13,9 +13,11 @@ import { useExitValue } from "../lib/motion";
 import { presentationTime } from "../playback/presentation";
 import { clamp, formatTime } from "../../../shared/time";
 import { IconButton } from "./Controls";
+import { SpeedPicker } from "./SpeedPicker";
+import type { PlaybackSpeed } from "../playback/speed";
 import { AudioPicker } from "./AudioPicker";
-import { VolumeSlider } from "./VolumeSlider";
-import { faPlay, faPause, faBackwardStep, faForwardStep, faVolumeHigh, faVolumeXmark, faCompress } from "@fortawesome/free-solid-svg-icons";
+import { VolumeControl } from "./VolumeControl";
+import { faPlay, faPause, faBackwardStep, faForwardStep, faCompress } from "@fortawesome/free-solid-svg-icons";
 
 export function Player({
    source,
@@ -25,6 +27,8 @@ export function Player({
    clock,
    clips,
    keptOnly,
+   speed,
+   onSpeed,
    volume,
    muted,
    onPlaying,
@@ -54,6 +58,8 @@ export function Player({
    clock: PlaybackClock;
    clips: Clip[];
    keptOnly: boolean;
+   speed: PlaybackSpeed;
+   onSpeed: (speed: PlaybackSpeed) => void;
    volume: number;
    muted: boolean;
    onPlaying: (playing: boolean) => void;
@@ -231,6 +237,13 @@ export function Player({
          videoRef.current.muted = muted || !audioIndices.length;
       }
    }, [volume, muted, videoRef, audioIndices.length]);
+   useLayoutEffect(() => {
+      const video = videoRef.current;
+      if (!video) return;
+      video.defaultPlaybackRate = speed;
+      video.playbackRate = speed;
+      video.preservesPitch = true;
+   }, [speed, url, videoRef]);
    useEffect(() => {
       if (videoRef.current && audioIndices.length === 1) selectNativeAudio(videoRef.current, source, audioIndices);
    }, [source, audioIndices, videoRef]);
@@ -350,13 +363,9 @@ export function Player({
                      </div>
                      <FullscreenTime clock={clock} duration={source.duration} />
                      <div className="fullscreen-group">
+                        <SpeedPicker speed={speed} onChange={onSpeed} />
                         {audioTracks.length > 1 && <AudioPicker tracks={audioTracks} selected={audioIndices} onSelect={onAudio} />}
-                        <IconButton
-                           command="mute"
-                           icon={muted || volume === 0 ? faVolumeXmark : faVolumeHigh}
-                           label={muted || volume === 0 ? "Unmute preview" : "Mute preview"}
-                        />
-                        <VolumeSlider volume={volume} muted={muted} onChange={onVolume} />
+                        <VolumeControl volume={volume} muted={muted} onChange={onVolume} />
                         <IconButton icon={faCompress} label="Exit fullscreen" shortcut="Esc" onClick={() => onSetFullscreen(false)} />
                      </div>
                   </div>

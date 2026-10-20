@@ -69,6 +69,7 @@ test("export workflow", async ({ launchApp, profile }) => {
    await expect(page.getByRole("status").filter({ hasText: "Frame exported" })).toHaveCount(0);
    await expect(page.getByRole("button", { name: "Show file", exact: true })).toHaveCount(0);
    await page.keyboard.press("Escape");
+   await page.getByRole("button", { name: "Mute preview", exact: true }).hover();
    await page.getByRole("slider", { name: "Preview volume", exact: true }).fill("0.2");
    await page.getByRole("button", { name: "Mute preview", exact: true }).click();
    await expect(page.locator("video")).toHaveJSProperty("muted", true);

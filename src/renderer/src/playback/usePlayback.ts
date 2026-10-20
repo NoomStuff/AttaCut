@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { MediaSource, Preferences } from "../../../shared/types";
+import type { PlaybackSpeed } from "./speed";
 import { selectNativeAudio } from "./audio";
 import { rememberAudioSelection } from "./audioSelection";
 import { PlaybackSeeker } from "./seeker";
@@ -22,6 +23,7 @@ export function usePlayback({
    setError: (message: string | null) => void;
 }) {
    const videoRef = useRef<HTMLVideoElement>(null);
+   const [speed, setSpeed] = useState<PlaybackSpeed>(1);
    const [muted, setMuted] = useState(false);
    const [playback] = useState(() => new PlaybackController());
    const playbackState = useSyncExternalStore(playback.subscribe, playback.get);
@@ -131,6 +133,8 @@ export function usePlayback({
    return {
       playing,
       setPlaying,
+      speed,
+      setSpeed,
       muted,
       setMuted,
       playback,

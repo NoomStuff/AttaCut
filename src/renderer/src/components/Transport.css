@@ -302,3 +302,84 @@
    outline-offset: 3px;
    border-radius: 4px;
 }
+
+.speed-picker .select-trigger {
+   min-width: 48px;
+   min-height: 30px;
+   height: 30px;
+   padding: 0 5px;
+   gap: 4px;
+   font-size: 11px;
+   font-variant-numeric: tabular-nums;
+   border-color: transparent;
+   background: transparent;
+}
+.speed-picker .select-menu {
+   min-width: 112px;
+}
+.speed-picker:has([aria-expanded="true"]) .tooltip {
+   display: none;
+}
+.fullscreen-controls.hidden:focus-within {
+   opacity: 1;
+   visibility: visible;
+   pointer-events: auto;
+}
+
+@media (max-width: 940px) {
+   .transport {
+      grid-template-columns: minmax(0, 1fr) auto auto;
+   }
+}
+
+.volume-control {
+   position: relative;
+   display: inline-flex;
+}
+.volume-popover {
+   position: absolute;
+   bottom: 100%;
+   left: 50%;
+   transform: translateX(-50%) translateY(3px);
+   padding-bottom: 8px;
+   z-index: 40;
+   visibility: hidden;
+   opacity: 0;
+   pointer-events: none;
+   transition:
+      opacity 120ms ease-out,
+      transform 120ms ease-out,
+      visibility 120ms;
+}
+.volume-control:is([data-open], :focus-within) .volume-popover {
+   visibility: visible;
+   opacity: 1;
+   pointer-events: auto;
+   transform: translateX(-50%) translateY(0);
+}
+.volume-popover-panel {
+   display: flex;
+   align-items: center;
+   padding: 8px 12px;
+   border: 1px solid var(--line);
+   border-radius: 7px;
+   background: var(--surface-raised);
+   box-shadow: 0 3px 12px #0003;
+}
+.volume-control .volume-popover .volume-slider {
+   width: 100px;
+   margin: 0;
+}
+.volume-control > .tooltip-host > .tooltip {
+   display: none;
+}
+.fullscreen-controls.hidden:has(.volume-control[data-open]) {
+   opacity: 1;
+   visibility: visible;
+   pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+   .volume-popover {
+      transition: none;
+   }
+}

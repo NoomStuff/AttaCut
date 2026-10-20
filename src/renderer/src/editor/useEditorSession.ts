@@ -144,6 +144,7 @@ export function useEditorSession({
          if (saved && !validSaved) setError({ text: "The original file was changed. Your timeline was reset.", tone: "warning" });
          videoRef.current?.pause();
          scrubber.reset();
+         player.setSpeed(1);
          setSource(media);
          setProject(validSaved?.project);
          sourceRef.current = media;

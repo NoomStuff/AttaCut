@@ -432,6 +432,8 @@ export default function App() {
                         clock={clock}
                         clips={editor.document.clips}
                         keptOnly={preferences.keptOnly}
+                        speed={session.player.speed}
+                        onSpeed={session.player.setSpeed}
                         volume={preferences.volume}
                         muted={muted}
                         audioIndices={audioIndices}
@@ -509,6 +511,8 @@ export default function App() {
                         draftStore={dragStore}
                         source={source}
                         playing={playing}
+                        speed={session.player.speed}
+                        onSpeed={session.player.setSpeed}
                         volume={preferences.volume}
                         muted={muted}
                         audioIndices={audioIndices}

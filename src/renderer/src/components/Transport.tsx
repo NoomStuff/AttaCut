@@ -10,16 +10,16 @@ import {
    faPause,
    faBackwardStep,
    faForwardStep,
-   faVolumeHigh,
-   faVolumeXmark,
    faSliders,
    faExpand,
    faMagnet,
    faMagnifyingGlassPlus,
    faMagnifyingGlassMinus,
 } from "@fortawesome/free-solid-svg-icons";
+import { SpeedPicker } from "./SpeedPicker";
+import type { PlaybackSpeed } from "../playback/speed";
 import { AudioPicker } from "./AudioPicker";
-import { VolumeSlider } from "./VolumeSlider";
+import { VolumeControl } from "./VolumeControl";
 import { clipColor } from "../editor/colors";
 
 function TimeField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => number }) {
@@ -100,6 +100,8 @@ export function Transport({
    draftStore,
    source,
    playing,
+   speed,
+   onSpeed,
    volume,
    muted,
    onVolume,
@@ -117,6 +119,8 @@ export function Transport({
    draftStore: DraftStore;
    source: MediaSource;
    playing: boolean;
+   speed: PlaybackSpeed;
+   onSpeed: (speed: PlaybackSpeed) => void;
    volume: number;
    muted: boolean;
    onVolume: (value: number, restore: number) => void;
@@ -175,13 +179,9 @@ export function Transport({
             </div>
          </div>
          <div className="volume-controls">
+            <SpeedPicker speed={speed} onChange={onSpeed} />
             <AudioPicker tracks={source.streams.filter((stream) => stream.type === "audio")} selected={audioIndices} onSelect={onAudio} />
-            <IconButton
-               command="mute"
-               icon={muted || volume === 0 ? faVolumeXmark : faVolumeHigh}
-               label={muted || volume === 0 ? "Unmute preview" : "Mute preview"}
-            />
-            <VolumeSlider volume={volume} muted={muted} onChange={onVolume} />
+            <VolumeControl volume={volume} muted={muted} onChange={onVolume} />
             <span className="control-divider" />
             <div className="zoom-controls" role="group" aria-label="Timeline zoom">
                <IconButton command="zoomOut" icon={faMagnifyingGlassMinus} label="Zoom out" />

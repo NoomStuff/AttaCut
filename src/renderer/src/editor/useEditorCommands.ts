@@ -3,6 +3,7 @@ import type { ExportJob } from "../../../shared/types";
 import { clipLimit } from "../../../shared/defaults";
 import { adjacentBoundary, neighboringKeyframe, splitTargetAt } from "./navigation";
 import { frameLevelActive } from "./timelineView";
+import { playbackSpeeds } from "../playback/speed";
 import { nextKeptTime } from "../playback/ranges";
 import { mergePair, mergeClips, addGap, canSplit, deleteClip, gapAt, minClipLength, selectedClip, splitClip } from "./model";
 import type { EditDocument } from "./model";
@@ -133,6 +134,15 @@ export function useEditorCommands({
          if (target && time > target.start && time < target.end) return () => setBoundary(side, time, target);
       });
    const commands: Commands = guardCommands({
+      speedDown: {
+         enabled: () => available() && session.player.speed > playbackSpeeds[0],
+         run: () => session.player.setSpeed(playbackSpeeds[Math.max(0, playbackSpeeds.indexOf(session.player.speed) - 1)]!),
+      },
+      speedUp: {
+         enabled: () => available() && session.player.speed < playbackSpeeds[playbackSpeeds.length - 1]!,
+         run: () => session.player.setSpeed(playbackSpeeds[Math.min(playbackSpeeds.length - 1, playbackSpeeds.indexOf(session.player.speed) + 1)]!),
+      },
+      speedReset: { enabled: available, run: () => session.player.setSpeed(1) },
       frameBack: { enabled: available, run: () => stepFrame(-1) },
       frameForward: { enabled: available, run: () => stepFrame(1) },
       mute: {
