@@ -13,6 +13,7 @@ import { metadataInputs, textSubtitleCodecs } from "./metadata.ts";
 import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
 import {
    encoderArguments,
+   aspectArguments,
    isIntraCodec,
    segmentExtension,
    colorArguments,
@@ -405,7 +406,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                args.push(`-c:a:${index}`, audio.codec, `-filter:a:${index}`, `atrim=start=0:end=${duration}`, `-bsf:a:${index}`, "null");
             }
          }
-         args.push(...metadata.outputs, ...colorArguments(video), "-progress", "pipe:1", finalTemporary);
+         args.push(...metadata.outputs, ...colorArguments(video), ...aspectArguments(video), "-progress", "pipe:1", finalTemporary);
          await runMedia("ffmpeg", args, {
             ...options,
             duration,

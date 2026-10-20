@@ -6,6 +6,7 @@ await import("./waveform.ts");
 await import("./cut-accuracy.ts");
 await import("./formats.ts");
 await import("./metadata.ts");
+await import("./aspect.ts");
 await import("./dynamic-hdr.ts");
 await import("./keyframes.ts");
 await import("./cancellation.ts");

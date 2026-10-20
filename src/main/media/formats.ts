@@ -129,6 +129,19 @@ function isInterlaced(video: MediaStream): boolean {
 function topFieldFirst(video: MediaStream): boolean {
    return !["bb", "tb"].includes(video.fieldOrder);
 }
+/** Restore container pixel proportions after temporary transport streams lose them. */
+export function aspectArguments(video: MediaStream): string[] {
+   const match = /^(\d+):(\d+)$/.exec(video.sampleAspectRatio ?? "");
+   if (!match) return [];
+   const numerator = Number(match[1]);
+   const denominator = Number(match[2]);
+   if (!Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator) || numerator <= 0 || denominator <= 0) return [];
+   // -aspect rounds display ratios to small fractions, changing pixels on sizes
+   // such as 720x542. These header filters preserve the exact sample ratio and
+   // update copied sequence headers without encoding picture data.
+   if (!["h264", "hevc"].includes(video.codec)) return [];
+   return ["-bsf:v:0", `${video.codec === "h264" ? "h264" : "hevc"}_metadata=sample_aspect_ratio=${numerator}/${denominator}`];
+}
 export function encoderArguments(video: MediaStream): string[] | null {
    const rgbH264 = video.codec === "h264" && video.pixelFormat === "gbrp";
    // libx264rgb accepts packed 8-bit RGB. Repacking gbrp preserves its samples;

@@ -8,7 +8,7 @@ import { assertSourceUnchanged } from "./probe.ts";
 import { exportCut } from "./cut.ts";
 import type { CutAnalysis, CutOptions } from "./cut.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
-import { isMp4Container, containerFlags, containerKeepsData } from "./formats.ts";
+import { isMp4Container, containerFlags, containerKeepsData, aspectArguments } from "./formats.ts";
 import { ffconcatList, dropOutside, isLosslessAudio, dispositionFlags, serializeChapters } from "./mux.ts";
 import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
 
@@ -135,6 +135,7 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
             "-c",
             "copy",
             ...joinedAudioCodecs,
+            ...aspectArguments(video),
             "-map_chapters",
             chapters.length ? "2" : "-1",
             ...(isMp4Container(extname(destination)) ? containerFlags(video) : []),
