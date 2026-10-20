@@ -25,6 +25,7 @@ export const commandDefinitions = {
    previous: { label: "Previous cut", bindings: ["Mod+ArrowLeft"], group: "Clips" },
    next: { label: "Next cut", bindings: ["Mod+ArrowRight"], group: "Clips" },
    split: { label: "Split at playhead", bindings: ["S"], group: "Clips" },
+   autoDetectCuts: { label: "Auto detect cuts…", bindings: [], group: "Clips" },
    setStart: { label: "Trim left", bindings: ["A"], group: "Clips" },
    setEnd: { label: "Trim right", bindings: ["D"], group: "Clips" },
    delete: { label: "Delete highlighted clip", bindings: ["Delete"], group: "Clips" },

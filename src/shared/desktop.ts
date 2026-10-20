@@ -46,6 +46,8 @@ export interface DesktopApi {
    preparePreview(sourceId: string, audioIndices: number[], transcode: boolean): Promise<string>;
    cancelPreview(): Promise<void>;
    keyframes(sourceId: string): Promise<number[]>;
+   autoDetectCuts(request: { sourceId: string; requestId: string; threshold: number }): Promise<number[]>;
+   cancelScenes(requestId: string): Promise<void>;
    scrubAudio(sourceId: string, streamIndices: number[], time?: number): Promise<ScrubAudio | null>;
    cancelScrub(): Promise<void>;
    waveformStart(request: WaveformRequest): Promise<{ rate: number; buckets: number } | null>;

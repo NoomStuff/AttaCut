@@ -214,6 +214,8 @@ export function registerIpc({
    handle("source:keyframes", async (value) => {
       return sourceSession.keyframes(value);
    });
+   handle("source:scenes", ({ sourceId, requestId, threshold }) => sourceSession.autoDetectCuts(sourceId, requestId, threshold));
+   handle("source:cancel-scenes", (requestId) => sourceSession.cancelScenes(requestId));
    handle("source:frame-time", async (value) => {
       const request = value;
       return sourceSession.frameTime(request.sourceId, request.time, request.direction);

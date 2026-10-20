@@ -7,6 +7,7 @@ import { extractScrubPcm, scrubChunkSeconds } from "./media/scrub-audio.ts";
 import { extractWaveform } from "./media/waveform.ts";
 import type { WaveformChunk, WaveformResult, WaveformRange } from "./media/waveform-decode.ts";
 import { join } from "node:path";
+import { detectSceneCuts } from "./media/scenes";
 
 /** Owns the active source. Export plans retain their own immutable source reference. */
 export class SourceSession {
@@ -36,6 +37,21 @@ export class SourceSession {
    }
    private source: ProbedSource | null = null;
    private keys: Promise<number[]> | null = null;
+   private sceneScan: { requestId: string; controller: AbortController } | null = null;
+   async autoDetectCuts(id: string, requestId: string, threshold: number): Promise<number[]> {
+      const source = this.get(id);
+      this.sceneScan?.controller.abort();
+      const scan = { requestId, controller: new AbortController() };
+      this.sceneScan = scan;
+      try {
+         return await detectSceneCuts(source, threshold, AbortSignal.any([this.signal, scan.controller.signal]));
+      } finally {
+         if (this.sceneScan === scan) this.sceneScan = null;
+      }
+   }
+   cancelScenes(requestId: string): void {
+      if (this.sceneScan?.requestId === requestId) this.sceneScan.controller.abort();
+   }
    private pcm: { key: string; value: Promise<ScrubAudio | null> } | null = null;
    private previewFiles: string[] = [];
    private previewAudio: number[] | null = null;

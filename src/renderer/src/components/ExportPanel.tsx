@@ -10,6 +10,7 @@ import { OutputDirectoryField } from "./OutputDirectoryField";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { Button, Modal, Toggle } from "./Controls";
 import { DropdownSelect } from "./DropdownSelect";
+import { SegmentedControl } from "./SegmentedControl";
 import { errorText } from "../lib/errors";
 import { clipColor } from "../editor/colors";
 import { audioTrackLabel } from "../playback/audioSelection";
@@ -162,14 +163,17 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
             className="export-modal"
          >
             <div className="modal-body">
-               <div className="export-mode" data-mode={mode} role="group" aria-label="Export mode" aria-disabled={clips.length === 1}>
-                  <button disabled={starting || clips.length === 1} aria-pressed={mode === "combined"} onClick={() => setMode("combined")}>
-                     Single Video
-                  </button>
-                  <button disabled={starting || clips.length === 1} aria-pressed={mode === "separate"} onClick={() => setMode("separate")}>
-                     Separate Clips
-                  </button>
-               </div>
+               <SegmentedControl
+                  className="export-mode"
+                  label="Export mode"
+                  value={mode}
+                  onChange={setMode}
+                  disabled={starting || clips.length === 1}
+                  options={[
+                     { value: "combined", label: "Single Video" },
+                     { value: "separate", label: "Separate Clips" },
+                  ]}
+               />
                <label className="field-label" htmlFor="destination">
                   Save to
                </label>

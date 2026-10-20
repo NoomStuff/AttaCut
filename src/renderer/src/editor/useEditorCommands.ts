@@ -12,7 +12,7 @@ import type { EditorSession } from "./useEditorSession";
 import type { EditorInteraction } from "./useEditorInteraction";
 import { errorText } from "../lib/errors";
 
-export type EditorPanel = "export" | "frame" | "settings" | "shortcuts" | "help" | "about" | null;
+export type EditorPanel = "export" | "frame" | "scenes" | "settings" | "shortcuts" | "help" | "about" | null;
 const releasesUrl = "https://github.com/NoomStuff/AttaCut/releases";
 interface EditorViewActions {
    openPanel: (panel: EditorPanel) => void;
@@ -238,6 +238,14 @@ export function useEditorCommands({
             seeker.seek(time, preferences.keepPlaying);
          };
       }),
+      autoDetectCuts: {
+         enabled: () => available() && editor.document.clips.length > 0,
+         run: () => {
+            videoRef.current?.pause();
+            playback.pause();
+            view.openPanel("scenes");
+         },
+      },
       setStart: trimCommand("start"),
       setEnd: trimCommand("end"),
       delete: resolvedCommand(() => {

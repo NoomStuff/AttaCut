@@ -1,0 +1,50 @@
+.segmented-control {
+   position: relative;
+   isolation: isolate;
+   display: flex;
+   padding: 3px;
+   background: var(--background);
+   border: 1px solid var(--line);
+   border-radius: 6px;
+}
+.segmented-control::before {
+   content: "";
+   position: absolute;
+   z-index: -1;
+   inset: 3px auto 3px 3px;
+   width: calc((100% - 6px) / var(--segment-count));
+   transform: translateX(calc(var(--segment-index) * 100%));
+   background: var(--surface-hover);
+   border-radius: 4px;
+   transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+   pointer-events: none;
+}
+.segmented-control[aria-disabled="true"]::before {
+   opacity: 0.45;
+}
+.segmented-control button {
+   flex: 1;
+   padding: 8px 12px;
+   border-radius: 4px;
+   color: var(--muted);
+   transition:
+      background-color 170ms ease-out,
+      color 170ms ease-out;
+}
+.segmented-control button[aria-pressed="true"] {
+   color: var(--text);
+}
+.segmented-control button:hover:not(:disabled):not([aria-pressed="true"]) {
+   color: var(--text);
+   transition-duration: 0ms;
+}
+.segmented-control button:disabled {
+   opacity: 0.55;
+   cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+   .segmented-control::before,
+   .segmented-control button {
+      transition: none;
+   }
+}

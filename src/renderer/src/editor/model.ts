@@ -135,6 +135,17 @@ export function trimClip(document: EditDocument, id: string, side: "start" | "en
    const next = { ...clip, [side]: clamp(time, low, high) };
    return { clips: document.clips.map((item) => (item.id === id ? next : item)), selectedId: id };
 }
+/** Apply a scan to kept footage only. Refuse an overfull result instead of silently truncating it. */
+export function splitAtSceneCuts(document: EditDocument, times: number[]): EditDocument {
+   let next = document;
+   for (const time of [...new Set(times.filter(Number.isFinite))].sort((a, b) => a - b)) {
+      const clip = next.clips.find((item) => time > item.start + timeEpsilon && time < item.end - timeEpsilon);
+      if (!clip) continue;
+      if (next.clips.length >= clipLimit) throw new Error(`These cuts would exceed ${clipLimit} clips. Lower the sensitivity and scan again.`);
+      next = splitClip(next, clip.id, time);
+   }
+   return next === document ? document : { ...next, selectedId: document.selectedId };
+}
 export function deleteClip(document: EditDocument, id: string): EditDocument {
    const index = document.clips.findIndex((clip) => clip.id === id);
    if (index < 0) return document;

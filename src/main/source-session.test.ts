@@ -4,6 +4,7 @@ import { packetsAround, probeSource, sourceFrames } from "./media/probe.ts";
 import { preparePreview } from "./media/preview.ts";
 import { extractScrubPcm } from "./media/scrub-audio.ts";
 import { extractWaveform } from "./media/waveform.ts";
+import { detectSceneCuts } from "./media/scenes";
 import type { ProbedSource } from "./media/probe.ts";
 vi.mock("./media/probe.ts", () => ({
    setSourceLifetime: vi.fn(),
@@ -18,8 +19,32 @@ vi.mock("./media/scrub-audio.ts", () => ({
 }));
 vi.mock("./media/preview.ts", () => ({ preparePreview: vi.fn(), leasePreview: vi.fn(), releasePreview: vi.fn() }));
 vi.mock("./media/waveform.ts", () => ({ extractWaveform: vi.fn(async () => ({ rate: 1000, buckets: 1 })) }));
+vi.mock("./media/scenes", () => ({ detectSceneCuts: vi.fn(async () => []) }));
 afterEach(() => vi.clearAllMocks());
 describe("source lifetime", () => {
+   it("cancels scene scans on replacement, source close, and only the matching cancel request", async () => {
+      const session = new SourceSession("unused-preview-directory");
+      await session.open("a");
+      const signals: AbortSignal[] = [];
+      const finishers: (() => void)[] = [];
+      vi.mocked(detectSceneCuts).mockImplementation((_source, _threshold, signal) => {
+         signals.push(signal);
+         return new Promise((resolve) => finishers.push(() => resolve([])));
+      });
+      const first = session.autoDetectCuts("a", "first", 10);
+      const second = session.autoDetectCuts("a", "second", 5);
+      expect(signals[0]!.aborted).toBe(true);
+      session.cancelScenes("first");
+      expect(signals[1]!.aborted).toBe(false);
+      session.cancelScenes("second");
+      expect(signals[1]!.aborted).toBe(true);
+      const third = session.autoDetectCuts("a", "third", 10);
+      session.close();
+      expect(signals[2]!.aborted).toBe(true);
+      finishers.forEach((finish) => finish());
+      await Promise.all([first, second, third]);
+      session.dispose();
+   });
    it("remembers editor activity while the waveform job waits for capacity", async () => {
       const session = new SourceSession("unused-preview-directory");
       await session.open("a");

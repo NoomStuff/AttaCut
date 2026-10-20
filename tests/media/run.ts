@@ -3,6 +3,7 @@ export {};
 await import("../create-fixtures.ts");
 await import("./architecture.ts");
 await import("./waveform.ts");
+await import("./scenes.ts");
 await import("./cut-accuracy.ts");
 await import("./formats.ts");
 await import("./metadata.ts");

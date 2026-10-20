@@ -27,6 +27,7 @@ export function installMenu(window: BrowserWindow): void {
             item("Redo", "redo"),
             { type: "separator" },
             item("Split at playhead", "split"),
+            item("Auto detect cuts…", "autoDetectCuts"),
             item("Merge at playhead", "merge"),
             { type: "separator" },
             item("Trim left", "setStart"),

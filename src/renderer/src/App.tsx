@@ -48,6 +48,7 @@ const loadHelpPanel = () => import("./components/HelpPanel").then((module) => ({
 const HelpPanel = lazy(loadHelpPanel);
 const loadAboutPanel = () => import("./components/AboutPanel").then((module) => ({ default: module.AboutPanel }));
 const AboutPanel = lazy(loadAboutPanel);
+const SceneCutsPanel = lazy(() => import("./components/SceneCutsPanel").then((module) => ({ default: module.SceneCutsPanel })));
 
 export default function App() {
    // The architecture test counts root commits. Clear each mark to bound the buffer.
@@ -300,7 +301,7 @@ export default function App() {
    );
    const menuSections: Record<string, CommandId[][]> = {
       File: [["open"], ["frame", "export"], ["saveProject", "saveProjectAs", "closeProject"], ["quit"]],
-      Edit: [["undo", "redo"], ["split", "merge"], ["setStart", "setEnd", "add", "delete"], ["preview"], ["settings"]],
+      Edit: [["undo", "redo"], ["split", "merge", "autoDetectCuts"], ["setStart", "setEnd", "add", "delete"], ["preview"], ["settings"]],
       View: [["zoomIn", "zoomOut", "fit", "focusClip"], ["preview"], ["fullscreen"], ["options"]],
       Help: [["help", "shortcuts", "about"], ["updates", "releases"], ["reset"]],
    };
@@ -529,6 +530,9 @@ export default function App() {
                )}
             </main>
             <Suspense key={panel} fallback={null}>
+               {panel === "scenes" && source && (
+                  <SceneCutsPanel key={source.id} source={source} document={editor.document} onApply={commit} onClose={() => setPanel(null)} />
+               )}
                {panel === "export" && source && (
                   <ExportPanel
                      draft={exportDraft}

@@ -14,6 +14,8 @@ interface IpcResponses {
    "project:confirm": Result<"confirmProject">;
    "source:close": void;
    "source:keyframes": number[];
+   "source:scenes": number[];
+   "source:cancel-scenes": void;
    "source:frame-time": number;
    "directory:choose": string | null;
    "preferences:save": void;

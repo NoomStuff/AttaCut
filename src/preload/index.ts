@@ -38,6 +38,8 @@ const api: DesktopApi = {
    preparePreview: (sourceId, audioIndices, transcode) => invoke("preview:prepare", { sourceId, audioIndices, transcode }),
    cancelPreview: () => invoke("preview:cancel"),
    keyframes: (sourceId) => invoke("source:keyframes", sourceId),
+   autoDetectCuts: (request) => invoke("source:scenes", request),
+   cancelScenes: (requestId) => invoke("source:cancel-scenes", requestId),
    scrubAudio: (sourceId, streamIndices, time = 0) => invoke("audio:scrub", { sourceId, streamIndices, time }),
    cancelScrub: () => invoke("audio:cancel"),
    waveformStart: (request) => invoke("waveform:start", request),

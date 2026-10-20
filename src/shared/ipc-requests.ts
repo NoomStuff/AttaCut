@@ -26,6 +26,8 @@ export const ipcRequestSchemas = {
    "project:confirm": sessionStorageSchema,
    "source:close": z.void(),
    "source:keyframes": z.string(),
+   "source:scenes": z.object({ sourceId: z.string(), requestId: z.string().uuid(), threshold: z.number().min(1).max(100) }),
+   "source:cancel-scenes": z.string().uuid(),
    "source:frame-time": frameTimeRequestSchema,
    "directory:choose": z.string(),
    "preferences:save": preferencesSchema,
