@@ -32,6 +32,7 @@ const receiveFile = (path: string | null) => {
       if (appWindow.isMinimized()) appWindow.restore();
       appWindow.show();
       appWindow.focus();
+      appWindow.webContents.focus();
    }
 };
 app.on("second-instance", (_event, args) => receiveFile(fileArgument(args.slice(1))));
@@ -122,7 +123,11 @@ async function start(): Promise<void> {
       presented = true;
       if (process.env["ATTACUT_HIDDEN"] !== "1") {
          if (process.env["ATTACUT_TESTING"] === "1" && process.env["ATTACUT_TEST_INACTIVE"] === "1") window.showInactive();
-         else window.show();
+         else {
+            window.show();
+            window.focus();
+            window.webContents.focus();
+         }
       }
       registerWindowsIdentity();
       // The dev launcher's native splash watches for this file and closes itself.

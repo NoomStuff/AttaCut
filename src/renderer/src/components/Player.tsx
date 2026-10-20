@@ -251,16 +251,11 @@ export function Player({
             if (event.target === event.currentTarget && event.animationName === "fullscreen-return") onFullscreenReturnEnd();
          }}
          onPointerMove={inFullscreen ? wake : undefined}
-         onClick={
-            inFullscreen
-               ? () => {
-                    // A first click on a hidden overlay only reveals the controls; with them
-                    // visible the picture itself toggles playback, like a media player.
-                    if (!controlsShown) wake();
-                    else onTogglePlay();
-                 }
-               : undefined
-         }
+         onClick={() => {
+            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            onTogglePlay();
+            if (inFullscreen) wake();
+         }}
          onDoubleClick={inFullscreen ? () => onSetFullscreen(false) : () => onSetFullscreen(true)}
       >
          <video

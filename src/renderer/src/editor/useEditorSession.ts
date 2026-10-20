@@ -121,6 +121,8 @@ export function useEditorSession({
       autoPlay = !saved && preferences.autoPlay
    ) => {
       if (confirm && !(await confirmProject())) return;
+      // Opening a source leaves text editing so playback shortcuts work immediately.
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       const sequence = ++openSequence.current;
       playback.invalidate();
       setLoading(true);

@@ -45,3 +45,40 @@ test("autoplay applies to opened videos but leaves restored sessions paused", as
    await open("fixture.mp4");
    await expect.poll(() => page.locator("video").evaluate((video) => video.paused)).toBe(true);
 });
+
+test("picture clicks and Space toggle playback after an external open", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const video = page.locator("video");
+   await video.click();
+   await expect(video).toHaveJSProperty("paused", false);
+   await video.click();
+   await expect(video).toHaveJSProperty("paused", true);
+
+   // A field left focused in the previous editor must not consume Space after opening.
+   await page.evaluate(() => {
+      const input = document.createElement("input");
+      input.id = "previous-editor-focus";
+      document.body.append(input);
+      input.focus();
+   });
+   await app.evaluate(({ app }, path) => app.emit("second-instance", {}, [process.execPath, path]), resolve("work/fixture.mkv"));
+   await expect(page.locator(".title-filename")).toHaveText("fixture.mkv");
+   await waitForVideo(page);
+   await expect(page.locator("#previous-editor-focus")).not.toBeFocused();
+   await page.keyboard.press("Space");
+   await expect(video).toHaveJSProperty("paused", false);
+   await page.keyboard.press("Space");
+   await expect(video).toHaveJSProperty("paused", true);
+
+   await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
+   await expect(page.locator(".player-stage.fullscreen")).toHaveCount(1);
+   await page.locator(".player-stage").click();
+   await expect(video).toHaveJSProperty("paused", false);
+   await expect(page.locator(".fullscreen-controls")).toHaveClass(/hidden/);
+   // Click without moving the pointer so the hidden-controls path is exercised.
+   await page.mouse.down();
+   await page.mouse.up();
+   await expect(video).toHaveJSProperty("paused", true);
+});
