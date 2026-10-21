@@ -477,6 +477,7 @@ export default function App() {
                   <JobNotifications
                      onReopen={() => void choose()}
                      jobs={notifications}
+                     onClear={() => setNotifications([])}
                      currentJob={job}
                      onDismiss={(id) => setNotifications((current) => current.filter((item) => item.id !== id))}
                      onError={showError}

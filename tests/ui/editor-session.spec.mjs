@@ -52,7 +52,7 @@ test("edit, export and restore the selected ranges", async ({ launchApp, profile
    const exportButton = page.getByRole("button", { name: "Export 2 clips", exact: true });
    await expect(exportButton).toBeEnabled({ timeout: 20000 });
    await exportButton.click();
-   await page.getByText("Export complete", { exact: true }).waitFor({ timeout: 30000 });
+   await page.getByText(/^\d+ clips? exported$/).waitFor({ timeout: 30000 });
    const outputs = (await readdir(output)).filter((name) => name.endsWith(".mp4")).sort();
    expect(outputs).toEqual(["fixture (1).mp4", "fixture (2).mp4"]);
    for (const [index, name] of outputs.entries()) {

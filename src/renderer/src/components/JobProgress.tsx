@@ -97,14 +97,8 @@ export function JobProgress({
                      <FontAwesomeIcon icon={faCheck} />
                   </span>
                   <div>
-                     <strong>
-                        {completed.length === job.items.length
-                           ? "Export complete"
-                           : completed.length === 1
-                             ? "1 file exported"
-                             : `${completed.length} files exported`}
-                     </strong>
-                     <small>{completed.length === 1 ? completed[0]!.name : "Saved and ready to use"}</small>
+                     <strong>{completed.length === 1 ? "1 clip exported" : `${completed.length} clips exported`}</strong>
+                     <small title={completed.map((item) => item.name).join(", ")}>{completed.map((item) => item.name).join(", ")}</small>
                   </div>
                   <IconButton icon={faXmark} label="Dismiss export status" onClick={dismissSuccess} />
                </div>
@@ -132,7 +126,7 @@ export function JobProgress({
                         {job.items.length === 1
                            ? "The video was not exported"
                            : failures.length === 1
-                             ? "1 file was not exported"
+                             ? "The file was not exported"
                              : `${failures.length} files were not exported`}
                      </small>
                   </div>

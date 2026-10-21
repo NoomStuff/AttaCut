@@ -7,6 +7,7 @@ export function JobNotifications({
    jobs,
    currentJob,
    onDismiss,
+   onClear,
    onError,
    onRetry,
    onReopen,
@@ -14,6 +15,7 @@ export function JobNotifications({
    jobs: ExportJob[];
    currentJob: ExportJob | null;
    onDismiss: (id: string) => void;
+   onClear: () => void;
    onError: (message: string) => void;
    onRetry: (job: ExportJob) => void;
    onReopen: () => void;
@@ -22,8 +24,15 @@ export function JobNotifications({
    const scroll = useRef<HTMLDivElement>(null);
    const [hovered, setHovered] = useState(false);
    const [focused, setFocused] = useState(false);
-   const [pinned, setPinned] = useState(false);
    const [collapsed, setCollapsed] = useState(false);
+   const [edges, setEdges] = useState({ top: false, bottom: false });
+   const updateEdges = () => {
+      const list = scroll.current;
+      if (!list) return;
+      const top = list.scrollTop > 1;
+      const bottom = list.scrollHeight - list.clientHeight - list.scrollTop > 1;
+      setEdges((current) => (current.top === top && current.bottom === bottom ? current : { top, bottom }));
+   };
    const [heights, setHeights] = useState<Record<string, number>>({});
    const signature = jobs.map((job) => job.id).join(",");
    useLayoutEffect(() => {
@@ -40,7 +49,7 @@ export function JobNotifications({
       entries.forEach((entry) => observer.observe(entry));
       return () => observer.disconnect();
    }, [signature]);
-   const expanded = jobs.length > 1 && !collapsed && (hovered || focused || pinned);
+   const expanded = jobs.length > 1 && !collapsed && (hovered || focused);
    const heightFor = (job: ExportJob) => heights[job.id] ?? 150;
    const totalHeight = expanded
       ? jobs.reduce((sum, job) => sum + heightFor(job) + 10, -10)
@@ -55,11 +64,19 @@ export function JobNotifications({
       let frame = 0;
       const keepLatestVisible = () => {
          list.scrollTop = list.scrollHeight;
+         updateEdges();
          if (performance.now() < until) frame = requestAnimationFrame(keepLatestVisible);
       };
       keepLatestVisible();
       return () => cancelAnimationFrame(frame);
    }, [expanded, signature, totalHeight]);
+   useLayoutEffect(() => {
+      const list = scroll.current;
+      if (!list) return;
+      const observer = new ResizeObserver(updateEdges);
+      observer.observe(list);
+      return () => observer.disconnect();
+   }, [signature]);
    if (!jobs.length) return null;
    let offset = 0;
    return (
@@ -68,18 +85,8 @@ export function JobNotifications({
          ref={root}
          aria-label="Exports"
          data-expanded={expanded}
-         onMouseEnter={() => setHovered(true)}
-         onMouseLeave={() => {
-            setHovered(false);
-            setCollapsed(false);
-         }}
-         onFocusCapture={() => setFocused(true)}
-         onBlurCapture={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
-         }}
          onKeyDown={(event) => {
             if (event.key === "Escape") {
-               setPinned(false);
                setCollapsed(true);
                setHovered(false);
                if (event.target instanceof HTMLElement) event.target.blur();
@@ -88,20 +95,26 @@ export function JobNotifications({
          }}
       >
          {jobs.length > 1 && (
-            <button
-               className="notification-toggle"
-               data-press-ignore
-               aria-expanded={expanded}
-               aria-label={expanded ? "Collapse export notifications" : "Expand export notifications"}
-               onClick={() => {
-                  setPinned(!expanded);
-                  setCollapsed(expanded);
-               }}
-            >
-               {jobs.length} exports
+            <button className="notification-clear" data-press-ignore aria-label="Clear export notifications" onClick={onClear}>
+               Clear
             </button>
          )}
-         <div className="notification-scroll" ref={scroll}>
+         <div
+            className="notification-scroll"
+            ref={scroll}
+            data-fade-top={expanded && edges.top}
+            data-fade-bottom={expanded && edges.bottom}
+            onScroll={updateEdges}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => {
+               setHovered(false);
+               setCollapsed(false);
+            }}
+            onFocusCapture={() => setFocused(true)}
+            onBlurCapture={(event) => {
+               if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+            }}
+         >
             <div className="notification-list" style={{ height: totalHeight }}>
                {jobs.map((job, index) => {
                   const bottom = expanded ? offset : Math.min(index, 2) * 8;

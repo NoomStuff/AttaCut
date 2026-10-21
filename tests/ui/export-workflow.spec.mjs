@@ -82,7 +82,7 @@ test("export workflow", async ({ launchApp, profile }) => {
    await expect(page.getByRole("button", { name: "Export video", exact: true })).toBeEnabled();
    await expect(page.getByText("Cut details", { exact: true })).toHaveCount(0);
    await page.getByRole("button", { name: "Export video", exact: true }).click();
-   await page.getByText("Export complete", { exact: true }).waitFor({ timeout: 60000 });
+   await page.getByText(/^\d+ clips? exported$/).waitFor({ timeout: 60000 });
    expect(await readdir(output)).toContain("joined.mp4");
    const joined = join(output, "joined.mp4");
    const media = await inspectMedia(joined);

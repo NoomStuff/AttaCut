@@ -8,7 +8,7 @@
    width: min(355px, calc(100% - 24px));
    max-height: calc(100% - 24px);
 }
-.notification-toggle {
+.notification-clear {
    align-self: flex-end;
    padding: 5px 9px;
    margin-bottom: 4px;
@@ -19,12 +19,37 @@
    flex-shrink: 0;
 }
 .notification-scroll {
+   --fade-top: 0px;
+   --fade-bottom: 0px;
+   scrollbar-width: none;
+   mask-image: linear-gradient(to bottom, transparent, black var(--fade-top), black calc(100% - var(--fade-bottom)), transparent);
    overflow-anchor: none;
    min-height: 0;
    overflow-y: auto;
    overflow-x: hidden;
    padding: 4px;
    margin: -4px;
+}
+.notification-scroll::-webkit-scrollbar {
+   display: none;
+}
+.notification-scroll[data-fade-top="true"] {
+   --fade-top: 20px;
+}
+.notification-scroll[data-fade-bottom="true"] {
+   --fade-bottom: 20px;
+}
+.notification-clear:hover {
+   background: var(--surface-hover);
+}
+/* The soft shadow of the front card tints the peeking strips and the preview
+   behind the stack, which reads as a dirty halo. Keep the stacked state flat. */
+.job-notifications[data-expanded="false"] .job-progress {
+   box-shadow: none;
+}
+.notification-entry[data-back="true"] .job-progress {
+   box-shadow: none;
+   background: color-mix(in srgb, var(--background) 45%, var(--surface-raised));
 }
 .notification-list {
    position: relative;
@@ -58,6 +83,9 @@
    box-shadow: 0 12px 40px #0005;
    border-radius: 10px;
    animation: job-in 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+   transition:
+      box-shadow 200ms cubic-bezier(0.2, 0.9, 0.3, 1),
+      background-color 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 .job-progress.closing {
    animation: job-out 150ms ease-in both;

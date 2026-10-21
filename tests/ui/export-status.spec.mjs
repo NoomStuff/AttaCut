@@ -21,7 +21,7 @@ test("injected progress renders separate success and error cards", async ({ laun
       ],
    };
    await app.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.send("export:progress", value), job);
-   await expect(page.getByText("1 file exported", { exact: true })).toBeVisible();
+   await expect(page.getByText("1 clip exported", { exact: true })).toBeVisible();
    const errorCard = page.getByRole("alert").filter({ hasText: "Export failed" });
    await expect(errorCard).toBeVisible();
    await expect(errorCard).toContainText("color format");
@@ -43,16 +43,15 @@ test("injected progress renders separate success and error cards", async ({ laun
    await page.locator(".title-filename").click();
    await expect(previous).toHaveAttribute("inert", "");
    const notifications = page.getByRole("region", { name: "Exports" });
-   await notifications.hover();
+   const clear = page.getByRole("button", { name: "Clear export notifications" });
+   await clear.hover();
+   await expect(notifications).toHaveAttribute("data-expanded", "false");
+   await page.locator(".notification-scroll").hover();
    await expect(notifications).toHaveAttribute("data-expanded", "true");
    await expect(previous).not.toHaveAttribute("inert");
    const bounds = await notifications.boundingBox();
    const dock = await page.locator(".editor-dock").boundingBox();
    expect(bounds.y + bounds.height).toBeLessThan(dock.y);
-   await page.getByRole("button", { name: "Collapse export notifications" }).click();
-   await expect(notifications).toHaveAttribute("data-expanded", "false");
-   await page.getByRole("button", { name: "Expand export notifications" }).press("Enter");
-   await expect(notifications).toHaveAttribute("data-expanded", "true");
-   await page.keyboard.press("Escape");
-   await expect(notifications).toHaveAttribute("data-expanded", "false");
+   await clear.click();
+   await expect(notifications).toHaveCount(0);
 });
