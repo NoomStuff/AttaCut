@@ -20,9 +20,12 @@ jobs:
       # available in job-level env; using it there fails the whole workflow at parse.
       steps:
          - uses: actions/checkout@v7
+         - uses: actions/setup-node@v6
+           with:
+              node-version: "24.22.1"
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version: latest
+              bun-version: "1.4.2"
          - name: Cache Electron and Playwright browser downloads
            uses: actions/cache@v6
            with:

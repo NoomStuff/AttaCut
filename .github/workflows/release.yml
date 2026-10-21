@@ -5,8 +5,6 @@ on:
    push:
       branches:
          - main
-      tags:
-         - "v*"
 
 permissions:
    contents: read
@@ -17,7 +15,7 @@ concurrency:
 
 jobs:
    prepare:
-      name: Select release and tag version changes
+      name: Select unpublished release candidate
       runs-on: ubuntu-latest
       timeout-minutes: 5
       permissions:
@@ -31,22 +29,16 @@ jobs:
            with:
               script: |
                  const { owner, repo } = context.repo;
-                 if (context.eventName === 'workflow_dispatch') {
-                   core.setOutput('build', 'true');
-                   return;
-                 }
-                 if (context.ref.startsWith('refs/tags/')) {
-                   core.setOutput('build', 'true');
-                   core.setOutput('tag', context.ref.slice('refs/tags/'.length));
-                   return;
-                 }
+                 if (context.ref !== 'refs/heads/main') throw new Error('Release candidates must come from main.');
+                 const main = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
+                 if (main !== context.sha) throw new Error('A newer main commit superseded this candidate.');
                  const versionAt = async (ref) => {
                    const { data } = await github.rest.repos.getContent({ owner, repo, path: 'package.json', ref });
                    return JSON.parse(Buffer.from(data.content, 'base64').toString('utf8')).version;
                  };
                  const version = await versionAt(context.sha);
                  const before = context.payload.before;
-                 const previous = /^0+$/.test(before) ? undefined : await versionAt(before);
+                 const previous = !before || /^0+$/.test(before) ? undefined : await versionAt(before);
                  if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
                    throw new Error(`Invalid package version: ${version}`);
                  }
@@ -96,7 +88,7 @@ jobs:
          - uses: actions/checkout@v7
          - uses: oven-sh/setup-bun@v2
            with:
-              bun-version: latest
+              bun-version: "1.4.2"
          - uses: actions/download-artifact@v8
            with:
               pattern: dist-*
@@ -106,37 +98,16 @@ jobs:
            env:
               RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
            run: bun scripts/prepare-update-feed.mjs dist dist/feed "$RELEASE_TAG"
-         - name: Create draft release
+         - name: Select exact app downloads
+           env:
+              RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+           run: bun scripts/release-downloads.ts dist dist/downloads "$RELEASE_TAG"
+         - name: Publish exact verified candidate
            env:
               GH_TOKEN: ${{ github.token }}
               GH_REPO: ${{ github.repository }}
               RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-           run: |
-              shopt -s nullglob
-              assets=(dist/AttaCut-*.AppImage dist/AttaCut-*.dmg dist/AttaCut-*.zip dist/AttaCut-*.exe)
-              if [ "${#assets[@]}" -ne 8 ]; then
-                echo "Expected eight app downloads, found ${#assets[@]}." >&2
-                exit 1
-              fi
-              case "${RELEASE_TAG#v}" in
-                *-*) flags="--prerelease" ;;
-                *) flags="" ;;
-              esac
-              if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-                if [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true ]; then
-                  gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
-                fi
-              else
-                gh release create "$RELEASE_TAG" "${assets[@]}" --draft \
-                  --title "AttaCut ${RELEASE_TAG#v}" \
-                  --target "$GITHUB_SHA" --generate-notes $flags
-              fi
-         - name: Publish release
-           env:
-              GH_TOKEN: ${{ github.token }}
-              GH_REPO: ${{ github.repository }}
-              RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-           run: gh release edit "$RELEASE_TAG" --draft=false
+           run: bun scripts/publish-release.ts
          - name: Publish update feeds
            uses: actions/github-script@v9
            env:
@@ -146,6 +117,12 @@ jobs:
                  const fs = require('node:fs');
                  const { owner, repo } = context.repo;
                  const branch = 'updates';
+                 const release = (await github.rest.repos.getReleaseByTag({ owner, repo, tag: process.env.RELEASE_TAG })).data;
+                 if (release.draft || release.prerelease) return;
+                 const main = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
+                 if (main !== context.sha) throw new Error('Candidate superseded before updating feeds.');
+                 const tagged = (await github.rest.repos.getCommit({ owner, repo, ref: process.env.RELEASE_TAG })).data.sha;
+                 if (tagged !== context.sha) throw new Error('Published tag does not match verified candidate.');
                  let parent;
                  try {
                    parent = (await github.rest.git.getRef({ owner, repo, ref: `heads/${branch}` })).data.object.sha;

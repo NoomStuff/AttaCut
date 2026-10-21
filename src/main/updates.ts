@@ -3,8 +3,8 @@ import type { AvailableUpdate } from "../shared/types.ts";
 import { app, net, type BrowserWindow } from "electron";
 import { isPackagedApp } from "./identity.ts";
 import { createHash } from "node:crypto";
-import { open, rename, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { open, link, copyFile, rm } from "node:fs/promises";
+import { constants, existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { UpdateStatus } from "../shared/types.ts";
 import { IpcEvents } from "../shared/ipc.ts";
@@ -162,6 +162,7 @@ export class UpdateManager {
          throw new Error("This download is not available.");
       this.busy = true;
       let temporary: string | null = null;
+      let ownsTemporary = false;
       // A stalled connection must not pin the download slot forever: the watchdog aborts
       // after 30 seconds without progress, mirroring the media runner's idle policy.
       const abort = new AbortController();
@@ -206,6 +207,7 @@ export class UpdateManager {
          const response = await guarded(net.fetch(asset.browser_download_url, { signal: abort.signal }));
          if (!response.ok || !response.body) throw new Error("The download failed.");
          const file = await open(temporary, "wx");
+         ownsTemporary = true;
          const reader = response.body.getReader();
          const hash = createHash("sha256");
          const total = Number(response.headers.get("content-length")) || 0;
@@ -228,7 +230,16 @@ export class UpdateManager {
             await file.close();
          }
          if (hash.digest("hex").toLowerCase() !== expectedHash.toLowerCase()) throw new Error("The download did not pass verification.");
-         await rename(temporary, destination);
+         try {
+            await link(temporary, destination);
+         } catch (error) {
+            // Downloads can live on a filesystem without hard links. Both methods
+            // fail if another process creates the final filename during download.
+            if (!(error instanceof Error) || !("code" in error) || !["ENOTSUP", "EPERM", "EXDEV", "EOPNOTSUPP"].includes(String(error.code))) throw error;
+            await copyFile(temporary, destination, constants.COPYFILE_EXCL);
+         }
+         await rm(temporary);
+         ownsTemporary = false;
          temporary = null;
          this.downloadedPath = destination;
          this.emit({ phase: "downloaded", version, percent: 100, message: `Saved ${basename(destination)} to Downloads.`, path: destination });
@@ -237,7 +248,7 @@ export class UpdateManager {
          throw error;
       } finally {
          abort.abort();
-         if (temporary) await rm(temporary, { force: true }).catch(() => undefined);
+         if (temporary && ownsTemporary) await rm(temporary, { force: true }).catch(() => undefined);
          this.busy = false;
       }
    }
