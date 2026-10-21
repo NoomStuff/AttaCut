@@ -97,7 +97,7 @@ export function JobProgress({
                      <FontAwesomeIcon icon={faCheck} />
                   </span>
                   <div>
-                     <strong>{completed.length === 1 ? "1 clip exported" : `${completed.length} clips exported`}</strong>
+                     <strong>{completed.length === 1 ? "Clip exported" : `${completed.length} clips exported`}</strong>
                      <small title={completed.map((item) => item.name).join(", ")}>{completed.map((item) => item.name).join(", ")}</small>
                   </div>
                   <IconButton icon={faXmark} label="Dismiss export status" onClick={dismissSuccess} />

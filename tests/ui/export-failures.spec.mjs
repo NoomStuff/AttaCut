@@ -34,7 +34,7 @@ test("a real partial export retains the completed file and reports a collision",
    const completed = await readFile(plan.items[0].outputPath);
    await writeFile(plan.items[1].outputPath, "existing file created after planning");
    await app.evaluate(() => globalThis.attacutTestIpc.release("second-item"));
-   await expect(page.getByText("1 clip exported", { exact: true })).toBeVisible();
+   await expect(page.getByText("Clip exported", { exact: true })).toBeVisible();
    await expect(page.getByText("Export failed", { exact: true })).toBeVisible();
    expect(await readFile(plan.items[0].outputPath)).toEqual(completed);
    expect(await readFile(plan.items[1].outputPath, "utf8")).toBe("existing file created after planning");

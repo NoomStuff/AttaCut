@@ -56,7 +56,7 @@ test("source replacement is explicit and reopens the exported video", async ({ l
    expect(await readFile(source)).toEqual(originalContent);
    await page.getByRole("checkbox", { name: "I understand this replaces the original video" }).check();
    await page.getByRole("button", { name: "Replace source and export", exact: true }).click();
-   await expect(page.getByText(/^\d+ clips? exported$/)).toBeVisible({ timeout: 60000 });
+   await expect(page.getByText(/^(clip exported|\d+ clips exported)$/i)).toBeVisible({ timeout: 60000 });
    await waitForVideo(page);
    await expect.poll(() => page.locator("video").evaluate((video) => video.duration)).toBeLessThan(6);
    expect((await stat(source)).size).toBeLessThan(originalSize);

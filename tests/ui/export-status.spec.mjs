@@ -21,7 +21,7 @@ test("injected progress renders separate success and error cards", async ({ laun
       ],
    };
    await app.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.send("export:progress", value), job);
-   await expect(page.getByText("1 clip exported", { exact: true })).toBeVisible();
+   await expect(page.getByText("Clip exported", { exact: true })).toBeVisible();
    const errorCard = page.getByRole("alert").filter({ hasText: "Export failed" });
    await expect(errorCard).toBeVisible();
    await expect(errorCard).toContainText("color format");

@@ -17,7 +17,7 @@ test("Save to follows the last export only during the current app session", asyn
    await page.getByRole("button", { name: "Export", exact: true }).click();
    await page.getByRole("textbox", { name: "Save to", exact: true }).fill(output);
    await page.getByRole("button", { name: "Export video", exact: true }).click();
-   await expect(page.getByText(/^\d+ clips? exported$/)).toBeVisible({ timeout: 60000 });
+   await expect(page.getByText(/^(clip exported|\d+ clips exported)$/i)).toBeVisible({ timeout: 60000 });
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), sourceB);
    await expect(page.locator("video")).toHaveAttribute("aria-label", "source-b.mp4");
    await page.getByRole("button", { name: "Export", exact: true }).click();
