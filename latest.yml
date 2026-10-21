@@ -1,8 +1,8 @@
-version: 0.23.0
+version: 0.24.0
 files:
-  - url: https://github.com/NoomStuff/AttaCut/releases/download/v0.23.0/AttaCut-0.23.0-win-x64-Installer.exe
-    sha512: oPA5ETUS3ebN0nhPO5c3RGu2zZWvc8pA1o37TkjwbDml5sUsYbyIlsgWXvVBIUx9Ru1qQnlWbUG8oqRgMd++FQ==
-    size: 186742478
-path: https://github.com/NoomStuff/AttaCut/releases/download/v0.23.0/AttaCut-0.23.0-win-x64-Installer.exe
-sha512: oPA5ETUS3ebN0nhPO5c3RGu2zZWvc8pA1o37TkjwbDml5sUsYbyIlsgWXvVBIUx9Ru1qQnlWbUG8oqRgMd++FQ==
-releaseDate: '2026-10-20T19:26:08.880Z'
+  - url: https://github.com/NoomStuff/AttaCut/releases/download/v0.24.0/AttaCut-0.24.0-win-x64-Installer.exe
+    sha512: wZ+uQawnvqS96Wn/DWHVc9l99jshYUP8P8O3OZwaLmm/euhLXzZlIePXfd4M5jlOAtnaXnqhbzMI8p4+N7IIQQ==
+    size: 186745492
+path: https://github.com/NoomStuff/AttaCut/releases/download/v0.24.0/AttaCut-0.24.0-win-x64-Installer.exe
+sha512: wZ+uQawnvqS96Wn/DWHVc9l99jshYUP8P8O3OZwaLmm/euhLXzZlIePXfd4M5jlOAtnaXnqhbzMI8p4+N7IIQQ==
+releaseDate: '2026-10-20T23:47:56.491Z'
