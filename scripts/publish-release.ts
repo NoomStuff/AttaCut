@@ -11,6 +11,7 @@ interface Asset {
    digest: string;
 }
 interface Release {
+   id: number;
    tag_name: string;
    draft: boolean;
    target_commitish: string;
@@ -38,20 +39,17 @@ export async function publishRelease(candidate: Candidate, gh: Gh, directory = "
    if (!tag.startsWith("v") || names.length !== expected.length || names.some((name) => !expected.includes(name)))
       throw new Error("Expected exactly eight candidate downloads.");
    const assets = names.map((name) => join(directory, name));
-   const releaseByTag = (): Release | undefined => {
-      let response: string;
-      try {
-         response = gh("api", "--include", `repos/${repository}/releases/tags/${tag}`);
-      } catch (error) {
-         const output = typeof error === "object" && error !== null && "stdout" in error ? String(error.stdout) : "";
-         if (/^HTTP\/\S+ 404\b/m.test(output)) return undefined;
-         throw error;
+   const releasesByTag = (): Release[] => {
+      const matches: Release[] = [];
+      // GitHub's tag endpoint does not return unpublished drafts. List bounded
+      // pages so retries also find drafts from earlier failed candidates.
+      for (let page = 1; ; page++) {
+         const releases = api<Release[]>(`releases?per_page=20&page=${page}`);
+         matches.push(...releases.filter((release) => release.tag_name === tag));
+         if (releases.length < 20) return matches;
       }
-      const boundary = /\r?\n\r?\n/.exec(response);
-      if (!boundary) throw new Error("Missing release API response headers.");
-      return JSON.parse(response.slice(boundary.index + boundary[0].length)) as Release;
    };
-   const existing = releaseByTag();
+   const existing = releasesByTag();
    async function verifyAssets(release: Release): Promise<void> {
       if (release.assets.length !== names.length) throw new Error("Release download list does not match this candidate.");
       for (const name of names) {
@@ -63,15 +61,22 @@ export async function publishRelease(candidate: Candidate, gh: Gh, directory = "
             throw new Error(`Uploaded download does not match verified bytes: ${name}`);
       }
    }
-   if (existing && !existing.draft) {
+   const published = existing.filter((release) => !release.draft);
+   if (published.length > 1) throw new Error("Multiple public releases use this tag.");
+   if (published[0]) {
       // Retrying the publication job can repair feeds without changing public files.
       if (api<{ sha: string }>(`commits/${tag}`).sha !== sha) throw new Error(`${tag} is public at another commit.`);
-      await verifyAssets(existing);
+      await verifyAssets(published[0]);
       return;
    }
    if (api<{ ref: string }[]>(`git/matching-refs/tags/${tag}`).some((ref) => ref.ref === `refs/tags/${tag}`))
       throw new Error("An unpublished candidate must not reserve a version tag.");
-   if (existing) gh("release", "delete", tag, "--yes");
+   for (const release of existing) {
+      if (!Number.isSafeInteger(release.id) || release.id <= 0) throw new Error("Invalid private release identity.");
+      const current = api<Release>(`releases/${release.id}`);
+      if (current.id !== release.id || !current.draft || current.tag_name !== tag) throw new Error("Private release changed before cleanup.");
+      gh("api", "--method", "DELETE", `repos/${repository}/releases/${release.id}`);
+   }
    gh(
       "release",
       "create",
@@ -87,12 +92,16 @@ export async function publishRelease(candidate: Candidate, gh: Gh, directory = "
       ...(tag.includes("-") ? ["--prerelease"] : [])
    );
    assertCurrent();
-   const draft = releaseByTag();
-   if (!draft?.draft || draft.target_commitish !== sha) throw new Error("Draft candidate does not match this run.");
+   const drafts = releasesByTag();
+   const draft = drafts[0];
+   if (drafts.length !== 1 || !draft?.draft || !Number.isSafeInteger(draft.id) || draft.id <= 0 || draft.target_commitish !== sha)
+      throw new Error("Draft candidate does not match this run.");
    await verifyAssets(draft);
+   const pending = api<Release>(`releases/${draft.id}`);
+   if (!pending.draft || pending.target_commitish !== sha || pending.tag_name !== tag) throw new Error("Private candidate changed before publication.");
    assertCurrent();
    // Publishing creates the absent tag at the draft's verified target_commitish.
-   gh("release", "edit", tag, "--draft=false");
+   gh("api", "--method", "PATCH", `repos/${repository}/releases/${draft.id}`, "-F", "draft=false");
    if (api<{ sha: string }>(`commits/${tag}`).sha !== sha) throw new Error("Published tag does not match the verified commit.");
 }
 
@@ -100,6 +109,6 @@ if (import.meta.main) {
    const { GITHUB_SHA: sha, RELEASE_TAG: tag, GITHUB_RUN_ID: run, GITHUB_RUN_ATTEMPT: attempt, GITHUB_REPOSITORY: repository } = process.env;
    if (!sha || !tag || !run || !attempt || !repository) throw new Error("Missing verified candidate identity.");
    await publishRelease({ sha, tag, run, attempt, repository }, (...args) =>
-      execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
+      execFileSync("gh", args, { encoding: "utf8", maxBuffer: 8 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }).trim()
    );
 }
