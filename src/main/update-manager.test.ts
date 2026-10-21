@@ -32,6 +32,30 @@ function manager() {
    const send = vi.fn();
    return { manager: new UpdateManager({ isDestroyed: () => false, webContents: { send } } as unknown as BrowserWindow), send };
 }
+it.skipIf(process.platform !== "win32").each(["temporary", "destination"])("preserves a portable %s collision created during download", async (collision) => {
+   vi.stubEnv("PORTABLE_EXECUTABLE_FILE", "portable.exe");
+   const folder = await mkdtemp(join(tmpdir(), "attacut-update-race-"));
+   folders.push(folder);
+   vi.mocked(app.getPath).mockReturnValue(folder);
+   const bytes = Buffer.from("verified executable");
+   const name = `AttaCut-${release.version}-win-${process.arch}.exe`;
+   const otherFile = join(folder, name + (collision === "temporary" ? ".part" : ""));
+   vi.mocked(net.fetch).mockResolvedValueOnce(
+      Response.json({
+         assets: [{ name, browser_download_url: "https://example.com/app", digest: "sha256:" + createHash("sha256").update(bytes).digest("hex") }],
+      })
+   );
+   vi.mocked(net.fetch).mockImplementationOnce(async () => {
+      await writeFile(otherFile, "another process owns this");
+      return new Response(bytes);
+   });
+   const { manager: updates } = manager();
+   await updates.offer(release);
+   await expect(updates.downloadPortable(release.version)).rejects.toThrow();
+   expect(await readFile(otherFile, "utf8")).toBe("another process owns this");
+   expect(updates.downloadedPath).toBeNull();
+   if (collision === "destination") expect(await readdir(folder)).toEqual([name]);
+});
 it.each([404, 429, 500])("reports HTTP %s during release checks", async (status) => {
    await expect(fetchAvailableUpdate("0.14.1", async () => new Response("", { status }))).rejects.toThrow(String(status));
 });

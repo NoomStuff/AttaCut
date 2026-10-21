@@ -58,6 +58,55 @@ it("preserves the audio energy when folding square-root-scaled RMS", () => {
    expect(levels[1]!.rms[0]).toBe(Math.round(255 * Math.sqrt(1 / Math.sqrt(10))));
 });
 
+it("fully erases the loading frontier and leaves revealed clip edges unfaded", () => {
+   vi.stubGlobal(
+      "Path2D",
+      class {
+         rect() {}
+      }
+   );
+   const erased: { alpha: number; operation: string }[] = [];
+   const context = {
+      clearRect: vi.fn(),
+      fill: vi.fn(),
+      fillRect: () => erased.push({ alpha: context.globalAlpha, operation: context.globalCompositeOperation }),
+      createLinearGradient: () => ({ addColorStop: vi.fn() }),
+      fillStyle: "",
+      globalAlpha: 1,
+      globalCompositeOperation: "source-over",
+   };
+   const wave: Waveform = {
+      filled: 0.5,
+      levels: [{ rate: 1, down: new Uint8Array(100).fill(128), up: new Uint8Array(100).fill(128), rms: new Uint8Array(100).fill(64) }],
+   };
+   const draw = (from: number, to: number, revealedSeconds: number) =>
+      drawWaveformBand({
+         context: context as unknown as CanvasRenderingContext2D,
+         waveform: wave,
+         from,
+         to,
+         width: 200,
+         height: 20,
+         color: "white",
+         revealedSeconds,
+         fadeSeconds: 8,
+         alpha: 0.55,
+      });
+   try {
+      draw(0, 100, 50);
+      expect(erased).toEqual([{ alpha: 1, operation: "destination-out" }]);
+      erased.length = 0;
+      // A clip and a panned viewport can end before the full source has loaded.
+      draw(0, 40, 50);
+      draw(20, 40, 50);
+      draw(0, 50, 50);
+      draw(0, 100, 100);
+      expect(erased).toHaveLength(0);
+   } finally {
+      vi.unstubAllGlobals();
+   }
+});
+
 it("preserves RMS energy when a pixel spans loud and silent buckets", () => {
    const rectangles: number[][] = [];
    vi.stubGlobal(

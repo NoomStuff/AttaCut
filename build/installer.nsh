@@ -3,12 +3,72 @@
 !ifndef BUILD_UNINSTALLER
 Var AttaCutDesktopShortcutCheckbox
 Var AttaCutCreateDesktopShortcut
+Var AttaCutUpgrade
+
+!macro customInit
+  StrCpy $AttaCutUpgrade "0"
+  ReadRegStr $0 SHCTX "${INSTALL_REGISTRY_KEY}" "InstallLocation"
+  ${If} $0 != ""
+  ${AndIf} ${FileExists} "$0\AttaCut.exe"
+    StrCpy $AttaCutUpgrade "1"
+    StrCpy $INSTDIR $0
+    ${IfNot} ${FileExists} "$DESKTOP\${SHORTCUT_NAME}.lnk"
+      StrCpy $AttaCutCreateDesktopShortcut "0"
+    ${EndIf}
+  ${EndIf}
+  ; Two installed scopes need an explicit choice. Updater-provided scope flags
+  ; already disambiguate these variables in initMultiUser.
+  ${If} $hasPerUserInstallation == "1"
+  ${AndIf} $hasPerMachineInstallation == "1"
+    StrCpy $AttaCutUpgrade "0"
+  ${EndIf}
+  ${If} ${isUpdated}
+    StrCpy $AttaCutUpgrade "1"
+  ${EndIf}
+!macroend
+
+!macro customInstallMode
+  ${If} $AttaCutUpgrade == "1"
+    ${If} $installMode == "all"
+      StrCpy $isForceMachineInstall "1"
+    ${Else}
+      StrCpy $isForceCurrentInstall "1"
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+; Use builder's existing upgrade behavior for manual installer upgrades too.
+; Keep --updated support for installs launched by electron-updater.
+!macroundef _isUpdated
+!macro _isUpdated _a _b _t _f
+  ${StdUtils.TestParameter} $R9 "updated"
+  StrCmp $AttaCutUpgrade "1" 0 +2
+  StrCpy $R9 "true"
+  StrCmp "$R9" "true" `${_t}` `${_f}`
+!macroend
 
 !macro customPageAfterChangeDir
   Page custom AttaCutShortcutPageCreate AttaCutShortcutPageLeave
+  !ifdef allowToChangeInstallationDirectory
+    !undef MUI_PAGE_CUSTOMFUNCTION_PRE
+    !define MUI_PAGE_CUSTOMFUNCTION_PRE AttaCutInstallFilesPre
+  !endif
 !macroend
 
+!ifdef allowToChangeInstallationDirectory
+Function AttaCutInstallFilesPre
+  ${If} $AttaCutUpgrade != "1"
+    ; Retain builder's app-subfolder protection for first installs. An upgrade
+    ; must instead keep the exact registered path, including a generic folder.
+    Call instFilesPre
+  ${EndIf}
+FunctionEnd
+!endif
+
 Function AttaCutShortcutPageCreate
+  ${If} $AttaCutUpgrade == "1"
+    Abort
+  ${EndIf}
   nsDialogs::Create 1018
   Pop $0
   ${If} $0 == error
@@ -35,20 +95,29 @@ Function AttaCutShortcutPageLeave
 FunctionEnd
 !endif
 
+; Test packages use a unique app identity and must not touch production verbs.
+!if "${APP_ID}" == "dev.attacut.app"
+  !define ATTACUT_SHELL_VERB "AttaCut"
+!else
+  !define ATTACUT_SHELL_VERB "${APP_ID}"
+!endif
+
 !macro RegisterAttaCutEditVerb EXT
-  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\AttaCut" "" "Edit with AttaCut"
-  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\AttaCut" "Icon" "$INSTDIR\AttaCut.exe,0"
-  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\AttaCut\command" "" '$\"$INSTDIR\AttaCut.exe$\" $\"%1$\"'
+  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\${ATTACUT_SHELL_VERB}" "" "Edit with AttaCut"
+  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\${ATTACUT_SHELL_VERB}" "Icon" "$INSTDIR\AttaCut.exe,0"
+  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\${ATTACUT_SHELL_VERB}\command" "" '$\"$INSTDIR\AttaCut.exe$\" $\"%1$\"'
 !macroend
 
 !macro UnregisterAttaCutEditVerb EXT
-  DeleteRegKey SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\AttaCut"
+  DeleteRegKey SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\${ATTACUT_SHELL_VERB}"
 !macroend
 
 !macro customInstall
+  !ifndef DO_NOT_CREATE_DESKTOP_SHORTCUT
   ${If} $AttaCutCreateDesktopShortcut == "0"
     Delete "$newDesktopLink"
   ${EndIf}
+  !endif
 
   !insertmacro RegisterAttaCutEditVerb "mp4"
   !insertmacro RegisterAttaCutEditVerb "mov"

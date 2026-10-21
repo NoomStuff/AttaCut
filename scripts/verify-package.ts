@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { resolve, join, sep } from "node:path";
 import { canReuseMediaVerification } from "./media-verification";
+import { verifyWindowsPayloads } from "./verify-windows-payloads";
+import { verifyInstaller } from "./verify-installer";
 
 const [receiptFlag, receipt, ...extra] = process.argv.slice(2);
 if (receiptFlag && (receiptFlag !== "--media-receipt" || !receipt || extra.length)) throw new Error("Usage: verify-package.ts [--media-receipt <path>]");
@@ -23,6 +25,8 @@ const executable = resolve(
 const resources = resolve(base, process.platform === "darwin" ? "Resources" : "resources", "media");
 const extension = process.platform === "win32" ? ".exe" : "";
 if (!existsSync(executable)) throw new Error(`Packaged app missing: ${executable}`);
+await verifyWindowsPayloads();
+await verifyInstaller();
 if (process.platform === "win32") {
    // Check both processes. The launcher can look correct while the runtime still says Electron.
    for (const file of new Set([executable, resolve(base, "AttaCut.exe")])) {
