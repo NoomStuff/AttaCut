@@ -59,15 +59,13 @@ export function FramePanel({
    const [quality, setQuality] = useState(preferences.frameQuality);
    const [busy, setBusy] = useState(false);
    const [error, setError] = useState<string | null>(null);
-   const [saved, setSaved] = useState<string | null>(null);
    const save = async () => {
       setBusy(true);
       setError(null);
-      setSaved(null);
       try {
-         const path = await window.desktop.exportFrame({ sourceId: source.id, time: capturedTime, directory, name, format, quality });
+         await window.desktop.exportFrame({ sourceId: source.id, time: capturedTime, directory, name, format, quality });
          onPreferences({ ...preferences, outputDirectory: directory, frameFormat: format, frameQuality: quality });
-         setSaved(path);
+         onClose();
       } catch (value) {
          setError(errorText(value));
       } finally {
@@ -93,7 +91,6 @@ export function FramePanel({
                   value={directory}
                   disabled={busy}
                   onChange={(value) => {
-                     setSaved(null);
                      setDirectory(value);
                   }}
                   onError={(value) => setError(errorText(value))}
@@ -108,7 +105,6 @@ export function FramePanel({
                      disabled={busy}
                      value={name}
                      onChange={(event) => {
-                        setSaved(null);
                         setName(event.target.value);
                      }}
                   />
@@ -125,7 +121,6 @@ export function FramePanel({
                   ]}
                   value={[format]}
                   onChange={([value]) => {
-                     setSaved(null);
                      setFormat(value as "png" | "jpg");
                   }}
                   trigger={format === "png" ? "PNG" : "JPEG"}
@@ -142,7 +137,6 @@ export function FramePanel({
                      max="100"
                      value={quality}
                      onChange={(event) => {
-                        setSaved(null);
                         setQuality(Number(event.target.value));
                      }}
                   />
@@ -156,19 +150,8 @@ export function FramePanel({
                   {error}
                </div>
             )}
-            {saved && <p role="status">Frame exported</p>}
          </div>
          <div className="modal-footer">
-            {saved && (
-               <Button
-                  variant="secondary"
-                  onClick={() => {
-                     void window.desktop.revealOutput(saved).catch((value) => setError(errorText(value)));
-                  }}
-               >
-                  Show file
-               </Button>
-            )}
             <Button
                variant="primary"
                icon={faCamera}
