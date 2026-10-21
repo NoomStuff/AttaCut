@@ -93,19 +93,23 @@ export async function verifyInstaller(): Promise<void> {
          if ((await readFile(join(profile, "installer-preserve.txt"), "utf8")) !== "preserve user file") throw new Error("Installer changed a user file.");
          console.log(`Isolated per-user ${stage} passed at ${install}`);
       }
+      const installedEnvironment = {
+         ...process.env,
+         ATTACUT_TEST_OUTPUT: testOutput,
+         ATTACUT_EXECUTABLE: join(install, "AttaCut-app.exe"),
+         FFMPEG_PATH: join(install, "resources/media/ffmpeg.exe"),
+         FFPROBE_PATH: join(install, "resources/media/ffprobe.exe"),
+      };
+      // A fresh package job has not run the full media suite yet. Build the
+      // editor fixtures with the installed binaries before its playback tests.
+      execFileSync(process.execPath, ["tests/create-fixtures.ts"], { stdio: "inherit", windowsHide: true, env: installedEnvironment });
       execFileSync(
          process.execPath,
          ["x", "--no-install", "playwright", "test", "--project=ui", "tests/ui/editor-session.spec.mjs", "tests/ui/export-workflow.spec.mjs"],
          {
             stdio: "inherit",
             windowsHide: true,
-            env: {
-               ...process.env,
-               ATTACUT_TEST_OUTPUT: testOutput,
-               ATTACUT_EXECUTABLE: join(install, "AttaCut-app.exe"),
-               FFMPEG_PATH: join(install, "resources/media/ffmpeg.exe"),
-               FFPROBE_PATH: join(install, "resources/media/ffprobe.exe"),
-            },
+            env: installedEnvironment,
          }
       );
    } catch (error) {
