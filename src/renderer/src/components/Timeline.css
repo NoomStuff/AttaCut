@@ -403,10 +403,22 @@
    width: 1px;
    height: 8px;
    top: 7px;
-   background: color-mix(in srgb, var(--text) 45%, transparent);
+   background: inherit;
    pointer-events: none;
    transform-origin: center bottom;
    transition: opacity 160ms ease-out;
+}
+.keyframe-tick::before {
+   content: "";
+   position: absolute;
+   inset: -1px;
+   background: inherit;
+}
+.keyframe-tick::after {
+   content: "";
+   position: absolute;
+   inset: 0;
+   background: color-mix(in srgb, var(--text) 45%, transparent);
 }
 /* Toggling snapping plays a wave from the playhead: each tick pops as the wave passes it.
    The end frames resolve --kf-o so the pop settles onto the density opacity without a jump. */

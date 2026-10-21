@@ -139,12 +139,10 @@ export function drawWaveformDataBand({
    context.globalAlpha = alpha;
    context.fillStyle = color;
    context.fill(core);
-   // Soften the leading edge while decoding: erase linearly across the fade band so the
-   // sweep has no seam. A finished decode never fades, or the end of the timeline would
-   // keep a permanent notch.
+   // Fade only at the reveal frontier, never at an already revealed clip or viewport edge.
    // A fresh partial band must remain readable before it spans the full fade width.
    const fadeStart = edge - Math.min(fadeSeconds, (edge - from) / 4);
-   if (revealedSeconds < waveformDuration(waveform) - 0.001 && fadeStart < edge) {
+   if (revealedSeconds < to && fadeStart < edge) {
       const start = Math.max(0, ((fadeStart - from) / (to - from)) * width);
       const end = Math.min(width, ((edge - from) / (to - from)) * width);
       if (end > start) {
@@ -152,6 +150,7 @@ export function drawWaveformDataBand({
          erase.addColorStop(0, "rgba(0, 0, 0, 0)");
          erase.addColorStop(1, "rgba(0, 0, 0, 1)");
          context.globalCompositeOperation = "destination-out";
+         context.globalAlpha = 1;
          context.fillStyle = erase;
          context.fillRect(start, 0, end - start, height);
          context.globalCompositeOperation = "source-over";

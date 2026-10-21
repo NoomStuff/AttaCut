@@ -180,6 +180,64 @@ for (const tracks of [[3], [1, 3]]) {
    );
 }
 session.dispose();
+
+// Cold scrub reads and priority waveform reads must agree with the full scan,
+// including codec delay and recordings whose container starts at a nonzero timestamp.
+for (const codec of ["aac", "libopus"]) {
+   const burstPath = join(folder, `bursts-${codec}.mkv`);
+   await runMedia("ffmpeg", [
+      ...ffmpegBase,
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=128x72:rate=30:duration=12",
+      "-f",
+      "lavfi",
+      "-i",
+      "aevalsrc=if(between(t\\,5.25\\,5.35)+between(t\\,10.25\\,10.35)\\,0.5*sin(2*PI*440*t)\\,0):s=48000:d=12",
+      "-map",
+      "0:v",
+      "-map",
+      "1:a",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-c:a",
+      codec,
+      "-output_ts_offset",
+      "7",
+      burstPath,
+   ]);
+   const burstSource = await probeSource(burstPath);
+   assert.ok(burstSource.startOffset > 6.9);
+   const full = await peaksOf(burstSource, [1]);
+   for (const start of [5, 10]) {
+      const pcm = await extractScrubPcm(burstSource, [1], undefined, start);
+      assert.ok(pcm);
+      const firstSample = new Int16Array(pcm.pcm).findIndex((value) => Math.abs(value) > 1000);
+      assert.ok(firstSample >= 0);
+      const scrubOnset = pcm.start + firstSample / pcm.sampleRate;
+      const firstBucket = Array.from({ length: 1000 }, (_, i) => full[(start * 1000 + i) * 3 + 2]!).findIndex((value) => value > 40);
+      assert.ok(firstBucket >= 0);
+      const waveformOnset = start + firstBucket / 1000;
+      assert.ok(Math.abs(waveformOnset - (start + 0.25)) < 0.004, `${codec} waveform retains the burst's source time`);
+      assert.ok(Math.abs(waveformOnset - scrubOnset) < 0.004, `${codec} scrub and waveform onsets agree across cold chunk boundaries`);
+      const region: Uint8Array[] = [];
+      await decodeWaveform(
+         burstSource,
+         [1],
+         undefined,
+         async (chunk) => {
+            region.push(chunk.peaks.slice());
+         },
+         { range: { from: start, to: start + 1 } }
+      );
+      const priority = Buffer.concat(region);
+      const priorityOnset = Array.from({ length: priority.length / 3 }, (_, i) => priority[i * 3 + 2]!).findIndex((value) => value > 40);
+      assert.ok(priorityOnset >= 0 && Math.abs(priorityOnset - firstBucket) <= 3, `${codec} priority and full scan burst positions agree`);
+   }
+}
 const controller = new AbortController();
 await assert.rejects(
    decodeWaveform(source, [2], controller.signal, async () => {
@@ -187,4 +245,4 @@ await assert.rejects(
    }),
    /Cancelled/
 );
-console.log("Waveform media checks passed: silence, burst timing, delayed track, mix, prepared preview, cancellation.");
+console.log("Waveform media checks passed: silence, burst timing, delayed track, mix, prepared preview, cold scrub and priority alignment, cancellation.");
