@@ -63,12 +63,14 @@ jobs:
            run: |
               sudo apt-get update
               sudo apt-get install -y xvfb pulseaudio libasound2-plugins openbox x11-utils dbus-x11
-              pulseaudio --start
-              pactl load-module module-null-sink sink_name=attacut_test
+              mkdir -m 700 "$RUNNER_TEMP/attacut-pulse"
+              pulseaudio -n --daemonize=yes --use-pid-file=no --exit-idle-time=-1 --log-target="file:$RUNNER_TEMP/attacut-pulse.log" --load="module-native-protocol-unix socket=$RUNNER_TEMP/attacut-pulse/native auth-anonymous=1" --load="module-null-sink sink_name=attacut_test rate=48000 channels=2"
+              export PULSE_SERVER="unix:$RUNNER_TEMP/attacut-pulse/native"
+              export PULSE_SINK=attacut_test
               export ALSA_CONFIG_PATH="$RUNNER_TEMP/attacut-asound.conf"
               printf 'pcm.!default { type pulse }\nctl.!default { type pulse }\n' > "$ALSA_CONFIG_PATH"
               pactl list short sinks
-              PULSE_SINK=attacut_test xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" dbus-run-session -- bash -e -c '
+              xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" dbus-run-session -- bash -e -c '
                  openbox --sm-disable > /tmp/attacut-openbox.log 2>&1 &
                  for attempt in {1..100}; do
                     xprop -root _NET_SUPPORTING_WM_CHECK | grep -q "window id #" && break

@@ -84,10 +84,27 @@ test("paused fullscreen keeps its frame and position through controls and window
       await expectPresentedFrame(page, testInfo, `fullscreen-${cycle}`);
       await page.locator(".player-stage").hover();
       await page.evaluate(() => document.dispatchEvent(new globalThis.Event("visibilitychange")));
+      // Cocoa and Openbox ignore iconifying a native fullscreen window. Exercise
+      // their supported exit/minimize/restore/re-enter sequence with the same frame.
+      if (process.platform !== "win32") {
+         await app.evaluate(({ BrowserWindow }) => {
+            globalThis.fullscreenExitSettled = false;
+            BrowserWindow.getAllWindows()[0].once("leave-full-screen", () => {
+               globalThis.fullscreenExitSettled = true;
+            });
+         });
+         await page.keyboard.press("Escape");
+         await expect.poll(() => app.evaluate(() => globalThis.fullscreenExitSettled)).toBe(true);
+         await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
+      }
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize());
       await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized())).toBe(true);
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].restore());
       await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized())).toBe(false);
+      if (process.platform !== "win32") {
+         await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
+         await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
+      }
       await expectPresentedFrame(page, testInfo, `restored-${cycle}`);
       await page.keyboard.press("Escape");
       await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
