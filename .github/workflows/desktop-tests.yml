@@ -65,10 +65,10 @@ jobs:
               PULSE_SINK=attacut_test xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" dbus-run-session -- bash -e -c '
                  openbox --sm-disable > /tmp/attacut-openbox.log 2>&1 &
                  for attempt in {1..100}; do
-                    xprop -root _NET_SUPPORTING_WM_CHECK | rg -q "window id #" && break
+                    xprop -root _NET_SUPPORTING_WM_CHECK | grep -q "window id #" && break
                     sleep 0.1
                  done
-                 xprop -root _NET_SUPPORTING_WM_CHECK | rg -q "window id #"
+                 xprop -root _NET_SUPPORTING_WM_CHECK | grep -q "window id #"
                  bun scripts/desktop-tests.ts "$DESKTOP_SUITE"
               '
 
