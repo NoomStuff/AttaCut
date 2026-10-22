@@ -3,6 +3,27 @@ import sharp from "sharp";
 import { resolve } from "node:path";
 import { test, waitForVideo, waitForPlaybackTime } from "./app.mjs";
 
+// Native fullscreen is asynchronous on macOS. A property change alone does
+// not mean a leave/enter transition has finished before the next action.
+async function observeNativeFullscreen(app) {
+   await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      globalThis.fullscreenSettled = window.isFullScreen();
+      window.on("enter-full-screen", () => {
+         globalThis.fullscreenSettled = true;
+      });
+      window.on("leave-full-screen", () => {
+         globalThis.fullscreenSettled = false;
+      });
+   });
+}
+
+async function waitForNativeFullscreen(app, fullscreen) {
+   await expect
+      .poll(() => app.evaluate(({ BrowserWindow }) => [BrowserWindow.getAllWindows()[0].isFullScreen(), globalThis.fullscreenSettled]))
+      .toEqual([fullscreen, fullscreen]);
+}
+
 // Compare the presented picture against the decoded frame, including letterboxing.
 // DOM bounds alone cannot detect a misplaced Windows video overlay.
 async function expectPresentedFrame(page, testInfo, name) {
@@ -57,6 +78,7 @@ test("paused fullscreen keeps its frame and position through controls and window
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
+   await observeNativeFullscreen(app);
    const video = page.locator("video");
    if (!(await video.evaluate((element) => element.paused))) {
       await page.getByRole("button", { name: "Pause", exact: true }).click();
@@ -73,6 +95,7 @@ test("paused fullscreen keeps its frame and position through controls and window
    for (let cycle = 0; cycle < 2; cycle++) {
       await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
       await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
+      await waitForNativeFullscreen(app, true);
       await expect
          .poll(() =>
             page.evaluate(() => {
@@ -96,6 +119,7 @@ test("paused fullscreen keeps its frame and position through controls and window
          await page.keyboard.press("Escape");
          await expect.poll(() => app.evaluate(() => globalThis.fullscreenExitSettled)).toBe(true);
          await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
+         await waitForNativeFullscreen(app, false);
       }
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize());
       await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized())).toBe(true);
@@ -104,11 +128,13 @@ test("paused fullscreen keeps its frame and position through controls and window
       if (process.platform !== "win32") {
          await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
          await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
+         await waitForNativeFullscreen(app, true);
       }
       await expectPresentedFrame(page, testInfo, `restored-${cycle}`);
       await page.keyboard.press("Escape");
       await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
       await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
+      await waitForNativeFullscreen(app, false);
       expect(await video.evaluate((element) => element === globalThis.fullscreenVideo)).toBe(true);
       expect(await video.evaluate((element) => element.currentTime)).toBe(originalTime);
       expect(await page.evaluate(() => globalThis.fullscreenSeeks)).toBe(0);
@@ -168,8 +194,10 @@ test("fullscreen can re-enter during return motion and finish when reduced motio
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
+   await observeNativeFullscreen(app);
    await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
    await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
+   await waitForNativeFullscreen(app, true);
    await page.locator(".player-stage").evaluate((stage) => {
       stage.style.animationPlayState = "paused";
    });
@@ -177,17 +205,21 @@ test("fullscreen can re-enter during return motion and finish when reduced motio
    await expect(page.locator(".player-stage")).toHaveClass(/fullscreen-returning/);
    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("window:fullscreen", true));
    await expect(page.locator(".player-stage")).toHaveClass(/fullscreen-returning/);
+   await waitForNativeFullscreen(app, false);
    await page.keyboard.press("F11");
    await expect(page.locator(".player-stage")).not.toHaveClass(/fullscreen-returning/);
+   await waitForNativeFullscreen(app, true);
    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
    await page.keyboard.press("Escape");
    await expect(page.locator(".player-stage")).toHaveClass(/fullscreen-returning/);
    await page.emulateMedia({ reducedMotion: "reduce" });
    await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
    await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
+   await waitForNativeFullscreen(app, false);
    await page.emulateMedia({ reducedMotion: "no-preference" });
    await page.keyboard.press("F11");
    await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
+   await waitForNativeFullscreen(app, true);
    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(false));
    await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
 });
