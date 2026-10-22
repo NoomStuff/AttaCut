@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join } from "node:path";
 import sharp from "sharp";
+import { writeFile } from "node:fs/promises";
 import { test, waitForVideo, mediaBinary } from "./app.mjs";
 
 const run = promisify(execFile);
@@ -13,11 +14,17 @@ const run = promisify(execFile);
 async function captureScreen(app, path) {
    const handle = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getNativeWindowHandle().readBigUInt64LE().toString());
    const script = [
-      'Add-Type -TypeDefinition \'using System; using System.Runtime.InteropServices; public class Capture { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r); [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags); public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } }\'',
-      "[Capture]::SetProcessDPIAware() | Out-Null",
+      'Add-Type -TypeDefinition \'using System; using System.Runtime.InteropServices; public class Capture { [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context); [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r); [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref POINT p); [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attribute, out RECT r, int size); public struct POINT { public int X; public int Y; } [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r); [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags); public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } }\'',
+      "[Capture]::SetThreadDpiAwarenessContext([IntPtr]::new(-4)) | Out-Null",
       "Add-Type -AssemblyName System.Drawing",
       "$rect = New-Object Capture+RECT",
       `if (-not [Capture]::GetWindowRect([IntPtr]::new(${handle}), [ref]$rect)) { throw 'Window bounds unavailable' }`,
+      "$client = New-Object Capture+RECT",
+      "$origin = New-Object Capture+POINT",
+      "$frame = New-Object Capture+RECT",
+      `if (-not [Capture]::GetClientRect([IntPtr]::new(${handle}), [ref]$client)) { throw 'Client bounds unavailable' }`,
+      `if (-not [Capture]::ClientToScreen([IntPtr]::new(${handle}), [ref]$origin)) { throw 'Client origin unavailable' }`,
+      `if ([Capture]::DwmGetWindowAttribute([IntPtr]::new(${handle}), 9, [ref]$frame, 16) -ne 0) { throw 'DWM frame bounds unavailable' }`,
       "$bitmap = New-Object System.Drawing.Bitmap(($rect.Right - $rect.Left), ($rect.Bottom - $rect.Top))",
       "$graphics = [System.Drawing.Graphics]::FromImage($bitmap)",
       "try {",
@@ -29,8 +36,10 @@ async function captureScreen(app, path) {
            ]),
       `$bitmap.Save('${path.replaceAll("'", "''")}', [System.Drawing.Imaging.ImageFormat]::Png)`,
       "} finally { $graphics.Dispose(); $bitmap.Dispose() }",
+      `@{ window = $rect; client = @{ Left = $origin.X; Top = $origin.Y; Width = $client.Right; Height = $client.Bottom }; frame = $frame; dpi = [Capture]::GetDpiForWindow([IntPtr]::new(${handle})) } | ConvertTo-Json -Depth 4 -Compress`,
    ].join("\n");
-   await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, timeout: 30000 });
+   const { stdout } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, timeout: 30000 });
+   return JSON.parse(stdout);
 }
 
 test("native fullscreen portrait stays centered through paused controls and occlusion", async ({ launchApp, profile }, testInfo) => {
@@ -63,22 +72,37 @@ test("native fullscreen portrait stays centered through paused controls and occl
          window.moveTop();
       });
       const path = testInfo.outputPath(`${name}.png`);
-      await captureScreen(app, path);
+      const native = await captureScreen(app, path);
+      const geometryPath = testInfo.outputPath(`${name}-geometry.json`);
+      await writeFile(geometryPath, JSON.stringify(native, null, 2));
+      await testInfo.attach(`${name}-geometry`, { path: geometryPath, contentType: "application/json" });
       await testInfo.attach(name, { path, contentType: "image/png" });
       const { data, info } = await sharp(path).grayscale().raw().toBuffer({ resolveWithObject: true });
-      const content = await app.evaluate(({ BrowserWindow }) => {
-         const window = BrowserWindow.getAllWindows()[0];
-         return { bounds: window.getBounds(), content: window.getContentBounds() };
-      });
+      const viewport = await page.evaluate(() => ({ width: globalThis.innerWidth, height: globalThis.innerHeight, pixelRatio: globalThis.devicePixelRatio }));
+      const pixelRatio = native.dpi / 96;
+      expect(pixelRatio).toBe(viewport.pixelRatio);
+      expect(native.client.Width).toBe(Math.round(viewport.width * pixelRatio));
+      expect(native.client.Height).toBe(Math.round(viewport.height * pixelRatio));
+      expect(info.width).toBe(native.window.Right - native.window.Left);
+      expect(info.height).toBe(native.window.Bottom - native.window.Top);
+      expect(native.frame.Left).toBeGreaterThanOrEqual(native.window.Left);
+      expect(native.frame.Right).toBeLessThanOrEqual(native.window.Right);
+      const clientLeft = native.client.Left - native.window.Left;
+      const clientTop = native.client.Top - native.window.Top;
+      expect(clientLeft).toBeGreaterThanOrEqual(0);
+      expect(clientTop).toBeGreaterThanOrEqual(0);
+      expect(clientLeft + native.client.Width).toBeLessThanOrEqual(info.width);
+      expect(clientTop + native.client.Height).toBeLessThanOrEqual(info.height);
       const fit = await page.locator("video").evaluate((video) => {
          const rect = video.getBoundingClientRect();
          const scale = Math.min(rect.width / video.videoWidth, rect.height / video.videoHeight);
          return { width: video.videoWidth * scale, centerX: rect.x + rect.width / 2, centerY: rect.y + rect.height / 2 };
       });
-      const pixelRatio = info.width / content.bounds.width;
-      const centerX = (fit.centerX + content.content.x - content.bounds.x) * pixelRatio;
-      const y = Math.floor((fit.centerY + content.content.y - content.bounds.y) * pixelRatio);
-      const columns = Array.from({ length: info.width }, (_, x) => x).filter((x) => data[y * info.width + x] > 60);
+      const centerX = clientLeft + fit.centerX * pixelRatio;
+      const y = Math.floor(clientTop + fit.centerY * pixelRatio);
+      // GetWindowRect includes invisible resize borders. Scan the entire native
+      // client row, so stale or stretched video anywhere in the client still fails.
+      const columns = Array.from({ length: native.client.Width }, (_, x) => clientLeft + x).filter((x) => data[y * info.width + x] > 60);
       const expectedWidth = Math.round(fit.width * pixelRatio);
       expect(columns.length, `${name}: portrait width`).toBeCloseTo(expectedWidth, -1);
       expect((columns[0] + columns.at(-1)) / 2, `${name}: portrait center`).toBeCloseTo(centerX, -1);

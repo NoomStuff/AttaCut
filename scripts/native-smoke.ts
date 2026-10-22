@@ -7,5 +7,9 @@ if (!hasDisposableDesktop()) {
 }
 
 for (const args of [["tests/create-fixtures.ts"], ["run", "build"], ["x", "--no-install", "playwright", "test", "--project=native"]]) {
-   execFileSync(process.execPath, args, { stdio: "inherit", windowsHide: true, env: { ...process.env, ATTACUT_NATIVE_SMOKE: "1" } });
+   execFileSync(process.execPath, args, {
+      stdio: "inherit",
+      windowsHide: true,
+      env: { ...process.env, ATTACUT_NATIVE_SMOKE: "1", ATTACUT_TEST_SCREEN_CAPTURE: "1" },
+   });
 }

@@ -18,7 +18,9 @@ describe("update feeds", () => {
             join(folder, "latest.yml"),
             `version: 0.13.3\nfiles:\n  - url: ${name}\n    sha512: ${checksum}\n    size: ${scenario === "size" ? 9 : 7}\n${scenario === "block map size" ? "    blockMapSize: 100\n" : ""}${scenario === "unknown field" ? "packages: {}\n" : ""}${scenario === "legacy checksum" ? "sha512: wrong\n" : ""}`
          );
-         expect(() => execFileSync("bun", [resolve("scripts/prepare-update-feed.mjs"), folder, join(folder, "feed"), "v0.13.3"], { stdio: "pipe" })).toThrow();
+         expect(() =>
+            execFileSync("bun", [resolve("scripts/prepare-update-feed.mjs"), folder, join(folder, "feed"), "v0.13.3"], { stdio: "pipe", windowsHide: true })
+         ).toThrow();
       } finally {
          rmSync(folder, { recursive: true, force: true });
       }
@@ -41,7 +43,7 @@ describe("update feeds", () => {
                `version: 0.13.3\nfiles:\n  - url: ${packageName}\n    sha512: ${createHash("sha512").update("package").digest("base64")}\n    size: 7\n${channel === "latest.yml" ? "" : "    blockMapSize: 3\n"}path: ${packageName}\n`
             );
          }
-         execFileSync("bun", [resolve("scripts/prepare-update-feed.mjs"), dist, feed, "v0.13.3"]);
+         execFileSync("bun", [resolve("scripts/prepare-update-feed.mjs"), dist, feed, "v0.13.3"], { windowsHide: true });
          for (const [channel, packageName] of channels) {
             const content = readFileSync(join(feed, channel), "utf8");
             const url = `https://github.com/NoomStuff/AttaCut/releases/download/v0.13.3/${packageName}`;
