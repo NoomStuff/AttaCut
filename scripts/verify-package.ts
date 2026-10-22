@@ -1,3 +1,5 @@
+import { hasDisposableDesktop } from "./test-isolation";
+import { runDesktopTests } from "./desktop-tests";
 import { spawn, execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +8,11 @@ import { resolve, join, sep } from "node:path";
 import { canReuseMediaVerification } from "./media-verification";
 import { verifyWindowsPayloads } from "./verify-windows-payloads";
 import { verifyInstaller } from "./verify-installer";
+
+if (!hasDisposableDesktop()) {
+   await runDesktopTests("package");
+   process.exit(0);
+}
 
 const [receiptFlag, receipt, ...extra] = process.argv.slice(2);
 if (receiptFlag && (receiptFlag !== "--media-receipt" || !receipt || extra.length)) throw new Error("Usage: verify-package.ts [--media-receipt <path>]");

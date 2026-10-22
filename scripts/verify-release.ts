@@ -1,8 +1,15 @@
+import { hasDisposableDesktop } from "./test-isolation";
+import { runDesktopTests } from "./desktop-tests";
 import { execFileSync } from "node:child_process";
 import { provisionMedia } from "./provision-media.ts";
 import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { mediaVerificationFingerprint } from "./media-verification";
+
+if (!hasDisposableDesktop()) {
+   await runDesktopTests("release");
+   process.exit(0);
+}
 
 const run = (args: string[], env: NodeJS.ProcessEnv) => execFileSync(process.execPath, args, { stdio: "inherit", env });
 

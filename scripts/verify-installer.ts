@@ -1,3 +1,4 @@
+import { requireDisposableDesktop } from "./test-isolation";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, readFile, writeFile, rm, cp } from "node:fs/promises";
@@ -11,6 +12,7 @@ import { _electron as electron } from "@playwright/test";
 // prevent tests from discovering or modifying the user's real installation.
 export async function verifyInstaller(): Promise<void> {
    if (process.platform !== "win32") return;
+   requireDisposableDesktop();
    await mkdir("work", { recursive: true });
    const root = await mkdtemp(resolve("work/installer-test-"));
    const guid = randomUUID();

@@ -1,0 +1,75 @@
+name: Isolated desktop tests
+run-name: Desktop ${{ inputs.suite }} ${{ inputs.request }}
+
+on:
+   workflow_dispatch:
+      inputs:
+         suite:
+            type: choice
+            options: [ui, playback, native, all, package, release]
+            required: true
+         revision:
+            description: Exact pushed source commit
+            required: true
+         target:
+            type: choice
+            options: [win32-x64, darwin-x64, darwin-arm64, linux-x64, linux-arm64]
+            required: true
+         request:
+            description: Unique request identifier
+            required: true
+
+permissions:
+   contents: read
+
+jobs:
+   desktop:
+      runs-on: ${{ fromJSON('{"win32-x64":"windows-2025","darwin-x64":"macos-15-intel","darwin-arm64":"macos-15","linux-x64":"ubuntu-24.04","linux-arm64":"ubuntu-24.04-arm"}')[inputs.target] }}
+      timeout-minutes: 90
+      steps:
+         - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.revision }}
+         - uses: actions/setup-node@v6
+           with:
+              node-version: "24.22.1"
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: "1.4.2"
+         - name: Record exact source and disposable environment
+           shell: bash
+           env:
+              EXPECTED_REVISION: ${{ inputs.revision }}
+           run: |
+              test "$RUNNER_ENVIRONMENT" = github-hosted
+              test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
+              git rev-parse HEAD | tee source-revision.txt
+              echo "Runner $RUNNER_NAME, $RUNNER_OS, $RUNNER_ARCH, $RUNNER_ENVIRONMENT" >> source-revision.txt
+         - run: bun install --frozen-lockfile
+         - run: bun scripts/provision-media.ts
+         - name: Run desktop suite on Windows or macOS
+           if: runner.os != 'Linux'
+           env:
+              DESKTOP_SUITE: ${{ inputs.suite }}
+           run: bun scripts/desktop-tests.ts $env:DESKTOP_SUITE
+           shell: pwsh
+         - name: Run desktop suite on private Linux display and audio server
+           if: runner.os == 'Linux'
+           env:
+              DESKTOP_SUITE: ${{ inputs.suite }}
+           run: |
+              sudo apt-get update
+              sudo apt-get install -y xvfb pulseaudio
+              pulseaudio --start
+              pactl load-module module-null-sink sink_name=attacut_test
+              PULSE_SINK=attacut_test xvfb-run --auto-servernum bun scripts/desktop-tests.ts "$DESKTOP_SUITE"
+         - name: Preserve results and provenance
+           if: always()
+           uses: actions/upload-artifact@v7
+           with:
+              name: desktop-${{ inputs.target }}-${{ inputs.suite }}-${{ github.run_id }}
+              path: |
+                 source-revision.txt
+                 test-results/
+              if-no-files-found: error
+              retention-days: 14

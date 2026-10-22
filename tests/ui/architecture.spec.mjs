@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-test("background testing keeps device audio silent while input and decoded frames work", async ({ launchApp, profile }) => {
+test("isolated desktop preserves input, unmuted audio and decoded frames", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
@@ -16,14 +16,32 @@ test("background testing keeps device audio silent while input and decoded frame
       });
    const expected =
       process.env.ATTACUT_TEST_VISIBLE === "1"
-         ? { muted: true }
-         : { ...(process.platform === "linux" ? { visible: true } : { opacity: 0 }), focused: false, muted: true };
+         ? { muted: false }
+         : { ...(process.platform === "linux" ? { visible: true } : { opacity: 0 }), focused: false, muted: false };
    expect(await presentation()).toMatchObject(expected);
+   await page.evaluate(() => {
+      const context = new globalThis.AudioContext();
+      const source = context.createMediaElementSource(document.querySelector("video"));
+      const analyser = context.createAnalyser();
+      source.connect(analyser);
+      analyser.connect(context.destination);
+      globalThis.previewAudioProbe = { context, analyser };
+   });
    await page.getByRole("button", { name: "Play", exact: true }).click();
+   await page.evaluate(() => globalThis.previewAudioProbe.context.resume());
    await page.waitForFunction(() => {
       const video = document.querySelector("video");
       return video.currentTime > 0.3 && video.getVideoPlaybackQuality().totalVideoFrames > 0;
    });
+   await expect
+      .poll(() =>
+         page.evaluate(() => {
+            const samples = new Float32Array(2048);
+            globalThis.previewAudioProbe.analyser.getFloatTimeDomainData(samples);
+            return Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
+         })
+      )
+      .toBeGreaterThan(0.01);
    await page.getByRole("button", { name: "Pause", exact: true }).click();
    await page.keyboard.press("m");
    await expect(page.locator("video")).toHaveJSProperty("muted", true);

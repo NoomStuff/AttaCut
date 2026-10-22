@@ -1,3 +1,4 @@
+import { requireDisposableDesktop } from "../../scripts/test-isolation.ts";
 import { _electron as electron, expect, test as base } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -62,6 +63,7 @@ export const test = base.extend({
       const errors = [];
       const logs = [];
       await use(async (profile, file) => {
+         requireDisposableDesktop();
          const app = await electron.launch({
             args: [
                ...(process.env.ATTACUT_EXECUTABLE ? [] : [process.env.ATTACUT_TEST_ENTRY ?? "."]),

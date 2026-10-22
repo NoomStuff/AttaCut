@@ -89,8 +89,6 @@ async function start(): Promise<void> {
    appWindow = window;
    // The test harness maps an inactive window for compositing. Hiding it again
    // stops Linux screenshot capture and OffscreenCanvas presentation under Xvfb.
-   // Silence the device output without changing the renderer's mute/volume state.
-   if (process.env["ATTACUT_TESTING"] === "1") window.webContents.setAudioMuted(true);
    const testing = !isPackagedApp() && process.env["ATTACUT_TESTING"] === "1" ? new IpcTestAdapter() : null;
    const exportsService = new ExportService(
       (job) => {

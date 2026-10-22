@@ -32,9 +32,9 @@
       "test": "vitest run",
       "test:media": "bun tests/media/run.ts",
       "test:native": "bun scripts/native-smoke.ts",
-      "test:ui": "bun tests/create-fixtures.ts && bun run build && playwright test --project=ui",
-      "test:playback": "bun run test:media && bun run build && playwright test --project=playback",
-      "test:all": "bun run test && bun run test:media && bun run build && playwright test --project=ui --project=playback"
+      "test:ui": "bun scripts/desktop-tests.ts ui",
+      "test:playback": "bun scripts/desktop-tests.ts playback",
+      "test:all": "bun scripts/desktop-tests.ts all"
    },
    "build": {
       "appId": "dev.attacut.app",
