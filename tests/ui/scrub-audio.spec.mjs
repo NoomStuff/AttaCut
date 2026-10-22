@@ -10,8 +10,18 @@ test("default audio scrubbing auditions a held snapped cut once and hover stays 
    await page.evaluate(() => {
       const start = window.AudioBufferSourceNode.prototype.start;
       window.scrubAuditions = [];
+      window.scrubPcm = [];
       window.AudioBufferSourceNode.prototype.start = function (...args) {
          window.scrubAuditions.push(args);
+         const [, offset, duration] = args;
+         const samples = this.buffer
+            .getChannelData(0)
+            .subarray(Math.floor(offset * this.buffer.sampleRate), Math.ceil((offset + duration) * this.buffer.sampleRate));
+         window.scrubPcm.push({
+            frames: samples.length,
+            rms: Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length),
+            context: this.context,
+         });
          return start.apply(this, args);
       };
    });
@@ -34,6 +44,9 @@ test("default audio scrubbing auditions a held snapped cut once and hover stays 
    await page.mouse.down();
    await page.mouse.move(bar.x + (bar.width * 6.2) / 18, bounds.y + bounds.height / 2);
    await expect.poll(() => page.evaluate(() => window.scrubAuditions.filter(([, offset]) => Math.abs(offset - 0.84) < 0.001).length)).toBe(1);
+   await expect
+      .poll(() => page.evaluate(() => window.scrubPcm.some(({ frames, rms, context }) => frames > 0 && rms > 0.01 && context.state === "running")))
+      .toBe(true);
    for (let i = 0; i < 16; i++) {
       await page.mouse.move(bar.x + (bar.width * (6.2 + (i % 2 ? 0.1 : -0.1))) / 18, bounds.y + bounds.height / 2);
    }

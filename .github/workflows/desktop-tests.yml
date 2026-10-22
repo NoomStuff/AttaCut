@@ -59,10 +59,19 @@ jobs:
               DESKTOP_SUITE: ${{ inputs.suite }}
            run: |
               sudo apt-get update
-              sudo apt-get install -y xvfb pulseaudio
+              sudo apt-get install -y xvfb pulseaudio openbox x11-utils dbus-x11
               pulseaudio --start
               pactl load-module module-null-sink sink_name=attacut_test
-              PULSE_SINK=attacut_test xvfb-run --auto-servernum bun scripts/desktop-tests.ts "$DESKTOP_SUITE"
+              PULSE_SINK=attacut_test xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" dbus-run-session -- bash -e -c '
+                 openbox --sm-disable > /tmp/attacut-openbox.log 2>&1 &
+                 for attempt in {1..100}; do
+                    xprop -root _NET_SUPPORTING_WM_CHECK | rg -q "window id #" && break
+                    sleep 0.1
+                 done
+                 xprop -root _NET_SUPPORTING_WM_CHECK | rg -q "window id #"
+                 bun scripts/desktop-tests.ts "$DESKTOP_SUITE"
+              '
+
          - name: Preserve results and provenance
            if: always()
            uses: actions/upload-artifact@v7

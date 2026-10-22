@@ -15,7 +15,7 @@ These commands dispatch the exact pushed commit to the `Isolated desktop tests` 
 
 They require an authenticated `gh` CLI, a clean checkout, and a commit available on origin. They never commit, push, upload local files, or open a local test app. Local edits stay local. A dirty checkout fails before dispatch. Changes during a remote run invalidate the command's result for the local checkout.
 
-The runner matches the local OS and architecture. Each job uses a fresh GitHub-hosted machine. Linux also uses a private Xvfb display and a null audio sink. Native tests retain their real focus, keyboard and dialog checks inside the disposable machine. Audio stays unmuted in Electron. Tests retain their frame, decoded PCM, timing, export, installer and failure assertions.
+The runner matches the local OS and architecture. Each job uses a fresh GitHub-hosted machine. Linux also uses a private Xvfb display with Openbox and a null audio sink. Native tests retain their real focus, keyboard and dialog checks inside the disposable machine. Audio stays unmuted in Electron. Tests retain their frame, decoded PCM, timing, export, installer and failure assertions.
 
 Packaged verification builds a fresh package from the recorded source commit. It does not validate an existing local `release/` directory or other ignored local build outputs. The workflow records the source SHA and runner identity, preserves diagnostics, and has no publication step. It does not change a release or tag.
 
