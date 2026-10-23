@@ -11,6 +11,7 @@ export class PlaybackClock {
    resolveFrame(requested: number, frame: number): void {
       const previous = this.getResolved();
       this.resolved = { requested, frame };
+      if (requested === this.time) this.displayed = null;
       if (previous !== this.getResolved()) for (const listener of this.listeners) listener();
    }
    getDisplayed(url: string): number | null {
@@ -19,7 +20,7 @@ export class PlaybackClock {
    /** Pending navigation owns the next frame; otherwise use the frame Chromium presented. */
    currentFrame(video: HTMLVideoElement | null, pending: boolean): number {
       if (pending || video?.seeking) return this.getFrame();
-      return this.getResolved() ?? (video && this.getDisplayed(video.currentSrc)) ?? video?.currentTime ?? this.time;
+      return (video && this.getDisplayed(video.currentSrc)) ?? this.getResolved() ?? video?.currentTime ?? this.time;
    }
    displayFrame(url: string, frame: number): void {
       this.displayed = { url, frame };

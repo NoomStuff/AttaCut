@@ -4,6 +4,18 @@ import { PlaybackSeeker } from "./seeker";
 import { PlaybackController } from "./controller";
 import type { MediaSource } from "../../../shared/types";
 
+it("uses the resolved seek until Chromium presents a new frame", () => {
+   const clock = new PlaybackClock();
+   const video = { currentSrc: "source", currentTime: 5, seeking: false } as HTMLVideoElement;
+   clock.displayFrame("source", 0);
+   clock.set(5);
+   clock.resolveFrame(5, 5 - 1 / 30);
+   expect(clock.currentFrame(video, false)).toBeCloseTo(5 - 1 / 30, 8);
+   clock.displayFrame("source", 5);
+   expect(clock.currentFrame(video, false)).toBe(5);
+   expect(clock.currentFrame(video, true)).toBeCloseTo(5 - 1 / 30, 8);
+});
+
 it("resolves frame capture at an end boundary without a playable preview", async () => {
    const clock = new PlaybackClock();
    const seeker = new PlaybackSeeker(clock);

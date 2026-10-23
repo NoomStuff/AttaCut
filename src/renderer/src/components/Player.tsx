@@ -192,7 +192,7 @@ export function Player({
       if (!video.requestVideoFrameCallback) return;
       let callback = 0;
       const presented: VideoFrameRequestCallback = (_now, metadata) => {
-         if (video.currentSrc === url) clock.displayFrame(url, metadata.mediaTime);
+         if (video.currentSrc === url && !video.seeking) clock.displayFrame(url, metadata.mediaTime);
          callback = video.requestVideoFrameCallback(presented);
       };
       callback = video.requestVideoFrameCallback(presented);

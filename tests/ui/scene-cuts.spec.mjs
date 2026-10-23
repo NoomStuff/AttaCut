@@ -118,6 +118,7 @@ test("cut results scroll without moving actions in a small light window", async 
    await page.getByRole("menuitem", { name: "Auto detect cuts" }).click();
    const dialog = page.getByRole("dialog", { name: "Auto detect cuts" });
    const split = dialog.getByRole("button", { name: "Split clips", exact: true });
+   await dialog.evaluate(async (element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
    const before = await split.boundingBox();
    await dialog.getByRole("button", { name: "High", exact: true }).click();
    await expect(dialog.getByRole("button", { name: "High", exact: true })).toHaveAttribute("aria-pressed", "true");
