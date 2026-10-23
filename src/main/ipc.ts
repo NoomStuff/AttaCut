@@ -46,6 +46,9 @@ export function registerIpc({
 }): void {
    const updates = new UpdateManager(window);
    const frameOutputs = new Set<string>();
+   // The final close snapshot outranks delayed autosaves. A cancelled close releases
+   // those saves again so the live edit remains recoverable.
+   let closingSnapshot: Promise<boolean> | null = null;
    let openSequence = 0;
    const getSource = (id: string) => sourceSession.get(id);
    const confirmProject = async (session: SavedSession): Promise<"save" | "discard" | "cancel"> => {
@@ -254,21 +257,30 @@ export function registerIpc({
    handle("export:cancel-analysis", () => exportsService.cancelAnalysis());
    handle("state:flush", async (value) => {
       const snapshot = value;
+      let resolveClose!: (proceed: boolean) => void;
+      closingSnapshot = new Promise((resolve) => {
+         resolveClose = resolve;
+      });
+      const finish = (proceed: boolean) => {
+         if (!proceed) closingSnapshot = null;
+         resolveClose(proceed);
+         onFlushed(proceed);
+      };
       try {
          if (snapshot.cancelClose) {
-            onFlushed(false);
+            finish(false);
             return;
          }
          if (snapshot.closing && snapshot.session && projectHasChanges(snapshot.session)) {
             const decision = await confirmProject(snapshot.session);
             if (decision === "cancel") {
-               onFlushed(false);
+               finish(false);
                return;
             }
             if (decision === "save") {
                const saved = await saveProject(snapshot.session, false);
                if (!saved) {
-                  onFlushed(false);
+                  finish(false);
                   return;
                }
                snapshot.session = saved;
@@ -279,9 +291,9 @@ export function registerIpc({
          storage.preferences = snapshot.preferences;
          storage.session = snapshot.session;
          await storage.save();
-         onFlushed();
+         finish(true);
       } catch (error) {
-         onFlushed(false);
+         finish(false);
          throw error;
       }
    });
@@ -292,10 +304,12 @@ export function registerIpc({
       return path;
    });
    handle("preferences:save", async (value) => {
+      if (closingSnapshot && (await closingSnapshot)) return;
       storage.preferences = value;
       await storage.save();
    });
    handle("session:save", async (value) => {
+      if (closingSnapshot && (await closingSnapshot)) return;
       storage.session = value;
       await storage.save();
    });

@@ -128,7 +128,11 @@ export const test = base.extend({
                }
             }
          } finally {
-            await app.close();
+            // A failed test may leave an unsaved project or a native dialog open.
+            // Preserve its diagnostics, then stop this owned test process instead
+            // of spending the teardown timeout waiting for another confirmation.
+            if (testInfo.status !== testInfo.expectedStatus || errors.length) app.process().kill();
+            else await app.close();
          }
       }
       expect(errors, "Renderer errors").toEqual([]);
