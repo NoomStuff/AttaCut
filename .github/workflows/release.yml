@@ -151,3 +151,11 @@ jobs:
                  } else {
                    await github.rest.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: commit.data.sha });
                  }
+         - name: Retain internal release provenance
+           if: always()
+           uses: actions/upload-artifact@v7
+           with:
+              name: release-provenance-${{ github.run_id }}-${{ github.run_attempt }}
+              path: dist/release-provenance.json
+              if-no-files-found: ignore
+              retention-days: 90
