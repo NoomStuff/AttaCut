@@ -66,7 +66,7 @@ export function useEditorCommands({
       confirmProject,
       closeProject,
    } = session;
-   const { muted, setMuted, playback, preparing, videoRef, clock, seeker } = session.player;
+   const { muted, setMuted, playback, videoRef, clock, seeker } = session.player;
    const { clip, trimming, trimmingRef, remember, commit, seek, currentClip, deleteTarget, frameStep, animateTrim, setBoundary } = editing;
    const showError = onError;
    const togglePlay = () => {
@@ -89,8 +89,6 @@ export function useEditorCommands({
          if (target !== time) seeker.seek(target, true);
       } else if (source && time >= source.duration - 0.02) seeker.seek(0, true);
       playback.request(true);
-      if (preparing) return;
-      void video.play().catch(() => undefined);
    };
    // A pure bounds edit animates the clip to its new shape, undo and redo included, so a
    // trimmed edge visibly travels back. Structural edits (split, merge, add, delete) keep
@@ -107,9 +105,7 @@ export function useEditorCommands({
       const sequence = ++frameSequence.current;
       const id = source!.id;
       const video = videoRef.current;
-      const from =
-         clock.getResolved() ??
-         (seeker.pending || video?.seeking ? clock.get() : ((video && clock.getDisplayed(video.currentSrc)) ?? video?.currentTime ?? clock.get()));
+      const from = clock.currentFrame(video, seeker.pending);
       void window.desktop
          .frameTime(id, from, direction)
          .then((target) => {
@@ -218,7 +214,6 @@ export function useEditorCommands({
             seeker.seek(clip.start, true);
             playback.previewEnd = clip.end;
             playback.request(true);
-            if (!preparing) void videoRef.current.play().catch(() => undefined);
          },
       },
       back: { enabled: available, run: () => seek(clock.get() - 1, false, true) },

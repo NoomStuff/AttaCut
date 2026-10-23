@@ -3,7 +3,8 @@ import { primaryVideo } from "../../shared/types";
 import { publishOutput } from "./publish.ts";
 import { join, resolve } from "node:path";
 import type { FrameRequest } from "../../shared/types.ts";
-import { assertSourceUnchanged, packetsAround, sourceFrames } from "./probe.ts";
+import { assertSourceUnchanged } from "./probe.ts";
+import { frameTimesAround } from "./frame-times";
 import type { ProbedSource } from "./probe.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
 import { sanitizeName } from "../../shared/filename";
@@ -16,8 +17,7 @@ export async function exportFrame(source: ProbedSource, request: FrameRequest, s
    const directory = resolve(request.directory);
    return withTemporaryOutput(directory, ".attacut-frame-", async (temporary) => {
       const path = join(temporary, `frame.${request.format}`);
-      const frames = await sourceFrames(source, signal);
-      const points = frames ?? (await packetsAround(source, Math.min(request.time, source.duration), signal, "seek")).map((point) => point.time);
+      const points = await frameTimesAround(source, Math.min(request.time, source.duration), signal);
       if (!points.length) throw new Error("No frame is available at this time.");
       const time = resolveFrameTime(points, Math.min(request.time, points.at(-1)!), source.duration);
       const video = primaryVideo(source)!;

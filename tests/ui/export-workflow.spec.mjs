@@ -4,6 +4,30 @@ import { test, waitForPlaybackTime, waitForVideo, configureIpc } from "./app.mjs
 import { resolve, join } from "node:path";
 import { mkdir, readdir } from "node:fs/promises";
 
+test("frame export waits for a pending end seek and saves the last included frame", async ({ launchApp, profile }) => {
+   test.skip(!!process.env.ATTACUT_EXECUTABLE, "Fault injection is disabled in packaged apps");
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   await configureIpc(app, "source:frame-time", { before: "frame-resolution" });
+   const end = page.getByRole("textbox", { name: "Clip end", exact: true });
+   await end.fill("5");
+   await end.press("Tab");
+   await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.waiting("frame-resolution"))).toBe(true);
+   await page.getByRole("button", { name: "Export current frame", exact: true }).click();
+   const save = page.getByRole("button", { name: "Export frame", exact: true });
+   await expect(save).toBeDisabled();
+   await expect(page.locator(".frame-thumbnail")).toBeHidden();
+   await app.evaluate(() => globalThis.attacutTestIpc.release("frame-resolution"));
+   await expect(page.locator(".frame-thumbnail")).toBeVisible();
+   await expect(save).toBeEnabled();
+   await page.getByRole("textbox", { name: "Save frame to", exact: true }).fill(profile);
+   await page.getByRole("textbox", { name: "Frame filename", exact: true }).fill("end-frame");
+   await save.click();
+   await expect(page.getByRole("dialog", { name: "Export current frame", exact: true })).toHaveCount(0);
+   await expectFrameMatches(resolve("work/fixture.mp4"), 5 - 1 / 30, join(profile, "end-frame.png"));
+});
+
 test("export workflow", async ({ launchApp, profile }) => {
    const output = join(profile, "exports");
    await mkdir(output);

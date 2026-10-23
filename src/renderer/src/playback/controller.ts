@@ -47,12 +47,15 @@ export class PlaybackController {
       this.set({ phase: "source", sourceId: source.id, url: source.url, transcode: false, intent: "paused", showWait: false });
    }
    request(showWait: boolean): void {
+      if (this.state.intent === "requested" && (!showWait || this.state.showWait)) return;
       this.set({ ...this.state, intent: "requested", showWait: this.state.showWait || showWait });
    }
    pause(): void {
+      if (this.state.intent === "paused") return;
       this.set({ ...this.state, intent: "paused", showWait: false });
    }
    playing(): void {
+      if (this.state.phase === "preparing" || this.state.intent !== "requested") return;
       this.set({ ...this.state, intent: "playing", showWait: false });
    }
    fail(): void {

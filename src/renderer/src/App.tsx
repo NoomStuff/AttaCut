@@ -465,7 +465,6 @@ export default function App() {
                            }
                            void preparePreview(source, audioIndices, true, requested);
                         }}
-                        playWhenReady={playWhenReady}
                         waitForPlay={waitForPlay}
                         preparing={preparing}
                         failed={playbackState.phase === "failed"}
@@ -560,11 +559,8 @@ export default function App() {
                   <FramePanel
                      source={source}
                      videoRef={videoRef}
-                     time={
-                        seeker.pending || videoRef.current?.seeking
-                           ? clock.getFrame()
-                           : ((videoRef.current && clock.getDisplayed(videoRef.current.currentSrc)) ?? videoRef.current?.currentTime ?? clock.get())
-                     }
+                     clock={clock}
+                     seeker={seeker}
                      preferences={preferences}
                      onPreferences={setPreferences}
                      onClose={() => setPanel((current) => (current === panel ? null : current))}

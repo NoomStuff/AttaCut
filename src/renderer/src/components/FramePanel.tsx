@@ -7,30 +7,43 @@ import { errorText } from "../lib/errors";
 import { faCamera } from "@fortawesome/free-solid-svg-icons";
 import { OutputDirectoryField } from "./OutputDirectoryField";
 import { DropdownSelect } from "./DropdownSelect";
+import type { PlaybackClock } from "../playback/clock";
+import type { PlaybackSeeker } from "../playback/seeker";
 
 export function FramePanel({
    source,
-   time,
+   clock,
+   seeker,
    videoRef,
    preferences,
    onPreferences,
    onClose,
 }: {
    source: MediaSource;
-   time: number;
+   clock: PlaybackClock;
+   seeker: PlaybackSeeker;
    videoRef: RefObject<HTMLVideoElement | null>;
    preferences: Preferences;
    onPreferences: (value: Preferences) => void;
    onClose: () => void;
 }) {
-   const [capturedTime] = useState(time);
+   const [capturedTime, setCapturedTime] = useState<number | null>(null);
+   const [name, setName] = useState("");
    const thumbnailRef = useRef<HTMLCanvasElement>(null);
    const [thumbnail, setThumbnail] = useState(false);
    useEffect(() => {
       const video = videoRef.current;
-      if (!video) return;
+      let time: number | null = null;
+      let captured = false;
       const capture = () => {
-         if (video.seeking || video.readyState < 2 || !video.videoWidth) return;
+         if (captured || seeker.getWaiting() || video?.seeking) return;
+         if (time === null) {
+            time = clock.currentFrame(video, false);
+            setCapturedTime(time);
+            setName(`${source.name.slice(0, -source.extension.length)}-${formatTime(time).replaceAll(":", "-")}`);
+         }
+         if (!video || video.readyState < 2 || !video.videoWidth) return;
+         captured = true;
          const canvas = thumbnailRef.current;
          if (!canvas) return;
          const scale = Math.min(1, 320 / video.videoWidth, 180 / video.videoHeight);
@@ -46,20 +59,22 @@ export function FramePanel({
          }
       };
       capture();
-      video.addEventListener("seeked", capture);
-      video.addEventListener("loadeddata", capture);
+      const unsubscribe = seeker.subscribeWaiting(capture);
+      video?.addEventListener("seeked", capture);
+      video?.addEventListener("loadeddata", capture);
       return () => {
-         video.removeEventListener("seeked", capture);
-         video.removeEventListener("loadeddata", capture);
+         unsubscribe();
+         video?.removeEventListener("seeked", capture);
+         video?.removeEventListener("loadeddata", capture);
       };
-   }, [videoRef]);
+   }, [videoRef, clock, seeker, source]);
    const [directory, setDirectory] = useState(preferences.outputDirectory || source.directory);
-   const [name, setName] = useState(`${source.name.slice(0, -source.extension.length)}-${formatTime(time).replaceAll(":", "-")}`);
    const [format, setFormat] = useState(preferences.frameFormat);
    const [quality, setQuality] = useState(preferences.frameQuality);
    const [busy, setBusy] = useState(false);
    const [error, setError] = useState<string | null>(null);
    const save = async () => {
+      if (capturedTime === null) return;
       setBusy(true);
       setError(null);
       try {
@@ -76,7 +91,7 @@ export function FramePanel({
       <Modal
          title="Export current frame"
          closeDisabled={busy}
-         description={formatTime(capturedTime)}
+         description={capturedTime === null ? "Loading frame..." : formatTime(capturedTime)}
          onClose={() => {
             if (!busy) onClose();
          }}
@@ -97,7 +112,13 @@ export function FramePanel({
                />
             </label>
             <div className={`frame-preview-row${thumbnail ? " has-thumbnail" : ""}`}>
-               <canvas ref={thumbnailRef} className="frame-thumbnail" hidden={!thumbnail} role="img" aria-label={`Frame at ${formatTime(capturedTime)}`} />
+               <canvas
+                  ref={thumbnailRef}
+                  className="frame-thumbnail"
+                  hidden={!thumbnail}
+                  role="img"
+                  aria-label={capturedTime === null ? "Frame preview" : `Frame at ${formatTime(capturedTime)}`}
+               />
                <label className="field-label">
                   Filename
                   <input
@@ -155,7 +176,7 @@ export function FramePanel({
             <Button
                variant="primary"
                icon={faCamera}
-               disabled={busy || !name.trim() || !directory.trim()}
+               disabled={busy || capturedTime === null || !name.trim() || !directory.trim()}
                onClick={() => {
                   void save();
                }}

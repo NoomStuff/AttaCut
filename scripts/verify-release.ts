@@ -5,6 +5,7 @@ import { provisionMedia } from "./provision-media.ts";
 import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { mediaVerificationFingerprint } from "./media-verification";
+import { packageApp } from "./package-app";
 
 if (!hasDisposableDesktop()) {
    await runDesktopTests("release");
@@ -19,9 +20,11 @@ run(["run", "verify"], env);
 const fingerprint = await mediaVerificationFingerprint(process.cwd(), env.FFMPEG_PATH!, env.FFPROBE_PATH!);
 run(["run", "test:media"], env);
 run(["x", "--no-install", "playwright", "test", "--project=ui", "--project=playback"], env);
-run(["run", process.platform === "win32" ? "dist:win:all" : process.platform === "darwin" ? "dist:mac:all" : "dist"], {
-   ...env,
-   CSC_IDENTITY_AUTO_DISCOVERY: "false",
+packageApp({
+   mode: "dist",
+   flavor: process.platform === "linux" ? "portable" : "all",
+   build: false,
+   env: { ...env, CSC_IDENTITY_AUTO_DISCOVERY: "false" },
 });
 await mkdir("work", { recursive: true });
 const receiptFolder = await mkdtemp(resolve("work/media-verification-"));

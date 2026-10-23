@@ -26,13 +26,13 @@ jobs:
          - uses: oven-sh/setup-bun@v2
            with:
               bun-version: "1.4.2"
-         - name: Cache Electron and Playwright browser downloads
+         - name: Cache Electron and pinned media downloads
            uses: actions/cache@v6
            with:
               path: |
                  ${{ runner.temp }}/electron-cache
-                 ~\AppData\Local\ms-playwright
-              key: verify-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+                 work/media-archives
+              key: verify-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'scripts/media-lock.ts') }}
               restore-keys: verify-downloads-${{ runner.os }}-${{ runner.arch }}-
          - run: bun install --frozen-lockfile
            env:
@@ -49,7 +49,6 @@ jobs:
               }
          - run: bun run verify
          - run: bun run test:media
-         - run: bun x --no-install playwright install chromium
          - run: bun x --no-install playwright test
          - name: Upload browser retry traces
            if: always()

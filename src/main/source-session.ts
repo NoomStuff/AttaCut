@@ -1,6 +1,7 @@
 import type { ScrubAudio } from "../shared/types.ts";
 import { resolveFrameTime } from "../shared/frames.ts";
 import { packetsAround, probeSource, sourceFrames, sourceKeyframes, setSourceLifetime } from "./media/probe.ts";
+import { frameTimesAround } from "./media/frame-times";
 import type { ProbedSource } from "./media/probe.ts";
 import { preparePreview, leasePreview, releasePreview } from "./media/preview.ts";
 import { extractScrubPcm, scrubChunkSeconds } from "./media/scrub-audio.ts";
@@ -106,10 +107,7 @@ export class SourceSession {
    async frameTime(id: string, time: number, direction: -1 | 0 | 1): Promise<number> {
       const source = this.get(id);
       const signal = this.signal;
-      const frames = await sourceFrames(source, signal).catch(() => null);
-      // A source change must not restart an old seek under the new source's lifetime.
-      signal.throwIfAborted();
-      const points = frames ?? (await packetsAround(source, time, signal, "seek")).map((point) => point.time);
+      const points = await frameTimesAround(source, time, signal);
       signal.throwIfAborted();
       return resolveFrameTime(points, time, source.duration, direction);
    }

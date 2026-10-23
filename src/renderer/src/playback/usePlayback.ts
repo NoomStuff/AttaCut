@@ -29,8 +29,10 @@ export function usePlayback({
    const playbackState = useSyncExternalStore(playback.subscribe, playback.get);
    const playing = playbackState.intent === "playing";
    const setPlaying = (value: boolean) => {
-      if (value) playback.playing();
-      else if (playback.get().intent === "playing") playback.pause();
+      if (value) {
+         const state = playback.get();
+         if (state.phase !== "preparing" && videoRef.current?.currentSrc === state.url) playback.playing();
+      } else if (playback.get().intent === "playing") playback.pause();
    };
    const { url } = playbackState;
    const preparing = playbackState.phase === "preparing";

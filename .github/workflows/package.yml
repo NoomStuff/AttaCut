@@ -33,7 +33,8 @@ jobs:
               path: |
                  ${{ runner.temp }}/electron-cache
                  ${{ runner.temp }}/electron-builder-cache
-              key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+                 work/media-archives
+              key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'scripts/media-lock.ts') }}
               restore-keys: electron-${{ runner.os }}-${{ runner.arch }}-
          - run: bun install --frozen-lockfile
            env:

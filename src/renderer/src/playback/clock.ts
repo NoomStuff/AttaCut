@@ -16,6 +16,11 @@ export class PlaybackClock {
    getDisplayed(url: string): number | null {
       return this.displayed?.url === url ? this.displayed.frame : null;
    }
+   /** Pending navigation owns the next frame; otherwise use the frame Chromium presented. */
+   currentFrame(video: HTMLVideoElement | null, pending: boolean): number {
+      if (pending || video?.seeking) return this.getFrame();
+      return this.getResolved() ?? (video && this.getDisplayed(video.currentSrc)) ?? video?.currentTime ?? this.time;
+   }
    displayFrame(url: string, frame: number): void {
       this.displayed = { url, frame };
    }

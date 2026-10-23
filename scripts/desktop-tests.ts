@@ -17,7 +17,6 @@ export async function runDesktopTests(suite: Suite): Promise<void> {
    if (hasDisposableDesktop()) {
       if (suite === "release") return command(["scripts/verify-release.ts"]);
       if (suite === "package") {
-         command(["run", "build"]);
          command(["run", "package"]);
          return command(["scripts/verify-package.ts"]);
       }

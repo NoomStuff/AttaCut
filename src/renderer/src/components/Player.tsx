@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, RefObject } from "react";
 import type { Clip, MediaSource } from "../../../shared/types";
 import type { PlaybackClock } from "../playback/clock";
@@ -11,6 +11,7 @@ import type { PlaybackSeeker } from "../playback/seeker";
 import { nextKeptTime } from "../playback/ranges";
 import { useExitValue } from "../lib/motion";
 import { presentationTime } from "../playback/presentation";
+import { connectPlayback } from "../playback/transport";
 import { clamp, formatTime } from "../../../shared/time";
 import { IconButton } from "./Controls";
 import { SpeedPicker } from "./SpeedPicker";
@@ -34,7 +35,6 @@ export function Player({
    onPlaying,
    onFailure,
    onAudioFallback,
-   playWhenReady,
    waitForPlay,
    preparing,
    failed,
@@ -65,7 +65,6 @@ export function Player({
    onPlaying: (playing: boolean) => void;
    onFailure: () => void;
    onAudioFallback: () => void;
-   playWhenReady: boolean;
    waitForPlay: boolean;
    preparing: boolean;
    failed: boolean;
@@ -83,6 +82,8 @@ export function Player({
    trimming: boolean;
 }) {
    const [readyUrl, setReadyUrl] = useState<string | null>(null);
+   const playbackFailure = useEffectEvent(onFailure);
+   useEffect(() => connectPlayback(videoRef.current!, playback, () => playbackFailure()), [videoRef, playback]);
    const [frameHeld, setFrameHeld] = useState(false);
    const [skipFrameFade, setSkipFrameFade] = useState(false);
    const snapshotRef = useRef<HTMLCanvasElement>(null);
@@ -330,12 +331,6 @@ export function Player({
                      return;
                   }
                }
-               if (videoRef.current && playWhenReady)
-                  void videoRef.current.play().catch((value: unknown) => {
-                     // Pausing while a pending play() is still starting rejects with a routine
-                     // AbortError; only a real playback failure falls back to a preview.
-                     if (!(value instanceof DOMException && value.name === "AbortError")) onFailure();
-                  });
             }}
          />
          <canvas ref={snapshotRef} className={`preview-held-frame${frameHeld ? " visible" : ""}`} aria-hidden="true" />

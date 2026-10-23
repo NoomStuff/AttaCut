@@ -48,18 +48,33 @@ jobs:
               test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
               git rev-parse HEAD | tee source-revision.txt
               echo "Runner $RUNNER_NAME, $RUNNER_OS, $RUNNER_ARCH, $RUNNER_ENVIRONMENT" >> source-revision.txt
+         - name: Cache Electron, packaging and pinned media downloads
+           uses: actions/cache@v6
+           with:
+              path: |
+                 ${{ runner.temp }}/electron-cache
+                 ${{ runner.temp }}/electron-builder-cache
+                 work/media-archives
+              key: desktop-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'scripts/media-lock.ts') }}
+              restore-keys: desktop-downloads-${{ runner.os }}-${{ runner.arch }}-
          - run: bun install --frozen-lockfile
+           env:
+              ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
          - run: bun scripts/provision-media.ts
          - name: Run desktop suite on Windows or macOS
            if: runner.os != 'Linux'
            env:
               DESKTOP_SUITE: ${{ inputs.suite }}
+              ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+              ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
            run: bun scripts/desktop-tests.ts $env:DESKTOP_SUITE
            shell: pwsh
          - name: Run desktop suite on private Linux display and audio server
            if: runner.os == 'Linux'
            env:
               DESKTOP_SUITE: ${{ inputs.suite }}
+              ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+              ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
            run: |
               sudo apt-get update
               sudo apt-get install -y xvfb pulseaudio libasound2-plugins openbox x11-utils dbus-x11
