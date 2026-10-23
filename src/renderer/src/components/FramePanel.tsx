@@ -31,18 +31,15 @@ export function FramePanel({
    const [name, setName] = useState("");
    const thumbnailRef = useRef<HTMLCanvasElement>(null);
    const [thumbnail, setThumbnail] = useState(false);
+   const [error, setError] = useState<string | null>(null);
    useEffect(() => {
       const video = videoRef.current;
       let time: number | null = null;
       let captured = false;
+      let closed = false;
       const capture = () => {
-         if (captured || seeker.getWaiting() || video?.seeking) return;
-         if (time === null) {
-            time = clock.currentFrame(video, false);
-            setCapturedTime(time);
-            setName(`${source.name.slice(0, -source.extension.length)}-${formatTime(time).replaceAll(":", "-")}`);
-         }
-         if (!video || video.readyState < 2 || !video.videoWidth) return;
+         if (captured || time === null || seeker.getWaiting() || !video || video.seeking || video.readyState < 2 || !video.videoWidth) return;
+         if (Math.abs(clock.currentFrame(video, false) - time) > 0.0001) return;
          captured = true;
          const canvas = thumbnailRef.current;
          if (!canvas) return;
@@ -58,11 +55,23 @@ export function FramePanel({
             // Export remains available when a preview cannot be captured.
          }
       };
-      capture();
+      void seeker
+         .captureTime()
+         .then((resolved) => {
+            if (closed) return;
+            time = resolved;
+            setCapturedTime(time);
+            setName((name) => name || `${source.name.slice(0, -source.extension.length)}-${formatTime(resolved).replaceAll(":", "-")}`);
+            capture();
+         })
+         .catch((value: unknown) => {
+            if (!closed) setError(errorText(value));
+         });
       const unsubscribe = seeker.subscribeWaiting(capture);
       video?.addEventListener("seeked", capture);
       video?.addEventListener("loadeddata", capture);
       return () => {
+         closed = true;
          unsubscribe();
          video?.removeEventListener("seeked", capture);
          video?.removeEventListener("loadeddata", capture);
@@ -72,7 +81,6 @@ export function FramePanel({
    const [format, setFormat] = useState(preferences.frameFormat);
    const [quality, setQuality] = useState(preferences.frameQuality);
    const [busy, setBusy] = useState(false);
-   const [error, setError] = useState<string | null>(null);
    const save = async () => {
       if (capturedTime === null) return;
       setBusy(true);

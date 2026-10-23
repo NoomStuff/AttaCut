@@ -4,6 +4,18 @@ import { PlaybackSeeker } from "./seeker";
 import { PlaybackController } from "./controller";
 import type { MediaSource } from "../../../shared/types";
 
+it("resolves frame capture at an end boundary without a playable preview", async () => {
+   const clock = new PlaybackClock();
+   const seeker = new PlaybackSeeker(clock);
+   const resolve = vi.fn(async (_time: number, direction?: -1 | 0 | 1) => (direction === -1 ? 5 - 1 / 30 : 5));
+   seeker.configure(resolve);
+   seeker.seek(5, false, false, -1);
+   expect(seeker.getWaiting()).toBe(true);
+   expect(await seeker.captureTime()).toBeCloseTo(5 - 1 / 30, 8);
+   expect(resolve).toHaveBeenCalledWith(5, -1);
+   expect(clock.get()).toBe(5);
+});
+
 it("cancels pending play when seeking pauses, even if the media element was already paused", () => {
    const playback = new PlaybackController();
    playback.source({ id: "source", url: "source" } as MediaSource);

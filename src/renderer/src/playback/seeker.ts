@@ -61,6 +61,12 @@ export class PlaybackSeeker {
    get pending(): boolean {
       return this.requested !== null || this.scheduled !== 0 || this.resolving;
    }
+   /** Frame export needs a source timestamp even when Chromium cannot decode the preview. */
+   captureTime(): Promise<number> {
+      if (!this.pending && !this.video?.seeking) return Promise.resolve(this.clock.currentFrame(this.video, false));
+      const time = this.clock.get();
+      return this.resolveTime ? this.resolveTime(time, this.requestedDirection) : Promise.resolve(time);
+   }
    attach(video: HTMLVideoElement): () => void {
       this.video = video;
       const complete = () => {
