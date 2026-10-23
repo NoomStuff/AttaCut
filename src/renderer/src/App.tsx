@@ -144,7 +144,6 @@ export default function App() {
       url,
       preparing,
       playWhenReady,
-      waitForPlay,
       audioIndices,
       videoRef,
       clock,
@@ -426,7 +425,7 @@ export default function App() {
                         key={source.id}
                         source={source}
                         seeker={seeker}
-                        url={url}
+                        state={playbackState}
                         videoRef={videoRef}
                         playback={playback}
                         clock={clock}
@@ -440,7 +439,6 @@ export default function App() {
                         onAudio={changeAudio}
                         onVolume={updateVolume}
                         onSeek={seek}
-                        playing={playing}
                         fullscreen={fullscreenPresented}
                         returningFromFullscreen={fullscreenState === "returning"}
                         onFullscreenReturnEnd={finishFullscreenReturn}
@@ -465,9 +463,6 @@ export default function App() {
                            }
                            void preparePreview(source, audioIndices, true, requested);
                         }}
-                        waitForPlay={waitForPlay}
-                        preparing={preparing}
-                        failed={playbackState.phase === "failed"}
                         trimming={trimming}
                      />
                   ) : (
@@ -510,7 +505,7 @@ export default function App() {
                         document={timelineDocument}
                         draftStore={dragStore}
                         source={source}
-                        playing={playing}
+                        playing={playing || playWhenReady}
                         speed={session.player.speed}
                         onSpeed={session.player.setSpeed}
                         volume={preferences.volume}

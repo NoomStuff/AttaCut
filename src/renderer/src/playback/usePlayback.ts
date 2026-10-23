@@ -37,7 +37,6 @@ export function usePlayback({
    const { url } = playbackState;
    const preparing = playbackState.phase === "preparing";
    const playWhenReady = playbackState.intent === "requested";
-   const waitForPlay = playbackState.showWait;
    const [audioIndices, setAudioIndices] = useState<number[]>([]);
    const audibleSelection = useRef<{ sourceId: string; tracks: number[] } | null>(null);
    useEffect(() => {
@@ -149,7 +148,6 @@ export function usePlayback({
       url,
       preparing,
       playWhenReady,
-      waitForPlay,
       audioIndices,
       setAudioIndices,
       videoRef,

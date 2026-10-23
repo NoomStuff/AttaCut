@@ -6,7 +6,7 @@ import { useClock, useFrameTime } from "../playback/clock";
 import { insideClip } from "../editor/model";
 import { clipColor } from "../editor/colors";
 import { selectNativeAudio } from "../playback/audio";
-import type { PlaybackController } from "../playback/controller";
+import type { PlaybackController, PlaybackState } from "../playback/controller";
 import type { PlaybackSeeker } from "../playback/seeker";
 import { nextKeptTime } from "../playback/ranges";
 import { useExitValue } from "../lib/motion";
@@ -22,7 +22,7 @@ import { faPlay, faPause, faBackwardStep, faForwardStep, faCompress } from "@for
 
 export function Player({
    source,
-   url,
+   state,
    videoRef,
    playback,
    clock,
@@ -35,15 +35,11 @@ export function Player({
    onPlaying,
    onFailure,
    onAudioFallback,
-   waitForPlay,
-   preparing,
-   failed,
    audioIndices,
    onAudio,
    onVolume,
    onSeek,
    seeker,
-   playing,
    fullscreen,
    returningFromFullscreen,
    onFullscreenReturnEnd,
@@ -52,7 +48,7 @@ export function Player({
    trimming,
 }: {
    source: MediaSource;
-   url: string;
+   state: PlaybackState;
    videoRef: RefObject<HTMLVideoElement | null>;
    playback: PlaybackController;
    clock: PlaybackClock;
@@ -65,15 +61,11 @@ export function Player({
    onPlaying: (playing: boolean) => void;
    onFailure: () => void;
    onAudioFallback: () => void;
-   waitForPlay: boolean;
-   preparing: boolean;
-   failed: boolean;
    audioIndices: number[];
    onAudio: (indices: number[]) => void;
    onVolume: (value: number, restore: number) => void;
    onSeek: (time: number) => void;
    seeker: PlaybackSeeker;
-   playing: boolean;
    fullscreen: boolean;
    returningFromFullscreen: boolean;
    onFullscreenReturnEnd: () => void;
@@ -81,6 +73,11 @@ export function Player({
    onTogglePlay: () => void;
    trimming: boolean;
 }) {
+   const { url, intent, phase, showWait: waitForPlay } = state;
+   const preparing = phase === "preparing";
+   const failed = phase === "failed";
+   const playing = intent === "playing";
+   const playActive = intent !== "paused";
    const [readyUrl, setReadyUrl] = useState<string | null>(null);
    const playbackFailure = useEffectEvent(onFailure);
    useEffect(() => connectPlayback(videoRef.current!, playback, seeker, () => playbackFailure()), [videoRef, playback, seeker]);
@@ -348,10 +345,10 @@ export function Player({
                      <div className="fullscreen-group">
                         <IconButton
                            command="play"
-                           icon={playing ? faPause : faPlay}
-                           label={playing ? "Pause" : "Play"}
+                           icon={playActive ? faPause : faPlay}
+                           label={playActive ? "Pause" : "Play"}
                            className="play-button"
-                           data-playing={playing ? "" : undefined}
+                           data-playing={playActive ? "" : undefined}
                         />
                         <IconButton command="previous" icon={faBackwardStep} label="Previous cut" />
                         <IconButton command="next" icon={faForwardStep} label="Next cut" />
