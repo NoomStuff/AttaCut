@@ -1,6 +1,19 @@
 import { expect, it, vi } from "vitest";
 import { PlaybackClock } from "./clock";
 import { PlaybackSeeker } from "./seeker";
+import { PlaybackController } from "./controller";
+import type { MediaSource } from "../../../shared/types";
+
+it("cancels pending play when seeking pauses, even if the media element was already paused", () => {
+   const playback = new PlaybackController();
+   playback.source({ id: "source", url: "source" } as MediaSource);
+   const seeker = new PlaybackSeeker(new PlaybackClock(), () => playback.pause());
+   playback.request(true);
+   seeker.seek(1, true);
+   expect(playback.get().intent).toBe("requested");
+   seeker.seek(2);
+   expect(playback.get().intent).toBe("paused");
+});
 
 it("releases completed seeks and advances queued input when animation frames stop", () => {
    vi.useFakeTimers();

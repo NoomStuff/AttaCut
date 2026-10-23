@@ -53,8 +53,10 @@ export class PlaybackSeeker {
       this.setWaiting(false);
    }
    private readonly clock: PlaybackClock;
-   constructor(clock: PlaybackClock) {
+   private readonly onPause: () => void;
+   constructor(clock: PlaybackClock, onPause: () => void = () => {}) {
       this.clock = clock;
+      this.onPause = onPause;
    }
    get pending(): boolean {
       return this.requested !== null || this.scheduled !== 0 || this.resolving;
@@ -103,7 +105,10 @@ export class PlaybackSeeker {
       this.requested = time;
       this.requestedDirection = direction;
       this.setWaiting(true);
-      if (!keepPlaying) this.video?.pause();
+      if (!keepPlaying) {
+         this.onPause();
+         this.video?.pause();
+      }
       this.flush();
    }
    private flush(): void {

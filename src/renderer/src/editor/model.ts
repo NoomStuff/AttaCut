@@ -30,17 +30,32 @@ export function editorReducer(state: EditorState, action: EditAction): EditorSta
          };
       case "resolve": {
          if (state.document !== action.document) return state;
+         const corrections = new Map([...action.times].filter(([requested, resolved]) => requested !== resolved));
+         if (!corrections.size) return state;
          const resolve = (document: EditDocument): EditDocument => {
-            const clips = document.clips.map((clip) => ({
-               ...clip,
-               start: action.times.get(clip.start) ?? clip.start,
-               end: action.times.get(clip.end) ?? clip.end,
-            }));
-            // An older history entry may be shorter than the current source frame.
-            // Resolve it when restored rather than producing an invalid saved document.
-            return clips.some((clip) => clip.end <= clip.start) ? document : { ...document, clips };
+            let clips: Clip[] | null = null;
+            for (const [index, clip] of document.clips.entries()) {
+               const start = corrections.get(clip.start) ?? clip.start;
+               const end = corrections.get(clip.end) ?? clip.end;
+               // An older history entry may be shorter than the current source frame.
+               // Resolve it when restored rather than producing an invalid saved document.
+               if (end <= start) return document;
+               if (start === clip.start && end === clip.end) continue;
+               clips ??= document.clips.slice();
+               clips[index] = { ...clip, start, end };
+            }
+            return clips ? { ...document, clips } : document;
          };
-         return { ...state, document: resolve(state.document), past: state.past.map(resolve), future: state.future.map(resolve) };
+         const document = resolve(state.document);
+         const past = state.past.map(resolve);
+         const future = state.future.map(resolve);
+         if (
+            document === state.document &&
+            past.every((document, index) => document === state.past[index]) &&
+            future.every((document, index) => document === state.future[index])
+         )
+            return state;
+         return { ...state, document, past, future };
       }
       case "commit": {
          if (

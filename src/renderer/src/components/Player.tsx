@@ -83,7 +83,7 @@ export function Player({
 }) {
    const [readyUrl, setReadyUrl] = useState<string | null>(null);
    const playbackFailure = useEffectEvent(onFailure);
-   useEffect(() => connectPlayback(videoRef.current!, playback, () => playbackFailure()), [videoRef, playback]);
+   useEffect(() => connectPlayback(videoRef.current!, playback, seeker, () => playbackFailure()), [videoRef, playback, seeker]);
    const [frameHeld, setFrameHeld] = useState(false);
    const [skipFrameFade, setSkipFrameFade] = useState(false);
    const snapshotRef = useRef<HTMLCanvasElement>(null);

@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { MediaSource } from "../../../shared/types";
 import { afterIdle } from "./prefetch";
@@ -24,7 +24,6 @@ export function useKeyframes({ source, snapping, loading, preparing, videoRef, o
    const [reading, setReading] = useState(false);
    const ready = useRef<string | null>(null);
    const loadedFor = useRef<string | null>(null);
-   const reportError = useEffectEvent(onError);
    useEffect(() => {
       if (loadedFor.current !== (source?.id ?? null)) {
          loadedFor.current = source?.id ?? null;
@@ -45,7 +44,7 @@ export function useKeyframes({ source, snapping, loading, preparing, videoRef, o
                }
             })
             .catch((value: unknown) => {
-               if (!cancelled && snapping) reportError(errorText(value));
+               if (!cancelled && snapping) onError(errorText(value));
             })
             .finally(() => {
                if (!cancelled) setReading(false);
@@ -67,6 +66,6 @@ export function useKeyframes({ source, snapping, loading, preparing, videoRef, o
          cancelIdle();
          video?.removeEventListener("loadeddata", schedule);
       };
-   }, [source, snapping, loading, preparing, videoRef]);
+   }, [source, snapping, loading, preparing, videoRef, onError]);
    return { keyframes, reading };
 }

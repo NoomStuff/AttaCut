@@ -2,6 +2,27 @@ import { expect } from "@playwright/test";
 import { test, waitForVideo, configureIpc } from "./app.mjs";
 import { resolve } from "node:path";
 
+test("opening frame export cancels pending playback while a preview is preparing", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, "");
+   const page = await app.firstWindow();
+   await page.getByRole("button", { name: "Open file", exact: true }).waitFor();
+   await configureIpc(app, "source:open", { rememberUrl: true, unsupportedAudio: true });
+   await configureIpc(app, "preview:prepare", { before: "preview", previewSuffix: "?prepared=1" });
+   await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
+   await waitForVideo(page);
+   await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.waiting("preview"))).toBe(true);
+   await page.getByRole("button", { name: "Play", exact: true }).click();
+   await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+   await page.getByRole("button", { name: "Export current frame", exact: true }).click();
+   await expect(page.getByRole("dialog", { name: "Export current frame", exact: true })).toBeVisible();
+   await app.evaluate(() => globalThis.attacutTestIpc.release("preview"));
+   await expect(page.locator("video")).toHaveAttribute("src", /prepared=1/);
+   await waitForVideo(page);
+   await expect(page.locator("video")).toHaveJSProperty("paused", true);
+   await page.keyboard.press("Escape");
+   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+});
+
 test("opening shows a skeleton, then permits editing while preview loads", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();

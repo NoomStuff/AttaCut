@@ -2,16 +2,47 @@ import { expect, it, vi } from "vitest";
 import type { MediaSource } from "../../../shared/types";
 import { PlaybackController } from "./controller";
 import { connectPlayback } from "./transport";
+import { PlaybackSeeker } from "./seeker";
+import { PlaybackClock } from "./clock";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 function setup() {
    const playback = new PlaybackController();
    playback.source({ id: "source", url: "source" } as MediaSource);
-   const video = Object.assign(new EventTarget(), { readyState: 0, currentSrc: "source", play: vi.fn(async () => {}) });
+   const video = Object.assign(new EventTarget(), { readyState: 0, currentSrc: "source", seeking: false, currentTime: 0, play: vi.fn(async () => {}) });
    const failure = vi.fn();
-   const disconnect = connectPlayback(video as unknown as HTMLVideoElement, playback, failure);
-   return { playback, video, failure, disconnect };
+   const seeker = new PlaybackSeeker(new PlaybackClock());
+   const disconnect = connectPlayback(video as unknown as HTMLVideoElement, playback, seeker, failure);
+   return { playback, video, seeker, failure, disconnect };
 }
+
+it("waits for the requested frame before starting clip playback", async () => {
+   vi.stubGlobal("cancelAnimationFrame", vi.fn());
+   const { playback, video, seeker, disconnect } = setup();
+   const detach = seeker.attach(video as unknown as HTMLVideoElement);
+   try {
+      video.readyState = 2;
+      let finish!: (time: number) => void;
+      seeker.configure(
+         () =>
+            new Promise((resolve) => {
+               finish = resolve;
+            })
+      );
+      seeker.seek(6, true);
+      playback.request(true);
+      await flush();
+      expect(video.play).not.toHaveBeenCalled();
+      finish(6);
+      await flush();
+      expect(video.currentTime).toBeCloseTo(6, 5);
+      expect(video.play).toHaveBeenCalledOnce();
+   } finally {
+      disconnect();
+      detach();
+      vi.unstubAllGlobals();
+   }
+});
 
 it("starts a play request after metadata, and reports actual decoder failures", async () => {
    const { playback, video, failure, disconnect } = setup();

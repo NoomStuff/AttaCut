@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import type { MediaSource, Preferences, SavedSession } from "../../../shared/types";
 import type { EditorState } from "./model";
@@ -27,7 +27,6 @@ export function usePersistence({
 }): void {
    const latestSnapshot = useRef({ preferences, session: null as SavedSession | null });
    latestSnapshot.current = { preferences, session: sessionFor(source, editor, restore, project) };
-   const reportError = useEffectEvent((value: unknown) => setError(errorText(value)));
    useEffect(() => {
       const flush = window.desktop.onFlush(() => {
          window.desktop.flushStarted();
@@ -40,25 +39,25 @@ export function usePersistence({
                closing: !!latestSnapshot.current.session?.project,
                cancelClose: !!pending && !saved,
             });
-         })().catch(reportError);
+         })().catch((value: unknown) => setError(errorText(value)));
       });
       return () => {
          flush();
       };
-   }, [pendingProjectSave]);
+   }, [pendingProjectSave, setError]);
    useEffect(() => {
       if (!ready) return;
       const timer = window.setTimeout(() => {
-         void window.desktop.savePreferences(preferences).catch(reportError);
+         void window.desktop.savePreferences(preferences).catch((value: unknown) => setError(errorText(value)));
       }, 100);
       return () => window.clearTimeout(timer);
-   }, [preferences, ready]);
+   }, [preferences, ready, setError]);
    useEffect(() => {
       if (!source) return;
       const timer = window.setTimeout(() => {
          const snapshot = sessionFor(source, editor, null, project);
-         if (snapshot) void window.desktop.saveSession(encodeSession(snapshot)).catch(reportError);
+         if (snapshot) void window.desktop.saveSession(encodeSession(snapshot)).catch((value: unknown) => setError(errorText(value)));
       }, 500);
       return () => window.clearTimeout(timer);
-   }, [source, editor, project]);
+   }, [source, editor, project, setError]);
 }

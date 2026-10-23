@@ -44,7 +44,11 @@ export function usePlayback({
       if (source && audioIndices.length) audibleSelection.current = { sourceId: source.id, tracks: audioIndices };
    }, [source, audioIndices]);
    const [clock] = useState(() => new PlaybackClock());
-   const [seeker] = useState(() => new PlaybackSeeker(clock));
+   const [seeker] = useState(() => new PlaybackSeeker(clock, () => playback.pause()));
+   const pause = () => {
+      playback.pause();
+      videoRef.current?.pause();
+   };
    const [scrubber] = useState(() => new AudioScrubber());
    // Each source/selection owns a small PCM working set. Old identities are cleared immediately.
    useEffect(() => {
@@ -134,6 +138,7 @@ export function usePlayback({
    };
    return {
       playing,
+      pause,
       setPlaying,
       speed,
       setSpeed,

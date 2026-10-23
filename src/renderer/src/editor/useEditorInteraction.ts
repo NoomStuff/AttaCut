@@ -85,9 +85,9 @@ export function useEditorInteraction({
          const ending = documentRef.current.clips.some((clip) => clip.end === requested);
          const starting = documentRef.current.clips.some((clip) => clip.start === requested);
          // Keep the timeline at the accepted cutoff. End previews still show the last kept frame.
-         seeker.seek(actual, false, false, ending && !starting ? -1 : 0);
+         seeker.seek(actual, playback.get().intent !== "paused", false, ending && !starting ? -1 : 0);
       },
-      [clock, seeker, videoRef, documentRef]
+      [clock, seeker, playback, videoRef, documentRef]
    );
    useFrameBoundaries(source, editor.document, dispatch, showError, alignResolvedBoundary);
    const frameStep = 1 / ((source && primaryVideo(source)?.frameRate) || 100);

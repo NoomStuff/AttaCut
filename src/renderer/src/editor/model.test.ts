@@ -42,9 +42,22 @@ describe("source-time editing", () => {
       const resolved = editorReducer(committed, { type: "resolve", document: requested, times: new Map([[1.25, 1.266666]]) });
       expect(resolved.document.clips[0]!.start).toBe(1.266666);
       expect(resolved.past).toHaveLength(1);
+      expect(resolved.past[0]).toBe(committed.past[0]);
       expect(editorReducer(resolved, { type: "undo" }).document).toEqual(source);
       const newer = editorReducer(committed, { type: "commit", document: trimClip(requested, "a", "start", 2, 120) });
       expect(editorReducer(newer, { type: "resolve", document: requested, times: new Map([[1.25, 1.266666]]) })).toBe(newer);
+   });
+   it("keeps aligned frame resolutions from copying a full undo history", () => {
+      const clips = Array.from({ length: clipLimit }, (_, index) => ({ id: String(index), start: index, end: index + 0.75, color: 0 }));
+      const document = { clips, selectedId: "0" };
+      const state = { document, past: Array.from({ length: undoLimit }, () => ({ ...document, clips: [...clips] })), future: [] };
+      const unchanged = editorReducer(state, { type: "resolve", document, times: new Map([[0.75, 0.75]]) });
+      expect(unchanged).toBe(state);
+      const resolved = editorReducer(state, { type: "resolve", document, times: new Map([[0.75, 0.8]]) });
+      expect(resolved.document.clips[0]!.end).toBe(0.8);
+      expect(resolved.past.at(-1)!.clips[0]!.end).toBe(0.8);
+      expect(resolved.document.clips[1]).toBe(clips[1]);
+      expect(state.document.clips[0]!.end).toBe(0.75);
    });
    it("splits, trims a gap, and undoes the whole edit without moving other clips", () => {
       const trimmed = trimClip(trimClip(source, "a", "start", 10, 120), "a", "end", 100, 120);

@@ -42,6 +42,7 @@ it("round trips clips and history with both source paths, without recovery metad
    expect(projectHasChanges(saved)).toBe(false);
    expect(projectHasChanges({ ...saved, clips: [] })).toBe(true);
    expect(projectHasChanges({ ...saved, selectedId: "a" })).toBe(false);
+   expect(projectHasChanges({ ...saved, clips: saved.clips.map(({ id, start, end, color }) => ({ color, end, start, id })) })).toBe(false);
    expect(await readFile(session.path, "utf8")).toBe("source bytes");
 });
 

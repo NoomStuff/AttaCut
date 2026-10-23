@@ -21,6 +21,7 @@ test("frame export waits for a pending end seek and saves the last included fram
    await app.evaluate(() => globalThis.attacutTestIpc.release("frame-resolution"));
    await expect(page.locator(".frame-thumbnail")).toBeVisible();
    await expect(save).toBeEnabled();
+   await expect(page.getByRole("dialog").getByText("00:04.97", { exact: true })).toBeVisible();
    await page.getByRole("textbox", { name: "Save frame to", exact: true }).fill(profile);
    await page.getByRole("textbox", { name: "Frame filename", exact: true }).fill("end-frame");
    await save.click();

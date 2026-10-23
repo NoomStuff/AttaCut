@@ -1,11 +1,22 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { projectFileSchema } from "../shared/project";
+import { z } from "zod";
+import { legacySessionSchema, storedSessionSchema } from "../shared/session-storage";
 import { encodeSession } from "../shared/session-codec";
-import type { ProjectFile } from "../shared/project";
 import type { MediaSource, SavedSession } from "../shared/types";
 import { protectSource, publishOutput } from "./media/publish";
 import { withTemporaryOutput } from "./media/transaction";
+
+// Project files cross the disk boundary here. Renderer project helpers need no validators.
+const projectShape = {
+   format: z.literal("AttaCut"),
+   relativeSource: z.string().min(1).nullable(),
+};
+const projectFileSchema = z.union([
+   z.object({ ...projectShape, version: z.literal(1), session: legacySessionSchema }),
+   z.object({ ...projectShape, version: z.literal(2), session: storedSessionSchema }),
+]);
+export type ProjectFile = z.infer<typeof projectFileSchema>;
 
 // Legacy projects can contain full undo snapshots; keep them readable during migration.
 const maxProjectBytes = 128 * 1024 * 1024;

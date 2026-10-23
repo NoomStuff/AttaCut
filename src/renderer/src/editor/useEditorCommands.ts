@@ -66,7 +66,7 @@ export function useEditorCommands({
       confirmProject,
       closeProject,
    } = session;
-   const { muted, setMuted, playback, videoRef, clock, seeker } = session.player;
+   const { muted, setMuted, playback, pause, videoRef, clock, seeker } = session.player;
    const { clip, trimming, trimmingRef, remember, commit, seek, currentClip, deleteTarget, frameStep, animateTrim, setBoundary } = editing;
    const showError = onError;
    const togglePlay = () => {
@@ -74,13 +74,11 @@ export function useEditorCommands({
       if (!video) return;
       playback.previewEnd = null;
       if (playback.get().intent === "requested") {
-         video.pause();
-         playback.pause();
+         pause();
          return;
       }
       if (!video.paused) {
-         playback.pause();
-         video.pause();
+         pause();
          return;
       }
       const time = clock.get();
@@ -100,7 +98,7 @@ export function useEditorCommands({
    const warnClipLimit = () => onWarning(`This timeline has reached ${clipLimit.toLocaleString()} clips. Merge or delete a clip before adding another.`);
    const frameSequence = useRef(0);
    const stepFrame = (direction: -1 | 1) => {
-      videoRef.current?.pause();
+      pause();
       playback.previewEnd = null;
       const sequence = ++frameSequence.current;
       const id = source!.id;
@@ -190,7 +188,7 @@ export function useEditorCommands({
       export: {
          enabled: () => available() && !!editor.document.clips.length && !job?.running,
          run: () => {
-            videoRef.current?.pause();
+            pause();
             view.openPanel("export");
          },
       },
@@ -200,7 +198,7 @@ export function useEditorCommands({
       frame: {
          enabled: available,
          run: () => {
-            videoRef.current?.pause();
+            pause();
             view.openPanel("frame");
          },
       },
@@ -246,8 +244,7 @@ export function useEditorCommands({
       autoDetectCuts: {
          enabled: () => available() && editor.document.clips.length > 0,
          run: () => {
-            videoRef.current?.pause();
-            playback.pause();
+            pause();
             view.openPanel("scenes");
          },
       },
