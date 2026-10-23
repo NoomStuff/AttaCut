@@ -17,6 +17,10 @@ export class PlaybackClock {
    getDisplayed(url: string): number | null {
       return this.displayed?.url === url ? this.displayed.frame : null;
    }
+   /** Animated viewport bounds sample live playback rather than the preceding RAF's clock tick. */
+   previewTime(video: HTMLVideoElement | null, pending: boolean): number {
+      return video && !video.paused && !video.seeking && !pending && video.readyState >= 2 ? video.currentTime : this.time;
+   }
    /** Pending navigation owns the next frame; otherwise use the frame Chromium presented. */
    currentFrame(video: HTMLVideoElement | null, pending: boolean): number {
       if (pending || video?.seeking) return this.getFrame();

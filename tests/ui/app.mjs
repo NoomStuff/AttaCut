@@ -19,6 +19,25 @@ export async function configureIpc(app, channel, rule) {
    await app.evaluate((_electron, { channel, rule }) => globalThis.attacutTestIpc.configure(channel, rule), { channel, rule });
 }
 
+// macOS changes isFullScreen before its native transition has finished.
+export async function observeNativeFullscreen(app) {
+   await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      globalThis.fullscreenSettled = window.isFullScreen();
+      window.on("enter-full-screen", () => {
+         globalThis.fullscreenSettled = true;
+      });
+      window.on("leave-full-screen", () => {
+         globalThis.fullscreenSettled = false;
+      });
+   });
+}
+export async function waitForNativeFullscreen(app, fullscreen) {
+   await expect
+      .poll(() => app.evaluate(({ BrowserWindow }) => [BrowserWindow.getAllWindows()[0].isFullScreen(), globalThis.fullscreenSettled]))
+      .toEqual([fullscreen, fullscreen]);
+}
+
 export async function waitForVideo(page) {
    try {
       // Cold CI runners may need to initialize software decoding and prepare audio.

@@ -152,6 +152,7 @@ export function usePlayback({
       setAudioIndices,
       videoRef,
       clock,
+      getPreviewTime: () => clock.previewTime(videoRef.current, seeker.pending),
       seeker,
       scrubber,
       preparePreview,

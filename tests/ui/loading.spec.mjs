@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { test, waitForVideo, configureIpc } from "./app.mjs";
+import { test, waitForVideo, configureIpc, observeNativeFullscreen, waitForNativeFullscreen } from "./app.mjs";
 import { resolve } from "node:path";
 
 test("opening frame export cancels pending playback while a preview is preparing", async ({ launchApp, profile }) => {
@@ -13,9 +13,12 @@ test("opening frame export cancels pending playback while a preview is preparing
    await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.waiting("preview"))).toBe(true);
    await page.getByRole("button", { name: "Play", exact: true }).click();
    await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+   await observeNativeFullscreen(app);
    await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
+   await waitForNativeFullscreen(app, true);
    await expect(page.locator(".fullscreen-controls").getByRole("button", { name: "Pause", exact: true })).toBeVisible();
    await page.keyboard.press("Escape");
+   await waitForNativeFullscreen(app, false);
    await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
    await page.getByRole("button", { name: "Export current frame", exact: true }).click();
    await expect(page.getByRole("dialog", { name: "Export current frame", exact: true })).toBeVisible();

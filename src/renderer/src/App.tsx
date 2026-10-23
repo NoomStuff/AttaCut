@@ -482,6 +482,7 @@ export default function App() {
                   <div className={`editor-dock${trimAnimating ? " trim-animating" : ""}`}>
                      <Timeline
                         key={source.id}
+                        previewTime={session.player.getPreviewTime}
                         document={timelineDocument}
                         duration={source.duration}
                         frameStep={frameStep}

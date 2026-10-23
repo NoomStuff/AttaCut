@@ -4,6 +4,16 @@ import { PlaybackSeeker } from "./seeker";
 import { PlaybackController } from "./controller";
 import type { MediaSource } from "../../../shared/types";
 
+it("samples live preview time for animated follow bounds without replacing a pending seek", () => {
+   const clock = new PlaybackClock();
+   clock.set(16);
+   const video = { currentTime: 16.15, readyState: 2, seeking: false, paused: false } as HTMLVideoElement;
+   expect(clock.previewTime(video, false)).toBe(16.15);
+   expect(clock.previewTime(video, true)).toBe(16);
+   expect(clock.previewTime({ ...video, paused: true }, false)).toBe(16);
+   expect(clock.get()).toBe(16);
+});
+
 it("uses the resolved seek until Chromium presents a new frame", () => {
    const clock = new PlaybackClock();
    const video = { currentSrc: "source", currentTime: 5, seeking: false } as HTMLVideoElement;

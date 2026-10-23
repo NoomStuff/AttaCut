@@ -1,28 +1,7 @@
 import { expect } from "@playwright/test";
 import sharp from "sharp";
 import { resolve } from "node:path";
-import { test, waitForVideo, waitForPlaybackTime } from "./app.mjs";
-
-// Native fullscreen is asynchronous on macOS. A property change alone does
-// not mean a leave/enter transition has finished before the next action.
-async function observeNativeFullscreen(app) {
-   await app.evaluate(({ BrowserWindow }) => {
-      const window = BrowserWindow.getAllWindows()[0];
-      globalThis.fullscreenSettled = window.isFullScreen();
-      window.on("enter-full-screen", () => {
-         globalThis.fullscreenSettled = true;
-      });
-      window.on("leave-full-screen", () => {
-         globalThis.fullscreenSettled = false;
-      });
-   });
-}
-
-async function waitForNativeFullscreen(app, fullscreen) {
-   await expect
-      .poll(() => app.evaluate(({ BrowserWindow }) => [BrowserWindow.getAllWindows()[0].isFullScreen(), globalThis.fullscreenSettled]))
-      .toEqual([fullscreen, fullscreen]);
-}
+import { test, waitForVideo, waitForPlaybackTime, observeNativeFullscreen, waitForNativeFullscreen } from "./app.mjs";
 
 // Compare the presented picture against the decoded frame, including letterboxing.
 // DOM bounds alone cannot detect a misplaced Windows video overlay.

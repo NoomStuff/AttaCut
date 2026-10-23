@@ -28,6 +28,7 @@ interface TimelineProps {
    duration: number;
    frameStep: number;
    clock: PlaybackClock;
+   previewTime: () => number;
    fitToken: number;
    zoomRequest: { id: number; direction: number };
    /** Pans (zoom=false) or zooms and pans (zoom=true) so the range sits in view. */
@@ -61,6 +62,7 @@ export function Timeline({
    duration,
    frameStep,
    clock,
+   previewTime,
    fitToken,
    zoomRequest,
    viewRequest,
@@ -165,7 +167,7 @@ export function Timeline({
    const drawn = useTimelineMotion(view, {
       duration,
       playing,
-      time: clock.get,
+      time: previewTime,
       pointer: panning.current !== null || drag.current !== null || scrubbing.current !== null,
       immediate: () => panning.current !== null,
    });
