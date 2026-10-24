@@ -39,9 +39,3 @@
 .audio-picker:has(.select-trigger[aria-expanded="true"]) .tooltip {
    display: none;
 }
-.audio-picker .select-menu {
-   left: auto;
-   right: 0;
-   min-width: 220px;
-   transform-origin: right bottom;
-}

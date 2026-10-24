@@ -95,5 +95,17 @@ test("compact editor keeps timing and preview controls within the window", async
             )
             .toBeLessThan(1);
       }
+      const audio = page.getByRole("button", { name: "Preview audio tracks", exact: true });
+      await audio.click();
+      await expect
+         .poll(() =>
+            page.getByRole("listbox", { name: "Preview audio tracks", exact: true }).evaluate((menu) => {
+               const rect = menu.getBoundingClientRect();
+               return rect.left >= 0 && rect.right <= globalThis.innerWidth;
+            })
+         )
+         .toBe(true);
+      await page.keyboard.press("Escape");
+      await expect(audio).toHaveAttribute("aria-expanded", "false");
    }
 });
