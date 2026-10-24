@@ -8,11 +8,13 @@ export function AudioPicker({ tracks, selected, onSelect }: { tracks: MediaStrea
    // One chosen track reads as its number; several show how many of the total play, since
    // "2" alone is ambiguous between the second track and two tracks. Every track is "All".
    const label =
-      selected.length === tracks.length
-         ? "All"
-         : selected.length === 1
-           ? String(tracks.findIndex((track) => track.index === selected[0]) + 1)
-           : `${selected.length}/${tracks.length}`;
+      tracks.length === 0
+         ? "None"
+         : selected.length === tracks.length
+           ? "All"
+           : selected.length === 1
+             ? String(tracks.findIndex((track) => track.index === selected[0]) + 1)
+             : `${selected.length}/${tracks.length}`;
    return (
       <DropdownSelect
          label="Preview audio tracks"
@@ -23,7 +25,7 @@ export function AudioPicker({ tracks, selected, onSelect }: { tracks: MediaStrea
          placement="up"
          disabled={tracks.length <= 1}
          className="audio-picker"
-         tooltip="Preview audio tracks"
+         tooltip={tracks.length === 0 ? "This video has no audio tracks" : "Preview audio tracks"}
          onChange={(values) => onSelect(values.map(Number))}
          trigger={
             <>

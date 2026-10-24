@@ -10,10 +10,10 @@
    gap: 9px;
    align-items: center;
    justify-content: center;
-   padding: 10px 14px;
-   border-radius: 7px;
-   min-height: 37px;
-   font-size: 12px;
+   padding: 8px 14px;
+   border-radius: var(--radius-control);
+   min-height: var(--control-height);
+   font-size: 13px;
    font-weight: 600;
    /* Hover attack is instant; the release eases back out via the base transition. */
    transition:
@@ -31,7 +31,7 @@
    font-size: 14px;
 }
 .button:is(:hover:not(:disabled), .shortcut-active) {
-   background: var(--surface-hover);
+   background: var(--control-hover-background, var(--surface-hover));
    transition:
       background-color 0ms,
       color 0ms,
@@ -49,16 +49,20 @@
    half-pixel positions at most window sizes). An integer translate never resamples the layer,
    so it is safe at any position. */
 .button.primary {
-   background: var(--accent);
+   background: var(--control-accent-background, var(--accent));
    color: var(--accent-text);
-   padding: 11px 20px;
+   padding: 8px 18px;
 }
 .button.primary:is(:hover:not(:disabled), .shortcut-active) {
-   background: var(--accent-hover);
+   background: var(--control-accent-hover-background, var(--accent-hover));
 }
 .button.secondary {
-   border: 1px solid var(--line);
-   background: var(--surface-raised);
+   border: 1px solid var(--field-border);
+   background: var(--control-background, var(--surface-raised));
+}
+.button.secondary:is(:hover:not(:disabled), .shortcut-active) {
+   background: var(--control-hover-background, var(--surface-hover));
+   border-color: var(--muted);
 }
 .button.danger {
    color: var(--danger);
@@ -83,8 +87,8 @@
    font-weight: 400;
 }
 .icon-button {
-   width: 36px;
-   height: 36px;
+   width: var(--control-height);
+   height: var(--control-height);
    padding: 0;
 }
 .tooltip-host {
@@ -125,12 +129,20 @@
    transform: translateX(-50%);
 }
 .modal {
+   --control-background: color-mix(in srgb, var(--surface-raised) 20%, transparent);
+   --control-hover-background: color-mix(in srgb, var(--surface-hover) 35%, transparent);
+   --control-selected-background: color-mix(in srgb, var(--surface-hover) 85%, transparent);
+   --control-well-background: color-mix(in srgb, var(--background) 15%, transparent);
+   --control-accent-background: color-mix(in srgb, var(--accent) 98%, transparent);
+   --control-accent-hover-background: color-mix(in srgb, var(--accent-hover) 98%, transparent);
+   --panel-footer-background: color-mix(in srgb, var(--surface) 20%, transparent);
    outline: none;
-   background: var(--surface);
+   background: var(--panel-background);
+   backdrop-filter: blur(16px);
    color: var(--text);
    border: 1px solid var(--line);
    padding: 0;
-   border-radius: 12px;
+   border-radius: var(--radius-panel);
    width: min(720px, calc(100vw - 60px));
    max-height: calc(100vh - 70px);
    box-shadow: var(--modal-shadow);
@@ -180,6 +192,7 @@
    align-items: flex-start;
    justify-content: space-between;
    padding: 24px 24px 18px;
+   flex-shrink: 0;
 }
 .modal-header > div {
    flex: 1;
@@ -201,12 +214,13 @@
    padding: 0 24px;
    border-bottom: 1px solid var(--line);
    margin-bottom: 15px;
-   gap: 22px;
+   gap: 12px;
+   flex-shrink: 0;
 }
 
 .modal-tabs button {
-   padding: 10px;
-   font-size: 12px;
+   padding: 10px 12px;
+   font-size: 13px;
    border-bottom: 2px solid transparent;
    color: var(--muted);
    border-radius: 5px;
@@ -217,13 +231,16 @@
 
 .modal-tabs button:hover {
    color: var(--text);
+   background: var(--control-hover-background, var(--surface-hover));
    transition-duration: 0ms;
 }
 
 .modal-tabs button[aria-selected="true"] {
    border-radius: 5px 5px 0 0;
    border-color: var(--accent);
-   color: var(--text);
+   color: var(--accent);
+   background: var(--control-selected-background, var(--surface-hover));
+   font-weight: 600;
 }
 
 .modal-body {
@@ -240,7 +257,9 @@
    font-size: 11px;
    position: sticky;
    bottom: 0;
-   background: var(--surface);
+   background: var(--panel-footer-background, var(--surface));
+   backdrop-filter: blur(12px);
+   flex-shrink: 0;
 }
 .panel-modal {
    height: min(620px, calc(100vh - 70px));
@@ -287,37 +306,52 @@
    max-height: 150px;
    overflow-y: auto;
 }
-.toggle-row {
+.toggle-row,
+.setting-row {
    display: flex;
    justify-content: space-between;
    align-items: center;
    gap: 20px;
-   padding: 18px 0;
+   padding: 16px 0;
    border-bottom: 1px solid var(--line);
    font-size: 13px;
+}
+.toggle-row {
    position: relative;
    cursor: pointer;
 }
-.toggle-row small {
+.toggle-row:has(input:disabled) {
+   cursor: default;
+   opacity: 0.5;
+}
+.toggle-row small,
+.setting-row small {
    display: block;
    color: var(--muted);
-   font-size: 11px;
-   margin-top: 5px;
+   font-size: 12px;
+   line-height: 1.5;
+   margin-top: 4px;
    overflow-wrap: anywhere;
 }
 .toggle-row > span:first-child {
    flex: 1;
+   min-width: 0;
+}
+.setting-row > div {
+   min-width: 0;
 }
 .toggle-row input {
    position: absolute;
    right: 0;
    opacity: 0;
-   width: 34px;
-   height: 24px;
+   width: 36px;
+   height: var(--control-height);
+   margin: 0;
 }
 .switch {
-   width: 33px;
-   height: 19px;
+   flex: 0 0 36px;
+   width: 36px;
+   height: 20px;
    border-radius: 12px;
    background: var(--faint);
    padding: 3px;
@@ -327,8 +361,8 @@
 .switch::before {
    content: "";
    display: block;
-   width: 13px;
-   height: 13px;
+   width: 14px;
+   height: 14px;
    border-radius: 50%;
    background: var(--surface);
    transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -337,9 +371,28 @@
    background: var(--accent);
 }
 .toggle-row input:checked + .switch::before {
-   transform: translateX(14px);
+   transform: translateX(16px);
 }
 .toggle-row input:focus-visible + .switch {
    outline: 2px solid var(--accent);
    outline-offset: 4px;
+}
+@media (prefers-reduced-transparency: reduce) {
+   .modal {
+      --control-background: var(--surface-raised);
+      --control-hover-background: var(--surface-hover);
+      --control-selected-background: var(--surface-hover);
+      --control-well-background: var(--background);
+      --control-accent-background: var(--accent);
+      --control-accent-hover-background: var(--accent-hover);
+      --panel-footer-background: var(--surface);
+      background: var(--surface);
+      backdrop-filter: none;
+   }
+   .modal::backdrop {
+      backdrop-filter: none;
+   }
+   .modal-footer {
+      backdrop-filter: none;
+   }
 }

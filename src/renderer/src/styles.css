@@ -30,12 +30,19 @@
    --background: #1c1f24;
    --preview-background: #191c21;
    --surface: #202327;
+   --panel-background: color-mix(in srgb, var(--surface) 94%, transparent);
    --surface-raised: #292d32;
    --surface-hover: #32373d;
    --text: #eef0f3;
-   --muted: #969da7;
-   --faint: #646c77;
+   --muted: #a3abb6;
+   --faint: #858e9a;
    --line: #343940;
+   --field-border: #464e58;
+   --control-height: 36px;
+   --control-height-compact: 30px;
+   --radius-control: 6px;
+   --radius-popover: 8px;
+   --radius-panel: 12px;
    --accent: var(--clip-0);
    --accent-text: #17191c;
    --accent-soft: color-mix(in srgb, var(--accent) 11%, transparent);
@@ -65,12 +72,14 @@
    --background: #f2f4f7;
    --preview-background: #212429;
    --surface: #fbfcfd;
+   --panel-background: color-mix(in srgb, var(--surface) 96%, transparent);
    --surface-raised: #ffffff;
    --surface-hover: #edf0f4;
    --text: #22262d;
    --muted: #5f6773;
    --faint: #646c78;
    --line: #dfe3e9;
+   --field-border: #b8c0cc;
    --accent-text: #ffffff;
    --accent-hover: color-mix(in srgb, var(--accent) 86%, black);
    --backdrop: #22262d45;
@@ -169,11 +178,21 @@ button.pressing.releasing::after {
 input,
 select {
    color: var(--text);
-   background: var(--surface-raised);
-   border: 1px solid var(--line);
-   border-radius: 6px;
-   padding: 9px 11px;
+   background: var(--control-background, var(--surface-raised));
+   border: 1px solid var(--field-border);
+   border-radius: var(--radius-control);
+   padding: 8px 11px;
    min-width: 0;
+}
+:where(input:not([type="range"], [type="checkbox"]), select) {
+   min-height: var(--control-height);
+}
+input:not([type="range"], [type="checkbox"]):hover:not(:disabled),
+select:hover:not(:disabled) {
+   border-color: var(--muted);
+}
+input[aria-invalid="true"] {
+   border-color: var(--danger);
 }
 input[type="checkbox"] {
    accent-color: var(--accent);

@@ -62,6 +62,7 @@ export default function App() {
    const [helpTab, setHelpTab] = useState<HelpTab>("intro");
    const [exportHelp, setExportHelp] = useState(false);
    const [menu, setMenu] = useState<string | null>(null);
+   const [menuFocusLast, setMenuFocusLast] = useState(false);
    const [confirmReset, setConfirmReset] = useState(false);
    const [error, setError] = useState<{ text: string; tone: "error" | "warning" | "info" } | null>(null);
    /** Errors interrupt work and deserve the red banner; warnings only explain a recoverable state. */
@@ -358,17 +359,16 @@ export default function App() {
                         <button
                            aria-haspopup="menu"
                            aria-expanded={menu === name}
-                           onClick={() => setMenu(menu === name ? null : name)}
+                           onClick={() => {
+                              setMenuFocusLast(false);
+                              setMenu(menu === name ? null : name);
+                           }}
                            onKeyDown={(event) => {
+                              if (event.key === "Tab") setMenu(null);
                               if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
                               event.preventDefault();
+                              setMenuFocusLast(event.key === "ArrowUp");
                               setMenu(name);
-                              const parent = event.currentTarget.parentElement;
-                              const last = event.key === "ArrowUp";
-                              requestAnimationFrame(() => {
-                                 const items = parent?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
-                                 if (items?.length) items[last ? items.length - 1 : 0]?.focus();
-                              });
                            }}
                         >
                            {name}
@@ -376,6 +376,7 @@ export default function App() {
                         <NavDropdown
                            clock={clock}
                            open={menu === name}
+                           focusLast={menuFocusLast}
                            sections={sections}
                            commands={commands}
                            shortcuts={preferences.shortcuts}

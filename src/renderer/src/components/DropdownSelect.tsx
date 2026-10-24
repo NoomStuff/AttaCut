@@ -39,6 +39,7 @@ export function DropdownSelect({
    const [open, setOpen] = useState(false);
    const root = useRef<HTMLDivElement>(null);
    const tooltipId = useId();
+   const menuId = useId();
    const presence = useExitValue(open ? true : null, 120);
    // Menus anchor to the trigger's left edge by default; when that would push them past
    // the surrounding dialog or the window, they flip to the trigger's right edge instead.
@@ -52,7 +53,7 @@ export function DropdownSelect({
       if (!trigger || !menu) return;
       const dialog = root.current?.closest("dialog")?.getBoundingClientRect();
       const limit = Math.min(dialog ? dialog.right - 14 : Number.POSITIVE_INFINITY, window.innerWidth - 12);
-      setFlipped(trigger.right + menu.getBoundingClientRect().width > limit);
+      setFlipped(trigger.left + menu.getBoundingClientRect().width > limit);
    }, [open, presence.mounted]);
    useEffect(() => {
       if (!open) return;
@@ -90,9 +91,16 @@ export function DropdownSelect({
          aria-label={label}
          aria-describedby={tooltip ? tooltipId : undefined}
          aria-haspopup="listbox"
+         aria-controls={open ? menuId : undefined}
          aria-expanded={open}
          disabled={disabled || options.length === 0}
          onClick={() => setOpen((current) => !current)}
+         onKeyDown={(event) => {
+            if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(true);
+         }}
       >
          <span>{trigger}</span>
          <FontAwesomeIcon className="select-chevron" icon={faChevronDown} />
@@ -113,11 +121,17 @@ export function DropdownSelect({
          {presence.mounted && presence.value && (
             <div
                className={`select-menu${presence.closing ? " closing" : ""}`}
+               id={menuId}
                role="listbox"
+               inert={!open || presence.closing}
                data-editor-shortcuts={presence.closing ? undefined : "blocked"}
                aria-label={label}
                aria-multiselectable={multiple || undefined}
+               onBlur={(event) => {
+                  if (!root.current?.contains(event.relatedTarget)) setOpen(false);
+               }}
                onKeyDown={(event) => {
+                  if (event.key === "Tab") setOpen(false);
                   if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
                      event.preventDefault();
                      event.stopPropagation();
@@ -141,6 +155,7 @@ export function DropdownSelect({
                         type="button"
                         key={option.value}
                         role="option"
+                        tabIndex={-1}
                         aria-selected={selected}
                         aria-disabled={cannotClear || undefined}
                         data-press-ignore

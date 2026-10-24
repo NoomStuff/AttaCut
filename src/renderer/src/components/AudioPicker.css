@@ -1,16 +1,16 @@
 /* Match the transport icon buttons: same box, radius, and a background-only hover, while
    keeping the selected-count readout. */
 .audio-picker .select-trigger {
-   width: 36px;
-   min-width: 36px;
-   height: 36px;
-   min-height: 36px;
+   width: var(--control-height);
+   min-width: var(--control-height);
+   height: var(--control-height);
+   min-height: var(--control-height);
    padding: 0;
    justify-content: center;
    gap: 4px;
    border-color: transparent;
    background: transparent;
-   border-radius: 7px;
+   border-radius: var(--radius-control);
    transition: background-color 170ms ease-out;
 }
 .audio-picker .select-trigger:hover:not(:disabled),

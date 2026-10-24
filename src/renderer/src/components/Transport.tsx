@@ -153,8 +153,8 @@ export function Transport({
                      <TimeField key={`${clip.id}:start`} label="Start" value={clip.start} onChange={(value) => onBoundary("start", value)} />
                      <TimeField key={`${clip.id}:end`} label="End" value={clip.end} onChange={(value) => onBoundary("end", value)} />
                      <span className="clip-duration">
-                        {formatTime(clip.end - clip.start)}
-                        <small>duration</small>
+                        <small>Duration</small>
+                        <time>{formatTime(clip.end - clip.start)}</time>
                      </span>
                   </div>
                </>
@@ -179,29 +179,33 @@ export function Transport({
             </div>
          </div>
          <div className="volume-controls">
-            <SpeedPicker speed={speed} onChange={onSpeed} />
-            <AudioPicker tracks={source.streams.filter((stream) => stream.type === "audio")} selected={audioIndices} onSelect={onAudio} />
-            <VolumeControl volume={volume} muted={muted} onChange={onVolume} />
-            <span className="control-divider" />
-            <div className="zoom-controls" role="group" aria-label="Timeline zoom">
-               <IconButton command="zoomOut" icon={faMagnifyingGlassMinus} label="Zoom out" />
-               <Button shortcut="" command="fit" className="zoom-percent" aria-label="Fit timeline">
-                  {Math.round(zoom)}%
-               </Button>
-               <IconButton command="zoomIn" icon={faMagnifyingGlassPlus} label="Zoom in" />
+            <div className="audio-controls">
+               <SpeedPicker speed={speed} onChange={onSpeed} />
+               <AudioPicker tracks={source.streams.filter((stream) => stream.type === "audio")} selected={audioIndices} onSelect={onAudio} />
+               <VolumeControl volume={volume} muted={muted} onChange={onVolume} />
             </div>
-            <span className="control-divider" />
-            <IconButton
-               command="snap"
-               icon={faMagnet}
-               label="Snap to keyframes"
-               active={snapping}
-               aria-pressed={snapping}
-               aria-busy={readingKeys}
-               disabled={readingKeys}
-            />
-            <IconButton command="fullscreen" icon={faExpand} label="Fullscreen video" onClick={onFullscreen} />
-            <IconButton icon={faSliders} label="Settings" onClick={onSettings} shortcutFrom="options" />
+            <span className="control-divider preview-tools-divider" />
+            <div className="view-controls">
+               <div className="zoom-controls" role="group" aria-label="Timeline zoom">
+                  <IconButton command="zoomOut" icon={faMagnifyingGlassMinus} label="Zoom out" />
+                  <Button shortcut="" command="fit" className="zoom-percent" aria-label="Fit timeline">
+                     {Math.round(zoom)}%
+                  </Button>
+                  <IconButton command="zoomIn" icon={faMagnifyingGlassPlus} label="Zoom in" />
+               </div>
+               <span className="control-divider" />
+               <IconButton
+                  command="snap"
+                  icon={faMagnet}
+                  label="Snap to keyframes"
+                  active={snapping}
+                  aria-pressed={snapping}
+                  aria-busy={readingKeys}
+                  disabled={readingKeys}
+               />
+               <IconButton command="fullscreen" icon={faExpand} label="Fullscreen video" onClick={onFullscreen} />
+               <IconButton icon={faSliders} label="Settings" onClick={onSettings} shortcutFrom="options" />
+            </div>
          </div>
       </div>
    );

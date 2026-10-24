@@ -111,7 +111,7 @@
    background: var(--surface-raised);
    border: 1px solid var(--line);
    box-shadow: var(--shadow-pop);
-   border-radius: 9px;
+   border-radius: var(--radius-popover);
    transform-origin: 12px top;
    animation: dropdown-in 140ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
@@ -148,10 +148,11 @@
    gap: 22px;
    text-align: left;
    border-radius: 4px;
-   font-size: 12px;
+   font-size: 13px;
    transition: background-color 150ms ease-out;
 }
-.dropdown button:hover:not(:disabled) {
+.dropdown button:hover:not(:disabled),
+.dropdown button:focus-visible {
    background: var(--surface-hover);
    transition-duration: 0ms;
 }
@@ -356,34 +357,17 @@
    }
 }
 @media (max-width: 1050px) {
-   .toolbar {
-      padding-right: 18px;
-   }
    .toolbar nav {
       gap: 0;
    }
    .app-menu > button {
       padding: 7px;
    }
-   .workspace {
-      padding-left: 18px;
-      padding-right: 18px;
-   }
    .editor-dock {
       padding-left: 14px;
       padding-right: 14px;
    }
 }
-@media (max-height: 650px) {
-   .titlebar {
-      height: 32px;
-      min-height: 32px;
-   }
-   .editor-dock {
-      margin-top: 10px;
-   }
-}
-
 .dropdown button > span {
    flex-shrink: 0;
 }

@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import type { Preferences } from "../../../shared/types";
 import { bindingsFor, commandDefinitions, displayBindings } from "../editor/commands";
 import type { CommandId, Commands } from "../editor/commands";
@@ -8,6 +8,7 @@ import { useExitValue } from "../lib/motion";
 export function NavDropdown({
    clock,
    open,
+   focusLast,
    sections,
    commands,
    shortcuts,
@@ -16,6 +17,7 @@ export function NavDropdown({
 }: {
    clock: PlaybackClock;
    open: boolean;
+   focusLast: boolean;
    sections: CommandId[][];
    commands: Commands;
    shortcuts: Preferences["shortcuts"];
@@ -24,12 +26,24 @@ export function NavDropdown({
 }) {
    const presence = useExitValue(open ? true : null, 120);
    if (!presence.mounted) return null;
-   return <NavDropdownItems clock={clock} closing={presence.closing} sections={sections} commands={commands} shortcuts={shortcuts} mac={mac} close={close} />;
+   return (
+      <NavDropdownItems
+         clock={clock}
+         closing={presence.closing}
+         focusLast={focusLast}
+         sections={sections}
+         commands={commands}
+         shortcuts={shortcuts}
+         mac={mac}
+         close={close}
+      />
+   );
 }
 
 function NavDropdownItems({
    clock,
    closing,
+   focusLast,
    sections,
    commands,
    shortcuts,
@@ -38,6 +52,7 @@ function NavDropdownItems({
 }: {
    clock: PlaybackClock;
    closing: boolean;
+   focusLast: boolean;
    sections: CommandId[][];
    commands: Commands;
    shortcuts: Preferences["shortcuts"];
@@ -46,11 +61,25 @@ function NavDropdownItems({
 }) {
    // Subscribed only while mounted, so closed menus never tick with the clock.
    useClock(clock);
+   const root = useRef<HTMLDivElement>(null);
+   // Focus after presence mounts the items. A frame scheduled by the trigger can run
+   // before that mount, leaving keyboard users on the trigger with no selected item.
+   useEffect(() => {
+      if (closing) return;
+      const items = root.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+      if (items?.length) items[focusLast ? items.length - 1 : 0]?.focus();
+   }, [closing, focusLast]);
    return (
       <div
+         ref={root}
          className={`dropdown${closing ? " closing" : ""}`}
          role="menu"
+         inert={closing}
+         onBlur={(event) => {
+            if (!event.currentTarget.parentElement?.contains(event.relatedTarget)) close();
+         }}
          onKeyDown={(event) => {
+            if (event.key === "Tab") close();
             const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
             const index = items.indexOf(document.activeElement as HTMLButtonElement);
             const target =
@@ -65,6 +94,7 @@ function NavDropdownItems({
                         : null;
             if (target) {
                event.preventDefault();
+               event.stopPropagation();
                target.focus();
             }
             if (event.key === "Escape") {
@@ -80,6 +110,8 @@ function NavDropdownItems({
                {section.map((id) => (
                   <button
                      role="menuitem"
+                     tabIndex={-1}
+                     data-press-ignore
                      key={id}
                      disabled={!commands[id].enabled()}
                      onClick={() => {

@@ -108,6 +108,7 @@ test("export names, selection and destination confirmations persist", async ({ l
    await expect(page.getByRole("button", { name: "Audio tracks to export", exact: true })).not.toContainText("All audio tracks");
    await page.getByRole("button", { name: "Export video", exact: true }).click();
    await expect(page.getByRole("dialog", { name: "Create output folder?", exact: true })).toBeVisible();
+   await expect(page.getByRole("button", { name: "Create folder and export", exact: true })).toHaveClass(/primary/);
    await page.waitForTimeout(200);
    await page.getByRole("button", { name: "Cancel", exact: true }).click();
    await expect(page.getByRole("dialog", { name: "Export video", exact: true })).toBeVisible();

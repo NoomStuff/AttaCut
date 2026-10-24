@@ -20,9 +20,6 @@
    flex: 1;
    font-size: 12px;
 }
-.folder-field .button {
-   border: 1px solid var(--line);
-}
 .filename-field {
    display: flex;
    gap: 8px;
@@ -79,15 +76,15 @@
    padding: 7px;
    padding-right: 32px;
    font-size: 12px;
-   border-color: transparent;
-   background: transparent;
+   border-color: var(--field-border);
+   background: var(--control-background, var(--surface-raised));
    transition:
       border-color 150ms ease-out,
       background-color 150ms ease-out;
 }
 .export-row input:not([type="checkbox"]):hover {
-   border-color: var(--line);
-   background: var(--surface-raised);
+   border-color: var(--muted);
+   background: var(--control-hover-background, var(--surface-raised));
    transition-duration: 0ms;
 }
 .export-row time {
@@ -97,7 +94,7 @@
 }
 .extension {
    font-size: 11px;
-   color: var(--faint);
+   color: var(--muted);
 }
 .color-dot {
    width: 7px;
@@ -128,6 +125,12 @@
 .export-modal .modal-header,
 .export-modal .modal-footer {
    flex-shrink: 0;
+}
+/* The body scrolls independently, so the footer can share the panel background
+   without an extra fill or blur layer flattening its tint. */
+.export-modal .modal-footer {
+   background: transparent;
+   backdrop-filter: none;
 }
 .export-modal .modal-footer .export-note {
    display: flex;

@@ -38,7 +38,7 @@
    right: 0;
    height: 22px;
    color: var(--faint);
-   font-size: 9px;
+   font-size: 10px;
    font-variant-numeric: tabular-nums;
    pointer-events: none;
 }

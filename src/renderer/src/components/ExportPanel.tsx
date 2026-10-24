@@ -107,7 +107,14 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                Cancel
             </Button>
             <Button
-               variant="danger"
+               variant={
+                  confirmation.sourcePath ||
+                  confirmation.existingPaths.length ||
+                  confirmation.items.some(substantialEncoding) ||
+                  confirmation.items.some((item) => item.changes?.length)
+                     ? "danger"
+                     : "primary"
+               }
                disabled={starting || (!!confirmation.sourcePath && !replaceSourceChecked)}
                onClick={() => {
                   void start(confirmation);
