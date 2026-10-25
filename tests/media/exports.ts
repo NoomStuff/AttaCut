@@ -13,6 +13,36 @@ import { ssimScore } from "./compare.ts";
 const source = await probeSource(resolve("work/fixture.mp4"));
 const directory = await mkdtemp(resolve("work/export-options-"));
 const service = new ExportService(() => {});
+for (const [start, end] of [
+   [0, source.duration],
+   [1.3, 14.7],
+] as const) {
+   const items = [
+      { name: "first", clip: { id: "adjacent-a", color: 0, start, end: 3.1 } },
+      { name: "middle", clip: { id: "adjacent-b", color: 1, start: 3.1, end: 8.7 } },
+      { name: "last", clip: { id: "adjacent-c", color: 2, start: 8.7, end } },
+   ];
+   const request = { sourceId: source.id, directory, mode: "combined" as const, name: `adjacent-${start}`, items };
+   const reports = await service.inspect(source, request);
+   const reference = await service.inspect(source, { ...request, items: [{ name: "continuous", clip: { ...items[0]!.clip, end } }] });
+   assert.equal(reports.length, 1);
+   assert.equal(reports[0]!.encodedSeconds, reference[0]!.encodedSeconds);
+   assert.deepEqual(reports[0]!.clip, reference[0]!.clip);
+   const plan = await service.plan(source, request);
+   service.start(plan.id);
+   await service.waitForIdle();
+   assert.equal(service.current!.items[0]!.status, "completed", service.current!.items[0]!.error ?? "");
+   if (start === 0) {
+      assert.equal(plan.items[0]!.encodedSeconds, 0);
+      const hashes = await Promise.all(
+         [source.path, plan.items[0]!.outputPath].map((path) =>
+            runMedia("ffmpeg", ["-v", "error", "-i", path, "-map", "0", "-c", "copy", "-f", "streamhash", "-"])
+         )
+      );
+      assert.equal(hashes[0], hashes[1], "Untrimmed adjacent clips preserve every stream's packet content");
+   }
+}
+console.log("PASS adjacent combined clips use only the outer boundaries");
 for (const input of ["h264-vfr.mp4", "mpeg4.avi"]) {
    const media = await probeSource(resolve("work/formats", input));
    const points = (await packetsAround(media, 1)).map((point) => point.time);

@@ -90,12 +90,19 @@ export class ExportService {
       const settings = analyzeRequestSchema.parse(request);
       const audio = source.streams.filter((stream) => stream.type === "audio");
       const tracks = exportAudioTracks(source, settings.audioTracks);
-      const items = [...settings.items].sort((a, b) => a.clip.start - b.clip.start);
+      const sorted = settings.items.map((item) => ({ ...item.clip })).sort((a, b) => a.start - b.start);
+      const clips: Clip[] = [];
+      for (const clip of sorted) {
+         const previous = clips.at(-1);
+         // Only remove shared boundaries. Even a small gap is selected content to omit.
+         if (settings.mode === "combined" && previous?.end === clip.start) previous.end = clip.end;
+         else clips.push(clip);
+      }
       const results = await mapConcurrent(
-         items,
-         (item) => {
-            const extension = exportExtensionFor(source, item.clip, { separate: settings.mode === "separate", allAudio: tracks.length === audio.length });
-            return this.cut(source, item.clip, tracks, extension, settings.mode, signal);
+         clips,
+         (clip) => {
+            const extension = exportExtensionFor(source, clip, { separate: settings.mode === "separate", allAudio: tracks.length === audio.length });
+            return this.cut(source, clip, tracks, extension, settings.mode, signal);
          },
          2
       );

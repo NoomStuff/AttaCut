@@ -148,12 +148,14 @@ export function useExport({
    const [starting, setStarting] = useState(false);
    const [analysis, setAnalysis] = useState<CutReport[] | null>(null);
    const selectedCount = request.items.length;
+   const selectedClips = useMemo(() => rows.filter((row) => row.included).map((row) => row.clip), [rows]);
    // Media analysis is independent of filenames and destination checks, and reused at export.
    useEffect(() => {
       let cancelled = false;
       setAnalysis(null);
+      if (!selectedClips.length) return;
       window.desktop
-         .analyzeExport({ sourceId: source.id, mode, audioTracks, items: clips.map((clip) => ({ clip, name: "clip" })) })
+         .analyzeExport({ sourceId: source.id, mode, audioTracks, items: selectedClips.map((clip) => ({ clip, name: "clip" })) })
          .then((items) => {
             if (!cancelled) setAnalysis(items);
          })
@@ -164,7 +166,7 @@ export function useExport({
          cancelled = true;
          void window.desktop.cancelExportAnalysis();
       };
-   }, [source.id, clips, mode, audioTracks]);
+   }, [source.id, selectedClips, mode, audioTracks]);
    const valid =
       request.items.length > 0 &&
       !!directory.trim() &&

@@ -3,6 +3,29 @@ import { mediaBinary, test, waitForPlaybackTime, waitForVideo } from "./app.mjs"
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
+test("combined export ignores kept internal cuts and updates its estimate when a clip is excluded", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const bar = await page.locator(".timeline-viewport").boundingBox();
+   for (const time of [3.1, 8.7]) {
+      await page.mouse.click(bar.x + (bar.width * time) / 18, bar.y + 36);
+      await waitForPlaybackTime(page, time);
+      await page.keyboard.press("s");
+   }
+   await expect(page.getByRole("slider", { name: "Clip 3 start", exact: true })).toBeVisible();
+   await page.getByRole("button", { name: "Export", exact: true }).click();
+   await page.getByRole("button", { name: "Single Video", exact: true }).click();
+   const note = page.locator(".export-note");
+   await expect(note).toContainText("Exporting the video unchanged.");
+   await page.getByRole("checkbox", { name: "Export clip 2", exact: true }).uncheck();
+   await expect(note).toContainText("may be re-encoded");
+   await page.getByRole("checkbox", { name: "Export clip 2", exact: true }).check();
+   await expect(note).toContainText("Exporting the video unchanged.");
+   await page.getByRole("button", { name: "Separate Clips", exact: true }).click();
+   await expect(note).toContainText("may be re-encoded");
+});
+
 test("opening constrained export dialogs preserves preferences and explicit audio choices survive restart", async ({ launchApp, profile }) => {
    const single = resolve(profile, "single.mp4");
    const silent = resolve(profile, "silent.mp4");

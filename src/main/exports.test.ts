@@ -5,17 +5,17 @@ import { dirname, join, resolve } from "node:path";
 import { ExportService } from "./exports.ts";
 import { publishOutput } from "./media/publish.ts";
 import { sanitizeName } from "../shared/filename";
-import { analyzeCut } from "./media/cut.ts";
+import { analyzeCut, exportCut } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import type { Clip } from "../shared/types.ts";
 
 vi.mock("./media/cut.ts", () => ({
    analyzeCut: vi.fn(async (_source: unknown, clip: Clip) => ({ clip, method: "copy", encodedSeconds: 0, message: "", spans: [] })),
-   exportCut: async (source: ProbedSource, _analysis: unknown, destination: string, options: { overwrite: boolean; replaceSource: boolean }) => {
+   exportCut: vi.fn(async (source: ProbedSource, _analysis: unknown, destination: string, options: { overwrite: boolean; replaceSource: boolean }) => {
       const temporary = `${destination}.tmp`;
       await writeFile(temporary, "new export");
       await publishOutput(temporary, destination, options.overwrite, source.path, options.replaceSource);
-   },
+   }),
 }));
 
 const folders: string[] = [];
@@ -35,6 +35,59 @@ async function fixture() {
    const request = { sourceId: source.id, directory, items: [{ name: "clip", clip: { id: "a", color: 0, start: 0, end: 10 } }] };
    return { directory, source, request, service: new ExportService(() => {}) };
 }
+
+describe("continuous combined ranges", () => {
+   it("analyzes and exports a chain of adjacent clips as one range without changing the clips", async () => {
+      const { source, request, service } = await fixture();
+      const items = [
+         { name: "last", clip: { id: "c", color: 2, start: 7.3, end: 10 } },
+         { name: "first", clip: { id: "a", color: 0, start: 0, end: 2.1 } },
+         { name: "middle", clip: { id: "b", color: 1, start: 2.1, end: 7.3 } },
+      ];
+      const original = structuredClone(items);
+      const combined = { ...request, mode: "combined" as const, name: "joined", items };
+      const reports = await service.inspect(source, combined);
+      expect(reports).toHaveLength(1);
+      expect(reports[0]).toMatchObject({ clip: { start: 0, end: 10 }, encodedSeconds: 0 });
+      const plan = await service.plan(source, combined);
+      expect(analyzeCut).toHaveBeenCalledTimes(1);
+      expect(plan.items[0]).toMatchObject({ duration: 10, encodedSeconds: 0 });
+      service.start(plan.id);
+      await service.waitForIdle();
+      expect(service.current?.items[0]?.status).toBe("completed");
+      expect(exportCut).toHaveBeenCalledWith(
+         source,
+         expect.objectContaining({ clip: expect.objectContaining({ start: 0, end: 10 }) }),
+         expect.any(String),
+         expect.any(Object)
+      );
+      expect(items).toEqual(original);
+   });
+   it("keeps real gaps and overlapping selections distinct", async () => {
+      const { source, request, service } = await fixture();
+      const clips = [
+         { id: "a", color: 0, start: 0, end: 2 },
+         { id: "b", color: 1, start: 2.000001, end: 4 },
+         { id: "c", color: 2, start: 3, end: 5 },
+      ];
+      const reports = await service.inspect(source, { ...request, mode: "combined", items: clips.map((clip) => ({ name: clip.id, clip })) });
+      expect(reports.map((report) => report.clip)).toEqual(clips);
+   });
+   it("retains shared boundaries for separate output files and excluded clips", async () => {
+      const { source, request, service } = await fixture();
+      const items = [
+         { name: "first", clip: { id: "a", color: 0, start: 0, end: 3 } },
+         { name: "middle", clip: { id: "b", color: 1, start: 3, end: 7 } },
+         { name: "last", clip: { id: "c", color: 2, start: 7, end: 10 } },
+      ];
+      expect(await service.inspect(source, { ...request, mode: "separate", items })).toHaveLength(3);
+      const reports = await service.inspect(source, { ...request, mode: "combined", items: [items[0]!, items[2]!] });
+      expect(reports.map((report) => [report.clip.start, report.clip.end])).toEqual([
+         [0, 3],
+         [7, 10],
+      ]);
+   });
+});
 
 describe("export destination confirmation", () => {
    it("requires explicit consent for substantial encoding and declared media loss", async () => {
