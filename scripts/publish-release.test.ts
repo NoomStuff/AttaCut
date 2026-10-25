@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,19 +20,12 @@ it.each([
    "wrong commit",
    "lookup failure",
    "published during cleanup",
-   "missing notes",
-   "empty notes",
 ])("publication guards: %s", async (scenario) => {
    const folder = await mkdtemp(join(tmpdir(), "attacut-publish-"));
    try {
       const sha = "a".repeat(40);
       const downloads = join(folder, "downloads");
-      const notesDirectory = join(folder, "notes");
       await mkdir(downloads);
-      await mkdir(notesDirectory);
-      const notesPath = join(notesDirectory, "0.25.0.md");
-      const publicNotes = "Windows upgrades keep the existing installation folder.\n";
-      if (scenario !== "missing notes") await writeFile(notesPath, scenario === "empty notes" ? " \n" : publicNotes);
       const names = releaseDownloads("0.25.0");
       for (const name of names) await writeFile(join(downloads, name), "app");
       const release = {
@@ -49,17 +42,15 @@ it.each([
          "retry public",
          "public changed",
          "published during cleanup",
-         "missing notes",
-         "empty notes",
       ].includes(scenario);
       let releases = hasExisting ? [release] : [];
       if (scenario === "retry duplicate drafts") releases.push({ ...release, id: 2, target_commitish: "c".repeat(40) });
       let mainReads = 0;
       const gh = vi.fn((...args: string[]): string => {
          if (args[0] === "release" && args[1] === "create") {
-            expect(args).toContain("--notes-file");
-            expect(args[args.indexOf("--notes-file") + 1]).toBe(notesPath);
-            expect(args).not.toContain("--notes");
+            expect(args).toContain("--notes");
+            expect(args[args.indexOf("--notes") + 1]).toBe("");
+            expect(args).not.toContain("--notes-file");
             releases = [
                {
                   ...release,
@@ -101,31 +92,15 @@ it.each([
          throw new Error(`Unexpected gh call: ${args.join(" ")}`);
       });
       const successful = ["valid", "retry draft", "retry duplicate drafts", "draft on later page", "retry public"].includes(scenario);
-      const pending = publishRelease({ sha, tag: "v0.25.0", run: "123", attempt: "2", repository: "NoomStuff/AttaCut" }, gh, downloads, notesDirectory);
+      const pending = publishRelease({ sha, tag: "v0.25.0", run: "123", repository: "NoomStuff/AttaCut" }, gh, downloads);
       if (successful) await pending;
       else await expect(pending).rejects.toThrow();
       const mutations = gh.mock.calls.filter((args) => args.includes("--method"));
       expect(mutations.filter((args) => args.includes("PATCH"))).toHaveLength(successful && scenario !== "retry public" ? 1 : 0);
       if (["retry public", "public changed", "published during cleanup"].includes(scenario)) expect(mutations).toHaveLength(0);
-      if (["missing notes", "empty notes"].includes(scenario)) {
-         expect(mutations).toHaveLength(0);
-         expect(gh.mock.calls.some((args) => args[0] === "release" && args[1] === "create")).toBe(false);
-      }
-      if (successful && scenario !== "retry public") expect(await readFile(notesPath, "utf8")).toBe(publicNotes);
       if (scenario === "retry duplicate drafts") expect(mutations.filter((args) => args.includes("DELETE"))).toHaveLength(2);
       if (scenario === "draft on later page") expect(gh.mock.calls.some((args) => args.some((arg) => arg.includes("&page=2")))).toBe(true);
    } finally {
       await rm(folder, { recursive: true, force: true });
    }
-});
-
-it("keeps public notes separate from release provenance", async () => {
-   const notes = await readFile("release-notes/0.25.0.md", "utf8");
-   const provenance = JSON.parse(await readFile(".github/release-provenance/v0.25.0.json", "utf8")) as Record<string, string>;
-   expect(notes).toContain("## Changes");
-   expect(notes).toContain("## Downloads");
-   expect(notes).not.toMatch(/verified candidate|release workflow|attempt|provenance/i);
-   expect(notes).not.toContain(provenance["sha"]);
-   expect(notes).not.toContain(provenance["run"]);
-   expect(provenance).toMatchObject({ tag: "v0.25.0", run: "39677257712", attempt: "1" });
 });

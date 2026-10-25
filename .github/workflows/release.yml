@@ -155,7 +155,8 @@ jobs:
            if: always()
            uses: actions/upload-artifact@v7
            with:
-              name: release-provenance-${{ github.run_id }}-${{ github.run_attempt }}
+              name: release-provenance-${{ github.run_id }}
+              overwrite: true
               path: dist/release-provenance.json
               if-no-files-found: ignore
               retention-days: 90

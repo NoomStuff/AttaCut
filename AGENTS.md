@@ -32,6 +32,8 @@ Re-encoding a small section near a boundary is acceptable when needed for accura
 
 ## Versioning
 
-Pushing to main with a new version number in `package.json` is what triggers a release via GitHub Actions. Bump it appropriately for the changes made (not every change would need a new version), follow ups should not bump again unless pushes to main have been made since. Don't blindly push without permission from the user.
+Pushing to main with a new version number in `package.json` triggers a release via GitHub Actions. Bump it appropriately for the changes made, not every change needs a new version. Follow ups should not bump again unless pushes to main have been made since. Don't blindly push without permission from the user.
 
-Always run `bun run format` and `bun run verify` after a turn with many file edits. For changes to export, playback, packaging, or release workflows, run `bun run verify:release` too. Fix failures before pushing. After a version bump, watch the release through completion. If an unpublished attempt fails, fix and retry the same version. Create the final tag only when publishing the verified commit. Public releases and tags are immutable, so fixes after publication require a new version.
+Always run `bun run format` and `bun run verify` after a turn with many file edits. For changes to export, playback, packaging, or release workflows, run `bun run verify:release` too. Fix local failures before pushing, then fix isolated check failures before publication.
+
+After a version bump, watch the release through completion on all five targets. If an unpublished release fails, fix and retry the same version. The release workflow publishes automatically after every required check passes. Release notes and custom attempt counts are not required. Create the final tag only when publishing the verified commit. Public releases and tags are immutable, so fixes after publication require a new version. Public app release pages carry app downloads only.
