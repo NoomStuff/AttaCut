@@ -15,6 +15,10 @@ internal static class ForegroundSmoke
     private static extern bool ShowWindow(IntPtr window, int command);
     [DllImport("user32.dll")]
     private static extern bool IsIconic(IntPtr window);
+    [DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
 
     [STAThread]
     private static int Main(string[] args)
@@ -42,7 +46,15 @@ internal static class ForegroundSmoke
                 GetWindowThreadProcessId(GetForegroundWindow(), out foregroundId);
                 if (stage == 0 || stage == 2)
                 {
-                    if (foregroundId != (uint)Process.GetCurrentProcess().Id) return;
+                    if (foregroundId != (uint)Process.GetCurrentProcess().Id)
+                    {
+                        // Activation alone is subject to the same Windows focus rules
+                        // under test. Click this window's title bar to model the user
+                        // returning to Explorer before opening the next file.
+                        SetCursorPos(explorer.Left + 60, explorer.Top + 12);
+                        mouse_event(0x0002 | 0x0004, 0, 0, 0, UIntPtr.Zero);
+                        return;
+                    }
                     // The foreground process starts the real launcher, just as Explorer
                     // does for a file association. No test-side foreground grant.
                     ProcessStartInfo start = new ProcessStartInfo(args[1], "\"" + args[2] + "\"");
