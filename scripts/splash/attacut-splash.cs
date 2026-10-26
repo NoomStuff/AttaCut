@@ -15,6 +15,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Reflection;
+using System.Text;
 
 [assembly: AssemblyTitle("AttaCut")]
 [assembly: AssemblyDescription("AttaCut")]
@@ -105,20 +106,48 @@ internal sealed class Splash : Form
 
     private static Process Launch(string appExe, string signalPath, string childArguments)
     {
+        NativeLaunch.ProcessInformation created = new NativeLaunch.ProcessInformation();
+        bool resumed = false;
+        string previousSignal = Environment.GetEnvironmentVariable("ATTACUT_SPLASH_SIGNAL");
         try
         {
             string full = Path.GetFullPath(appExe);
-            ProcessStartInfo start = new ProcessStartInfo();
-            start.FileName = full;
-            start.Arguments = childArguments ?? "";
-            start.WorkingDirectory = Path.GetDirectoryName(full);
-            start.UseShellExecute = false;
-            start.EnvironmentVariables["ATTACUT_SPLASH_SIGNAL"] = signalPath ?? "";
-            return Process.Start(start);
+            NativeLaunch.StartupInfo startup = new NativeLaunch.StartupInfo();
+            startup.Size = Marshal.SizeOf(typeof(NativeLaunch.StartupInfo));
+            Environment.SetEnvironmentVariable("ATTACUT_SPLASH_SIGNAL", signalPath ?? "");
+            // Explorer gives this launcher foreground permission. Transfer it before
+            // Electron runs, including before its single-instance notification grants
+            // that permission to an already-running AttaCut process.
+            StringBuilder command = new StringBuilder("\"" + full + "\" " + (childArguments ?? ""));
+            if (!NativeLaunch.CreateProcess(full, command, IntPtr.Zero, IntPtr.Zero, false,
+                NativeLaunch.CreateSuspended, IntPtr.Zero, Path.GetDirectoryName(full), ref startup, out created)) return null;
+            NativeLaunch.AllowSetForegroundWindow(created.ProcessId);
+            Process process = Process.GetProcessById((int)created.ProcessId);
+            // Retain a managed handle before a second instance can exit. The splash
+            // still needs to read its exit code after the native handles close.
+            IntPtr retainedHandle = process.Handle;
+            if (NativeLaunch.ResumeThread(created.Thread) == UInt32.MaxValue)
+            {
+                process.Dispose();
+                return null;
+            }
+            resumed = true;
+            return process;
         }
         catch
         {
             return null;
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ATTACUT_SPLASH_SIGNAL", previousSignal);
+            if (created.Thread != IntPtr.Zero)
+            {
+                // A failed resume must not leave a suspended runtime behind.
+                if (!resumed) NativeLaunch.TerminateProcess(created.Process, 1);
+                NativeLaunch.CloseHandle(created.Thread);
+            }
+            if (created.Process != IntPtr.Zero) NativeLaunch.CloseHandle(created.Process);
         }
     }
 
@@ -205,6 +234,45 @@ internal sealed class Splash : Form
     {
         get { return child; }
     }
+}
+
+internal static class NativeLaunch
+{
+    internal const uint CreateSuspended = 0x00000004;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct StartupInfo
+    {
+        internal int Size;
+        internal string Reserved, Desktop, Title;
+        internal uint X, Y, XSize, YSize, XCountChars, YCountChars, FillAttribute, Flags;
+        internal ushort ShowWindow, ReservedSize;
+        internal IntPtr ReservedBytes, StandardInput, StandardOutput, StandardError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ProcessInformation
+    {
+        internal IntPtr Process, Thread;
+        internal uint ProcessId, ThreadId;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern bool CreateProcess(string application, StringBuilder command, IntPtr processAttributes,
+        IntPtr threadAttributes, bool inheritHandles, uint flags, IntPtr environment, string directory,
+        ref StartupInfo startup, out ProcessInformation process);
+
+    [DllImport("user32.dll")]
+    internal static extern bool AllowSetForegroundWindow(uint processId);
+
+    [DllImport("kernel32.dll")]
+    internal static extern uint ResumeThread(IntPtr thread);
+
+    [DllImport("kernel32.dll")]
+    internal static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
+    [DllImport("kernel32.dll")]
+    internal static extern bool CloseHandle(IntPtr handle);
 }
 
 internal static class Program

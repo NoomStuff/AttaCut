@@ -100,6 +100,17 @@ async function smokeLauncher(): Promise<void> {
          if (!visible) await new Promise((resolve) => setTimeout(resolve, 200));
       }
       if (!visible) throw new Error("Launcher smoke failed: no app window appeared within 30s");
+      const foregroundSmoke = join(profile, "foreground-smoke.exe");
+      const csc = ["C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe", "C:/Windows/Microsoft.NET/Framework/v4.0.30319/csc.exe"].find(existsSync);
+      if (!csc) throw new Error("Foreground smoke requires the .NET Framework compiler");
+      await run(csc, ["/nologo", "/target:exe", `/out:${foregroundSmoke}`, "/r:System.Windows.Forms.dll", resolve("scripts/splash/foreground-smoke.cs")], {
+         windowsHide: true,
+      });
+      await run(foregroundSmoke, [String(runtimePid), launcher, resolve("work/fixture.mp4")], {
+         env: { ...process.env, ATTACUT_TESTING: "1", ATTACUT_TEST_INACTIVE: "1", ATTACUT_HIDDEN: "0", ATTACUT_OPEN_FILE: "", ATTACUT_USER_DATA: profile },
+         windowsHide: true,
+         timeout: 60_000,
+      });
       await run(
          "powershell",
          ["-NoProfile", "-Command", `Get-Process -Id ${runtimePid} -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() } | Out-Null`],
