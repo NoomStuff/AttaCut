@@ -106,11 +106,15 @@ async function smokeLauncher(): Promise<void> {
       await run(csc, ["/nologo", "/target:exe", `/out:${foregroundSmoke}`, "/r:System.Windows.Forms.dll", resolve("scripts/splash/foreground-smoke.cs")], {
          windowsHide: true,
       });
-      await run(foregroundSmoke, [String(runtimePid), launcher, resolve("work/fixture.mp4")], {
-         env: { ...process.env, ATTACUT_TESTING: "1", ATTACUT_TEST_INACTIVE: "1", ATTACUT_HIDDEN: "0", ATTACUT_OPEN_FILE: "", ATTACUT_USER_DATA: profile },
-         windowsHide: true,
-         timeout: 60_000,
-      });
+      // Separate foreground hosts keep each case independent of the previous
+      // handoff. Windows need not allow a background test window to reactivate.
+      for (const state of ["normal", "minimized"]) {
+         await run(foregroundSmoke, [String(runtimePid), launcher, resolve("work/fixture.mp4"), state], {
+            env: { ...process.env, ATTACUT_TESTING: "1", ATTACUT_TEST_INACTIVE: "1", ATTACUT_HIDDEN: "0", ATTACUT_OPEN_FILE: "", ATTACUT_USER_DATA: profile },
+            windowsHide: true,
+            timeout: 60_000,
+         });
+      }
       await run(
          "powershell",
          ["-NoProfile", "-Command", `Get-Process -Id ${runtimePid} -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() } | Out-Null`],

@@ -15,10 +15,12 @@ internal static class ForegroundSmoke
     private static extern bool ShowWindow(IntPtr window, int command);
     [DllImport("user32.dll")]
     private static extern bool IsIconic(IntPtr window);
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")]
-    private static extern bool SetCursorPos(int x, int y);
+    private static extern bool AttachThreadInput(uint thread, uint otherThread, bool attach);
     [DllImport("user32.dll")]
-    private static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
+    private static extern bool SetForegroundWindow(IntPtr window);
 
     [STAThread]
     private static int Main(string[] args)
@@ -26,33 +28,46 @@ internal static class ForegroundSmoke
         int runtimeId = Int32.Parse(args[0]);
         Process runtime = Process.GetProcessById(runtimeId);
         int result = 1;
-        int stage = 0;
+        bool launched = false;
+        bool minimized = args[3] == "minimized";
         DateTime deadline = DateTime.UtcNow.AddSeconds(10);
         using (Form explorer = new Form())
         using (Timer timer = new Timer())
         {
             explorer.Text = "AttaCut foreground regression test";
-            explorer.Shown += delegate { explorer.Activate(); };
+            explorer.Shown += delegate
+            {
+                if (minimized)
+                {
+                    runtime.Refresh();
+                    ShowWindow(runtime.MainWindowHandle, 6);
+                    if (!IsIconic(runtime.MainWindowHandle)) throw new Exception("Could not minimize the app before the test");
+                }
+                explorer.Activate();
+            };
             timer.Interval = 50;
             timer.Tick += delegate
             {
                 if (DateTime.UtcNow > deadline)
                 {
-                    Console.Error.WriteLine("Foreground handoff timed out at stage " + stage);
+                    Console.Error.WriteLine("Foreground handoff timed out for " + args[3] + ", launched=" + launched);
                     explorer.Close();
                     return;
                 }
                 uint foregroundId;
                 GetWindowThreadProcessId(GetForegroundWindow(), out foregroundId);
-                if (stage == 0 || stage == 2)
+                if (!launched)
                 {
                     if (foregroundId != (uint)Process.GetCurrentProcess().Id)
                     {
-                        // Activation alone is subject to the same Windows focus rules
-                        // under test. Click this window's title bar to model the user
-                        // returning to Explorer before opening the next file.
-                        SetCursorPos(explorer.Left + 60, explorer.Top + 12);
-                        mouse_event(0x0002 | 0x0004, 0, 0, 0, UIntPtr.Zero);
+                        // Only the test host uses joined input queues to establish
+                        // its foreground baseline on the unattended runner. Detach
+                        // before launching, so the app must use the real handoff.
+                        uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out foregroundId);
+                        uint thread = GetCurrentThreadId();
+                        bool attached = foregroundThread != 0 && AttachThreadInput(thread, foregroundThread, true);
+                        try { SetForegroundWindow(explorer.Handle); }
+                        finally { if (attached) AttachThreadInput(thread, foregroundThread, false); }
                         return;
                     }
                     // The foreground process starts the real launcher, just as Explorer
@@ -60,26 +75,15 @@ internal static class ForegroundSmoke
                     ProcessStartInfo start = new ProcessStartInfo(args[1], "\"" + args[2] + "\"");
                     start.UseShellExecute = false;
                     using (Process launch = Process.Start(start)) { }
-                    stage++;
+                    launched = true;
                     deadline = DateTime.UtcNow.AddSeconds(15);
                 }
                 else if (foregroundId == (uint)runtimeId)
                 {
                     runtime.Refresh();
                     if (IsIconic(runtime.MainWindowHandle)) return;
-                    if (stage == 1)
-                    {
-                        // Repeat with a minimized app, so focus alone cannot pass.
-                        ShowWindow(runtime.MainWindowHandle, 6);
-                        explorer.Activate();
-                        stage = 2;
-                        deadline = DateTime.UtcNow.AddSeconds(10);
-                    }
-                    else
-                    {
-                        result = 0;
-                        explorer.Close();
-                    }
+                    result = 0;
+                    explorer.Close();
                 }
             };
             timer.Start();
