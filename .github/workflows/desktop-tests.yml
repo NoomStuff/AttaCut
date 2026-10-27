@@ -6,11 +6,15 @@ on:
       inputs:
          suite:
             type: choice
-            options: [ui, playback, native, all, package, release]
+            options: [ui, playback, native, all, package, release, performance]
             required: true
          revision:
             description: Exact pushed source commit
             required: true
+         baseline:
+            description: Optional exact baseline commit for performance comparisons
+            required: false
+            default: ""
          target:
             type: choice
             options: [win32-x64, darwin-x64, darwin-arm64, linux-x64, linux-arm64]
@@ -29,6 +33,7 @@ jobs:
       env:
          # The entire desktop is disposable. Exercise ordinary native windows.
          ATTACUT_TEST_VISIBLE: "1"
+         ATTACUT_BASELINE_REVISION: ${{ inputs.baseline }}
       steps:
          - uses: actions/checkout@v7
            with:

@@ -10,7 +10,7 @@ import type { CutAnalysis, CutOptions } from "./cut.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
 import { isMp4Container, containerFlags, containerKeepsData, aspectArguments } from "./formats.ts";
 import { ffconcatList, dropOutside, isLosslessAudio, dispositionFlags, serializeChapters } from "./mux.ts";
-import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
+import { verifyCutFrames, verifyOutputStructure } from "./verify.ts";
 
 export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], destination: string, options: CutOptions): Promise<void> {
    return withTemporaryOutput(dirname(destination), ".attacut-combined-", async (temporary) => {
@@ -147,15 +147,7 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
       );
       options.onStage?.("checking");
       options.onProgress?.(0.9);
-      let offset = 0;
-      for (const cut of cuts) {
-         if (cut.verifyTimes?.length) await verifyCopiedFrames(source, output, cut.clip.start - offset, cut.verifyTimes, options.signal);
-         if (cut.encodedVerifyTimes?.length) await verifyEncodedFrames(source, output, cut.clip.start - offset, cut.encodedVerifyTimes, options.signal);
-         offset += cut.clip.end - cut.clip.start;
-         options.onProgress?.(0.9 + (0.07 * offset) / duration);
-      }
-      options.signal?.throwIfAborted();
-      await verifyOutputStructure(
+      const checkedOutput = await verifyOutputStructure(
          source,
          output,
          selectedAudio.map((stream) => stream.index),
@@ -166,6 +158,13 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
          Math.max(0, ...cuts.map((cut) => cut.frameDuration ?? 0)) || undefined,
          cuts.every((cut) => cut.frameCount !== undefined) ? cuts.reduce((sum, cut) => sum + cut.frameCount!, 0) : undefined
       );
+      let offset = 0;
+      for (const cut of cuts) {
+         await verifyCutFrames(source, checkedOutput, cut.clip.start - offset, cut.verifyTimes, cut.encodedVerifyTimes, options.signal);
+         offset += cut.clip.end - cut.clip.start;
+         options.onProgress?.(0.9 + (0.07 * offset) / duration);
+      }
+      options.signal?.throwIfAborted();
       await assertSourceUnchanged(source);
       options.onStage?.("saving");
       options.onProgress?.(0.99);

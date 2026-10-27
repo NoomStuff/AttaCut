@@ -1,6 +1,7 @@
 import type { ScrubAudio } from "../shared/types.ts";
 import { resolveFrameTime } from "../shared/frames.ts";
-import { packetsAround, probeSource, sourceFrames, sourceKeyframes, setSourceLifetime } from "./media/probe.ts";
+import { packetsAround, sourceFrames, sourceKeyframes, setSourceLifetime } from "./media/probe.ts";
+import { SourceProbe } from "./source-probe";
 import { frameTimesAround } from "./media/frame-times";
 import type { ProbedSource } from "./media/probe.ts";
 import { preparePreview, leasePreview, releasePreview } from "./media/preview.ts";
@@ -12,6 +13,7 @@ import { detectSceneCuts } from "./media/scenes";
 
 /** Owns the active source. Export plans retain their own immutable source reference. */
 export class SourceSession {
+   private readonly probe: SourceProbe;
    private opening = new AbortController();
    private lifetime = new AbortController();
    private preview = new AbortController();
@@ -60,9 +62,10 @@ export class SourceSession {
    readonly mediaPaths = new Map<string, string>();
    private previewFolder: string;
    private previewReady: Promise<void>;
-   constructor(previewFolder: string, previewReady: Promise<void> = Promise.resolve()) {
+   constructor(previewFolder: string, previewReady: Promise<void> = Promise.resolve(), probe = new SourceProbe()) {
       this.previewFolder = previewFolder;
       this.previewReady = previewReady;
+      this.probe = probe;
    }
    get signal(): AbortSignal {
       return this.lifetime.signal;
@@ -81,7 +84,7 @@ export class SourceSession {
       this.opening.abort();
       const controller = new AbortController();
       this.opening = controller;
-      const source = await probeSource(path, controller.signal);
+      const source = await this.probe.open(path, controller.signal);
       controller.signal.throwIfAborted();
       await validate?.(source);
       controller.signal.throwIfAborted();
@@ -110,6 +113,20 @@ export class SourceSession {
       const points = await frameTimesAround(source, time, signal);
       signal.throwIfAborted();
       return resolveFrameTime(points, time, source.duration, direction);
+   }
+   async frameTimes(id: string, times: number[]): Promise<number[]> {
+      const source = this.get(id);
+      const signal = this.signal;
+      const frames = await sourceFrames(source, signal).catch(() => null);
+      signal.throwIfAborted();
+      if (frames) return times.map((time) => resolveFrameTime(frames, time, source.duration));
+      return Promise.all(
+         times.map(async (time) => {
+            const points = await frameTimesAround(source, time, signal);
+            signal.throwIfAborted();
+            return resolveFrameTime(points, time, source.duration);
+         })
+      );
    }
    cancelPreview(): void {
       this.preview.abort();
@@ -231,10 +248,12 @@ export class SourceSession {
    }
    close(): void {
       this.opening.abort();
+      this.probe.cancelPrefetch();
       this.release();
    }
    dispose(): void {
       this.opening.abort();
+      this.probe.cancelPrefetch();
       this.release();
       this.lifetime.abort();
    }

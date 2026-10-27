@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { clipLimit } from "./defaults";
 export const frameRequestSchema = z.object({
    sourceId: z.string(),
    time: z.number().finite().nonnegative(),
@@ -14,6 +15,10 @@ export const frameTimeRequestSchema = z.object({
    direction: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
 });
 export type FrameTimeRequest = z.infer<typeof frameTimeRequestSchema>;
+export const frameTimesRequestSchema = z.object({
+   sourceId: z.string(),
+   times: z.array(z.number().finite().nonnegative()).max(clipLimit * 2),
+});
 export const scrubRequestSchema = z.object({
    sourceId: z.string(),
    streamIndices: z.array(z.number().int()).min(1),

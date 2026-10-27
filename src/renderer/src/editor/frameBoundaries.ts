@@ -25,9 +25,11 @@ export function useFrameBoundaries(
          return;
       }
       let current = true;
-      void Promise.all(pending.map(async (time) => [time, await window.desktop.frameTime(source.id, time, 0)] as const))
+      void window.desktop
+         .frameTimes(source.id, pending)
          .then((resolved) => {
-            for (const [time, frame] of resolved) {
+            for (const [position, time] of pending.entries()) {
+               const frame = resolved[position]!;
                times.set(time, frame);
                times.set(frame, frame);
             }

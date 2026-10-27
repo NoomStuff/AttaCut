@@ -137,7 +137,7 @@ test("export names, selection and destination confirmations persist", async ({ l
    await expect(page.getByRole("dialog", { name: "Export video", exact: true })).toBeVisible();
    await page.getByRole("button", { name: "Export video", exact: true }).click();
    await page.getByRole("button", { name: "Create folder and export", exact: true }).click();
-   await expect(page.getByRole("button", { name: "Open file", exact: true })).toBeVisible({ timeout: 60000 });
+   await expect(page.locator(".notification-entry").first().getByRole("button", { name: "Open file", exact: true })).toBeVisible({ timeout: 60000 });
    await page.getByRole("button", { name: "Export", exact: true }).click();
    const conflict = page.getByRole("img", { name: "Will replace an existing file" });
    await expect(conflict).toBeVisible();
@@ -149,7 +149,7 @@ test("export names, selection and destination confirmations persist", async ({ l
    await page.waitForTimeout(200);
    await page.getByRole("button", { name: "Replace and export", exact: true }).click();
    await expect(page.getByRole("dialog")).toHaveCount(0);
-   await expect(page.getByRole("button", { name: "Open file", exact: true })).toBeVisible({ timeout: 60000 });
+   await expect(page.locator(".notification-entry").first().getByRole("button", { name: "Open file", exact: true })).toBeVisible({ timeout: 60000 });
    await page.getByRole("button", { name: "Export", exact: true }).click();
    await page.getByRole("button", { name: "Separate Clips", exact: true }).click();
    await page.getByRole("textbox", { name: "Clip 1 filename", exact: true }).fill("first-kept-name");

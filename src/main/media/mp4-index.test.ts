@@ -12,7 +12,11 @@ function box(name: string, data: Buffer): Buffer {
    data.copy(result, 8);
    return result;
 }
-async function readTable(count: number, keys?: number[], options: { scale?: number; delta?: number; mediaTime?: number; extension?: string } = {}) {
+async function readTable(
+   count: number,
+   keys?: number[],
+   options: { scale?: number; delta?: number; mediaTime?: number; extension?: string; composition?: number[] } = {}
+) {
    const { scale = 30, delta = 1, mediaTime } = options;
    const directory = await mkdtemp(join(tmpdir(), "attacut-table-"));
    try {
@@ -25,6 +29,16 @@ async function readTable(count: number, keys?: number[], options: { scale?: numb
       timing.writeUInt32BE(count, 8);
       timing.writeUInt32BE(delta, 12);
       const tables = [box("stts", timing)];
+      if (options.composition) {
+         const composition = Buffer.alloc(8 + options.composition.length * 8);
+         composition[0] = 1;
+         composition.writeUInt32BE(options.composition.length, 4);
+         options.composition.forEach((delta, index) => {
+            composition.writeUInt32BE(1, 8 + index * 8);
+            composition.writeInt32BE(delta, 12 + index * 8);
+         });
+         tables.push(box("ctts", composition));
+      }
       if (keys) {
          const sync = Buffer.alloc(8 + keys.length * 4);
          sync.writeUInt32BE(keys.length, 4);
@@ -92,4 +106,12 @@ it("applies edit-list offsets without losing precision", async () => {
    const frames = Array.from(result!.frames!);
    expect(frames.at(-1)).toBe(4);
    expect(frames.at(-2)).toBeCloseTo(3.9666666666666663, 15);
+});
+it("sorts reordered presentation times and sparse keys while keeping duplicate timestamps", async () => {
+   const result = await readTable(6, [1, 2, 4], { scale: 1, composition: [2, 0, -2, 1, -1, 0] });
+   expect(Array.from(result!.frames!)).toEqual([0, 1, 2, 3, 4, 5]);
+   expect(Array.from(result!.keyframes)).toEqual([1, 2, 4]);
+   const duplicates = await readTable(3, undefined, { scale: 1, composition: [1, 0, -2] });
+   expect(Array.from(duplicates!.frames!)).toEqual([0, 1, 1]);
+   expect(duplicates!.keyframes).toBe(duplicates!.frames);
 });

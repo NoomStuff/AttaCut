@@ -223,6 +223,7 @@ export function registerIpc({
       const request = value;
       return sourceSession.frameTime(request.sourceId, request.time, request.direction);
    });
+   handle("source:frame-times", (request) => sourceSession.frameTimes(request.sourceId, request.times));
    handle("audio:scrub", async (value) => {
       const request = value;
       const source = getSource(request.sourceId);

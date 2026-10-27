@@ -4,6 +4,7 @@ import { sessionStorageSchema } from "./session-storage";
 import {
    frameRequestSchema,
    frameTimeRequestSchema,
+   frameTimesRequestSchema,
    scrubRequestSchema,
    previewRequestSchema,
    waveformRequestSchema,
@@ -29,6 +30,7 @@ export const ipcRequestSchemas = {
    "source:scenes": z.object({ sourceId: z.string(), requestId: z.string().uuid(), threshold: z.number().min(1).max(100) }),
    "source:cancel-scenes": z.string().uuid(),
    "source:frame-time": frameTimeRequestSchema,
+   "source:frame-times": frameTimesRequestSchema,
    "directory:choose": z.string(),
    "preferences:save": preferencesSchema,
    "session:save": sessionStorageSchema,

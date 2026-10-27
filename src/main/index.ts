@@ -4,12 +4,13 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { SourceSession } from "./source-session.ts";
+import { SourceProbe } from "./source-probe";
 import { pruneWaveforms } from "./media/waveform-cache";
 import { ExportService } from "./exports.ts";
 import { Storage } from "./storage.ts";
 import { serveMedia } from "./media/serve.ts";
 import { videoExtensions } from "./media/formats.ts";
-import { projectExtensions } from "../shared/project";
+import { isProjectPath, projectExtensions } from "../shared/project";
 import { prunePreviews } from "./media/preview.ts";
 import { IpcEvents } from "../shared/ipc.ts";
 import { installMenu } from "./menu.ts";
@@ -20,6 +21,8 @@ import { IpcTestAdapter } from "./ipc-test-adapter";
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 if (process.env["ATTACUT_USER_DATA"]) app.setPath("userData", process.env["ATTACUT_USER_DATA"]);
 const ownsInstance = app.requestSingleInstanceLock();
+const sourceProbe = new SourceProbe();
+app.on("before-quit", () => sourceProbe.cancelPrefetch());
 let appWindow: BrowserWindow | null = null;
 let rendererReady = false;
 const fileArgument = (args: string[]): string | null =>
@@ -27,7 +30,10 @@ const fileArgument = (args: string[]): string | null =>
 let pendingFile = process.env["ATTACUT_OPEN_FILE"] ?? fileArgument(process.argv.slice(1));
 const receiveFile = (path: string | null) => {
    if (path && rendererReady && appWindow && !appWindow.isDestroyed()) appWindow.webContents.send(IpcEvents.openFile, path);
-   else if (path) pendingFile = path;
+   else if (path) {
+      pendingFile = path;
+      if (!isProjectPath(path)) void sourceProbe.prefetch(path).catch(() => undefined);
+   }
    if (appWindow && !appWindow.isDestroyed() && process.env["ATTACUT_HIDDEN"] !== "1") {
       if (appWindow.isMinimized()) appWindow.restore();
       appWindow.show();
@@ -59,6 +65,14 @@ async function start(): Promise<void> {
    // handlers that answer from storage go live only after it resolves below.
    const storage = new Storage(app.getPath("userData"));
    const storageReady = storage.load();
+   // A launch argument is known before Electron initializes its window. Recovery
+   // becomes known after storage loads. Neither probe waits for renderer startup.
+   const prefetchStartup = () => {
+      const path = pendingFile || (storage.preferences.resume ? storage.session?.path : null);
+      if (path && !isProjectPath(path)) void sourceProbe.prefetch(path).catch(() => undefined);
+   };
+   if (pendingFile) prefetchStartup();
+   else void storageReady.then(prefetchStartup).catch(() => undefined);
    await app.whenReady();
    const icon = windowIcon();
    const backgroundLinuxTest =
@@ -145,7 +159,7 @@ async function start(): Promise<void> {
       () => undefined
    );
    void previewCleanup.catch(() => undefined);
-   const sourceSession = new SourceSession(previewFolder, previewCleanup);
+   const sourceSession = new SourceSession(previewFolder, previewCleanup, sourceProbe);
    // Deny-by-default for renderer permissions; nothing in the app currently requests any.
    session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
       callback(contents === window.webContents && permission === "fullscreen")
@@ -311,6 +325,7 @@ async function start(): Promise<void> {
 if (!ownsInstance) app.quit();
 else
    void start().catch((error: unknown) => {
+      sourceProbe.cancelPrefetch();
       console.error(error);
       // Hidden test windows cannot show this box sensibly: a native dialog from an
       // invisible process dangles on the user's screen, so tests fail in the log only.

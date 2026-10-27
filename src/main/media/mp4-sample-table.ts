@@ -137,6 +137,8 @@ export async function indexedSampleTimes(source: ProbedSource, signal?: AbortSig
          let storedKeys = 0;
          const frames = new Float64Array(wantFrames ? total : 0);
          let frameCount = 0;
+         let framesOrdered = true;
+         let keysOrdered = true;
          for (let sample = 0; sample < total; sample++) {
             if (sample % 65536 === 0) {
                signal?.throwIfAborted();
@@ -157,13 +159,24 @@ export async function indexedSampleTimes(source: ProbedSource, signal?: AbortSig
             const point = (time + (sample - ts) * timing[ti]!.delta + (composition[ci]?.delta ?? 0) - mediaOffset) / scale + editOffset - source.startOffset;
             if (point >= -0.000001 && point <= source.duration) {
                const stored = Math.max(0, point);
-               if (isKey && !(allKeys && wantFrames)) keys[storedKeys++] = stored;
-               if (wantFrames) frames[frameCount++] = stored;
+               if (isKey && !(allKeys && wantFrames)) {
+                  if (storedKeys && stored < keys[storedKeys - 1]!) keysOrdered = false;
+                  keys[storedKeys++] = stored;
+               }
+               if (wantFrames) {
+                  if (frameCount && stored < frames[frameCount - 1]!) framesOrdered = false;
+                  frames[frameCount++] = stored;
+               }
             }
          }
          if (stss && keyCursor !== keyCount) return null;
-         const sortedFrames = wantFrames ? frames.subarray(0, frameCount).sort() : null;
-         return { keyframes: allKeys && sortedFrames ? sortedFrames : keys.subarray(0, storedKeys).sort(), frames: sortedFrames };
+         // Presentation timestamps often already follow decode order. Only B-frame
+         // reordering needs a sort; avoid sorting hours of already ordered samples.
+         const sortedFrames = wantFrames ? frames.subarray(0, frameCount) : null;
+         if (sortedFrames && !framesOrdered) sortedFrames.sort();
+         const sortedKeys = keys.subarray(0, storedKeys);
+         if (!keysOrdered) sortedKeys.sort();
+         return { keyframes: allKeys && sortedFrames ? sortedFrames : sortedKeys, frames: sortedFrames };
       }
       return null;
    } catch (error) {
