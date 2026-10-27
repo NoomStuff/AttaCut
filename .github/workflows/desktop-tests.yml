@@ -6,7 +6,7 @@ on:
       inputs:
          suite:
             type: choice
-            options: [ui, playback, native, all, package, release]
+            options: [ui, playback, native, all, package, release, performance]
             required: true
          revision:
             description: Exact pushed source commit

@@ -249,6 +249,7 @@ test("playback leaves the root idle and close flushes the final edit", async ({ 
    expect(settings.session.clips[0].start).toBe(1.3);
    const restored = await launchApp(profile, "");
    page = await restored.firstWindow();
+   await waitForVideo(page);
    await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", "1.3");
 });
 

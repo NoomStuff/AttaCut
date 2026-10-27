@@ -146,7 +146,7 @@ async function start(): Promise<void> {
    );
    void previewCleanup.catch(() => undefined);
    const sourceSession = new SourceSession(previewFolder, previewCleanup);
-   const startupSource = pendingFile ?? (storage.preferences.resume ? storage.session?.path : null);
+   const startupSource = pendingFile || (storage.preferences.resume ? storage.session?.path : null);
    if (startupSource && !isProjectPath(startupSource)) sourceSession.prefetch(startupSource);
    // Deny-by-default for renderer permissions; nothing in the app currently requests any.
    session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
