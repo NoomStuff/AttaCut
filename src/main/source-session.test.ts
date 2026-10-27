@@ -13,6 +13,13 @@ vi.mock("./media/probe.ts", () => ({
    sourceFrames: vi.fn(async () => null),
    packetsAround: vi.fn(async () => []),
 }));
+vi.mock("./source-probe", () => ({
+   SourceProbe: class {
+      open(path: string, signal?: AbortSignal) {
+         return probeSource(path, signal);
+      }
+   },
+}));
 vi.mock("./media/scrub-audio.ts", () => ({
    scrubChunkSeconds: 5,
    extractScrubPcm: vi.fn(async () => ({ start: 0, sampleRate: 22050, pcm: new ArrayBuffer(2) })),

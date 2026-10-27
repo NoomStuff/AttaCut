@@ -1,6 +1,7 @@
 import type { ScrubAudio } from "../shared/types.ts";
 import { resolveFrameTime } from "../shared/frames.ts";
-import { packetsAround, probeSource, sourceFrames, sourceKeyframes, setSourceLifetime } from "./media/probe.ts";
+import { packetsAround, sourceFrames, sourceKeyframes, setSourceLifetime } from "./media/probe.ts";
+import { SourceProbe } from "./source-probe";
 import { frameTimesAround } from "./media/frame-times";
 import type { ProbedSource } from "./media/probe.ts";
 import { preparePreview, leasePreview, releasePreview } from "./media/preview.ts";
@@ -12,6 +13,7 @@ import { detectSceneCuts } from "./media/scenes";
 
 /** Owns the active source. Export plans retain their own immutable source reference. */
 export class SourceSession {
+   private readonly probe = new SourceProbe();
    private opening = new AbortController();
    private lifetime = new AbortController();
    private preview = new AbortController();
@@ -81,7 +83,7 @@ export class SourceSession {
       this.opening.abort();
       const controller = new AbortController();
       this.opening = controller;
-      const source = await probeSource(path, controller.signal);
+      const source = await this.probe.open(path, controller.signal);
       controller.signal.throwIfAborted();
       await validate?.(source);
       controller.signal.throwIfAborted();
