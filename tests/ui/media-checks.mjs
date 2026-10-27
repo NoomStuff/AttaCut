@@ -43,9 +43,12 @@ export async function expectAudioMatches(source, sourceTime, output, outputTime,
    async function samples(path, time) {
       const { stdout } = await run(
          mediaBinary("ffmpeg"),
-         ["-v", "error", "-ss", String(time), "-i", path, "-map", `0:a:${track}`, "-t", "0.25", "-ac", "1", "-ar", "48000", "-f", "f32le", "-"],
+         // Decode AAC priming before selecting the window. Input seeking can omit
+         // these short samples on some FFmpeg builds even when the full track plays.
+         ["-v", "error", "-i", path, "-ss", String(time), "-map", `0:a:${track}`, "-t", "0.25", "-ac", "1", "-ar", "48000", "-f", "f32le", "-"],
          { windowsHide: true, encoding: "buffer", maxBuffer: 1024 * 1024 }
       );
+      expect(stdout.length, `audio track ${track} at ${time}s`).toBe(48000);
       const pcm = Array.from({ length: stdout.length / 4 }, (_, index) => stdout.readFloatLE(index * 4));
       const rms = Math.sqrt(pcm.reduce((sum, value) => sum + value * value, 0) / pcm.length);
       const crossings = pcm.reduce((sum, value, index) => sum + (index > 0 && value > 0 && pcm[index - 1] <= 0 ? 1 : 0), 0);

@@ -13,7 +13,7 @@ import { detectSceneCuts } from "./media/scenes";
 
 /** Owns the active source. Export plans retain their own immutable source reference. */
 export class SourceSession {
-   private readonly probe = new SourceProbe();
+   private readonly probe: SourceProbe;
    private opening = new AbortController();
    private lifetime = new AbortController();
    private preview = new AbortController();
@@ -62,9 +62,10 @@ export class SourceSession {
    readonly mediaPaths = new Map<string, string>();
    private previewFolder: string;
    private previewReady: Promise<void>;
-   constructor(previewFolder: string, previewReady: Promise<void> = Promise.resolve()) {
+   constructor(previewFolder: string, previewReady: Promise<void> = Promise.resolve(), probe = new SourceProbe()) {
       this.previewFolder = previewFolder;
       this.previewReady = previewReady;
+      this.probe = probe;
    }
    get signal(): AbortSignal {
       return this.lifetime.signal;
@@ -78,9 +79,6 @@ export class SourceSession {
    }
    cancelOpening(): void {
       this.opening.abort();
-   }
-   prefetch(path: string): void {
-      void this.probe.prefetch(path).catch(() => undefined);
    }
    async open(path: string, validate?: (source: ProbedSource) => void | Promise<void>): Promise<ProbedSource> {
       this.opening.abort();
