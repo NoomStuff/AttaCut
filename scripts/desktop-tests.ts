@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { hasDisposableDesktop } from "./test-isolation";
 
-const suites = ["ui", "playback", "native", "all", "package", "release"] as const;
+const suites = ["ui", "playback", "native", "all", "package", "release", "performance"] as const;
 type Suite = (typeof suites)[number];
 function isSuite(value: string): value is Suite {
    return suites.some((suite) => suite === value);
@@ -25,6 +25,7 @@ export async function runDesktopTests(suite: Suite): Promise<void> {
       if (suite === "playback" || suite === "all") command(["run", "test:media"]);
       else command(["tests/create-fixtures.ts"]);
       command(["run", "build"]);
+      if (suite === "performance") return command(["x", "--no-install", "playwright", "test", "--project=ui", "loading-performance.spec.mjs"]);
       const projects = suite === "all" ? ["--project=ui", "--project=playback"] : [`--project=${suite}`];
       return command(["x", "--no-install", "playwright", "test", ...projects]);
    }
