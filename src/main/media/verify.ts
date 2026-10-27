@@ -23,7 +23,7 @@ export async function verifyOutputStructure(
    ignoreTypes: readonly string[] = [],
    videoFrameDuration?: number,
    expectedFrameCount?: number
-): Promise<void> {
+): Promise<ProbedSource> {
    const actual = await probeSource(output, signal);
    const expected = source.streams.filter((stream) => (stream.type !== "audio" || audioTracks.includes(stream.index)) && !ignoreTypes.includes(stream.type));
    for (const type of new Set([...expected, ...actual.streams].map((stream) => stream.type))) {
@@ -96,6 +96,7 @@ export async function verifyOutputStructure(
       if (frames && frames.length !== expectedFrameCount)
          throw new Error("The exported frame count does not match the selected clips. No output was published.");
    }
+   return actual;
 }
 
 const referenceHashes = new WeakMap<ProbedSource, Map<number, string>>();
@@ -123,94 +124,118 @@ async function preservedPictureHash(source: ProbedSource, index: number, signal?
    cache.set(index, hash);
    return hash;
 }
-async function referenceHash(source: ProbedSource, time: number, signal?: AbortSignal): Promise<string> {
-   let cache = referenceHashes.get(source);
-   const hash = cache?.get(time);
-   if (hash) return hash;
-   const result = await frameHash(source.path, time, source.startOffset, signal);
-   signal?.throwIfAborted();
-   if (!cache) {
-      cache = new Map();
-      referenceHashes.set(source, cache);
+interface FrameCheck {
+   time: number;
+   encoded: boolean;
+}
+
+/** Share decoding between nearby checks, with at most ten seconds between endpoints
+ * and eight checks per graph. Distant cuts never cause a scan across the recording. */
+export async function verifyCutFrames(
+   source: ProbedSource,
+   output: ProbedSource,
+   start: number,
+   copiedTimes: number[] = [],
+   encodedTimes: number[] = [],
+   signal?: AbortSignal
+): Promise<void> {
+   const checks: FrameCheck[] = [
+      ...[...new Set(copiedTimes)].map((time) => ({ time, encoded: false })),
+      ...[...new Set(encodedTimes)].map((time) => ({ time, encoded: true })),
+   ].sort((a, b) => a.time - b.time);
+   let group: FrameCheck[] = [];
+   for (const check of checks) {
+      if (group.length && (group.length >= 8 || check.time - group[0]!.time > 10)) {
+         await verifyFrameGroup(source, output, start, group, signal);
+         group = [];
+      }
+      group.push(check);
    }
-   cache.set(time, result);
-   if (cache.size > 128) cache.delete(cache.keys().next().value!);
-   return result;
+   if (group.length) await verifyFrameGroup(source, output, start, group, signal);
 }
-async function frameHash(path: string, time: number, offset: number, signal?: AbortSignal): Promise<string> {
-   const seek = Math.max(0, time - 5);
-   const result = await runMedia(
-      "ffmpeg",
-      [
-         "-v",
-         "error",
-         "-copyts",
-         ...(seek > 0 ? ["-ss", String(seek)] : []),
-         "-noautorotate",
-         "-i",
-         path,
-         "-map",
-         "0:V:0",
-         "-an",
-         "-vf",
-         `trim=start=${Math.max(0, time + offset - 0.0011)},setpts=PTS-STARTPTS`,
-         "-frames:v",
-         "1",
-         "-fps_mode",
-         "passthrough",
-         "-f",
-         "framemd5",
-         "-",
-      ],
-      { signal }
+
+async function verifyFrameGroup(source: ProbedSource, output: ProbedSource, start: number, checks: FrameCheck[], signal?: AbortSignal): Promise<void> {
+   signal?.throwIfAborted();
+   let references = referenceHashes.get(source);
+   if (!references) {
+      references = new Map();
+      referenceHashes.set(source, references);
+   }
+   const sourceChecks = checks.filter((check) => check.encoded || !references.has(check.time));
+   const args = ["-v", "error", "-copyts"];
+   const input = (path: string, time: number) => {
+      const seek = Math.max(0, time - 5);
+      args.push(...(seek > 0 ? ["-ss", String(seek)] : []), "-noautorotate", "-i", path);
+   };
+   if (sourceChecks.length) input(source.path, sourceChecks[0]!.time);
+   input(output.path, checks[0]!.time - start);
+   const graph: string[] = [];
+   const sourceFormat = primaryVideo(source)!.pixelFormat;
+   const outputFormat = primaryVideo(output)!.pixelFormat;
+   // Pin each decoder's native format before splitting. SSIM may need a color
+   // conversion, but that conversion must never affect the exact copied-frame hashes.
+   if (sourceChecks.length)
+      graph.push(`[0:V:0]format=pix_fmts=${sourceFormat},split=${sourceChecks.length}${sourceChecks.map((_, index) => `[source${index}]`).join("")}`);
+   graph.push(
+      `[${sourceChecks.length ? 1 : 0}:V:0]format=pix_fmts=${outputFormat},split=${checks.length}${checks.map((_, index) => `[output${index}]`).join("")}`
    );
-   const line = result.split("\n").find((item) => item && !item.startsWith("#"));
-   if (!line) throw new Error("Could not verify a frame at the cut. The partial export was removed.");
-   return line.split(",").at(-1)!.trim();
-}
-export async function verifyCopiedFrames(source: ProbedSource, output: string, start: number, times: number[], signal?: AbortSignal): Promise<void> {
-   for (const time of times) {
-      signal?.throwIfAborted();
-      const [original, copy] = await Promise.all([referenceHash(source, time, signal), frameHash(output, time - start, 0, signal)]);
+   const maps: string[] = [];
+   let streams = 0;
+   const map = (label: string, format?: string) => {
+      const index = streams++;
+      maps.push("-map", `[${label}]`, `-threads:v:${index}`, "1");
+      if (format) maps.push(`-pix_fmt:v:${index}`, format);
+      return index;
+   };
+   const copies: { time: number; source: number | null; output: number }[] = [];
+   const encoded: number[] = [];
+   for (const [index, check] of checks.entries()) {
+      const reference = sourceChecks.indexOf(check);
+      // Each branch ends after its first selected frame. A failed quality check
+      // cannot silently accept a later frame or keep decoding until the file ends.
+      const frame = (label: string, time: number, target: string) =>
+         graph.push(`[${label}]trim=start=${Math.max(0, time - 0.0011)},trim=end_frame=1,setpts=PTS-STARTPTS[${target}]`);
+      if (reference >= 0) frame(`source${reference}`, check.time + source.startOffset, `a${index}`);
+      frame(`output${index}`, check.time - start, `b${index}`);
+      if (check.encoded) {
+         graph.push(`[a${index}][b${index}]ssim,metadata=mode=select:key=lavfi.ssim.All:value=0.9:function=expr:expr='gte(VALUE1,VALUE2)'[quality${index}]`);
+         encoded.push(map(`quality${index}`));
+      } else copies.push({ time: check.time, source: reference >= 0 ? map(`a${index}`, sourceFormat) : null, output: map(`b${index}`, outputFormat) });
+   }
+   const result = await runMedia("ffmpeg", [...args, "-filter_complex", graph.join(";"), ...maps, "-an", "-fps_mode", "passthrough", "-f", "framemd5", "-"], {
+      signal,
+   }).catch((error: unknown) => {
+      // FFmpeg can reject a multi-stream hash output when one selected frame is
+      // absent. This is a failed frame check, not an encoder setting the user can fix.
+      if (error instanceof Error && /Could not open encoder before EOF|at least one of its streams received no packets/.test(error.message))
+         throw new Error(
+            encoded.length
+               ? "An encoded boundary did not match the selected source frame. No output was published."
+               : "Could not verify a frame at the cut. The partial export was removed.",
+            { cause: error }
+         );
+      throw error;
+   });
+   signal?.throwIfAborted();
+   const hashes = new Map<number, string>();
+   for (const line of result.split("\n")) {
+      if (!line || line.startsWith("#")) continue;
+      const fields = line.split(",").map((field) => field.trim());
+      const index = Number(fields[0]);
+      if (fields.length !== 6 || !Number.isInteger(index) || index < 0 || index >= streams || !/^[a-f0-9]{32}$/i.test(fields[5]!) || hashes.has(index))
+         throw new Error("Could not verify a frame at the cut. The partial export was removed.");
+      hashes.set(index, fields[5]!);
+   }
+   for (const check of copies) {
+      const original = check.source === null ? references.get(check.time) : hashes.get(check.source);
+      const copy = hashes.get(check.output);
+      if (!original || !copy) throw new Error("Could not verify a frame at the cut. The partial export was removed.");
       if (original !== copy)
          throw new Error(
             "This file's frame dependencies could not be joined without changing copied video. Try a shorter clip. The partial export was removed."
          );
+      references.set(check.time, original);
+      if (references.size > 128) references.delete(references.keys().next().value!);
    }
-}
-
-/** Compare only encoded span endpoints, never decode the whole kept recording. */
-export async function verifyEncodedFrames(source: ProbedSource, output: string, start: number, times: number[], signal?: AbortSignal): Promise<void> {
-   for (const time of times) {
-      const outputTime = time - start;
-      const data = await runMedia(
-         "ffmpeg",
-         [
-            "-v",
-            "error",
-            "-copyts",
-            ...(time > 5 ? ["-ss", String(time - 5)] : []),
-            "-noautorotate",
-            "-i",
-            source.path,
-            ...(outputTime > 5 ? ["-ss", String(outputTime - 5)] : []),
-            "-noautorotate",
-            "-i",
-            output,
-            "-filter_complex",
-            `[0:V:0]trim=start=${Math.max(0, time + source.startOffset - 0.0011)},setpts=PTS-STARTPTS[a];` +
-               `[1:V:0]trim=start=${Math.max(0, outputTime - 0.0011)},setpts=PTS-STARTPTS[b];` +
-               "[a][b]ssim,metadata=print:file=-",
-            "-frames:v",
-            "1",
-            "-an",
-            "-f",
-            "null",
-            "-",
-         ],
-         { signal }
-      );
-      const quality = Number(/lavfi\.ssim\.All=([\d.]+)/.exec(data)?.[1]);
-      if (!Number.isFinite(quality) || quality < 0.9) throw new Error("An encoded boundary did not match the selected source frame. No output was published.");
-   }
+   if (encoded.some((index) => !hashes.has(index))) throw new Error("An encoded boundary did not match the selected source frame. No output was published.");
 }

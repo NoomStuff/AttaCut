@@ -1,8 +1,10 @@
 import { expect } from "@playwright/test";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { test, waitForVideo } from "./app.mjs";
+import { inspectMedia, expectFrameMatches, expectCopiedFrameMatches, expectAudioMatches } from "./media-checks.mjs";
 
 async function report(testInfo, name, value) {
    const path = testInfo.outputPath(`${name}.json`);
@@ -66,6 +68,62 @@ for (const variant of variants) {
          await waitForVideo(page);
          await expect(page.getByRole("textbox", { name: "Clip start", exact: true })).toBeEditable();
          await report(testInfo, "startup-opening-time", { readyMs: performance.now() - started });
+      });
+
+      test("measure the complete open, trim, and accurate export workflow", async ({ launchApp, profile }, testInfo) => {
+         const source = resolve("work/fixture.mp4");
+         const output = join(profile, "exports");
+         await mkdir(output);
+         const sourceHash = createHash("sha256")
+            .update(await readFile(source))
+            .digest("hex");
+         const started = performance.now();
+         const app = await launchApp(profile, source);
+         const page = await app.firstWindow();
+         await waitForVideo(page);
+         const opened = performance.now();
+         const start = page.getByRole("textbox", { name: "Clip start", exact: true });
+         const end = page.getByRole("textbox", { name: "Clip end", exact: true });
+         await start.fill("00:01.30");
+         await start.press("Tab");
+         await end.fill("00:08.70");
+         await end.press("Tab");
+         await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", "1.3");
+         await expect(page.getByRole("slider", { name: "Clip 1 end", exact: true })).toHaveAttribute("aria-valuenow", "8.7");
+         await page.getByRole("button", { name: "Export", exact: true }).click();
+         await page.getByRole("button", { name: "Single Video", exact: true }).click();
+         await page.getByLabel("Save to", { exact: true }).fill(output);
+         await page.getByRole("textbox", { name: "Combined filename", exact: true }).fill("workflow");
+         await expect(page.getByRole("button", { name: "Audio tracks to export", exact: true })).toContainText("All audio tracks");
+         const exporting = performance.now();
+         await page.getByRole("button", { name: "Export video", exact: true }).click();
+         await expect(page.locator(".notification-entry").first().getByRole("button", { name: "Open file", exact: true })).toBeVisible({ timeout: 60000 });
+         const completed = performance.now();
+         await report(testInfo, "workflow-times", {
+            startupMs: opened - started,
+            editingMs: exporting - opened,
+            exportMs: completed - exporting,
+            totalMs: completed - started,
+         });
+         const diagnostics = testInfo.outputPath("workflow-diagnostics.json");
+         await app.evaluate(({ dialog }, filePath) => {
+            dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+         }, diagnostics);
+         await page.evaluate(() => globalThis.desktop.exportDiagnostics());
+         await report(testInfo, "workflow-diagnostics", JSON.parse(await readFile(diagnostics, "utf8")));
+         const result = join(output, "workflow.mp4");
+         const media = await inspectMedia(result);
+         expect(Number(media.format.duration)).toBeCloseTo(7.4, 1);
+         expect(media.streams.filter((stream) => stream.codec_type === "audio")).toHaveLength(2);
+         await expectFrameMatches(source, 1.3, result, 0);
+         await expectFrameMatches(source, 8.7 - 1 / 30, result, 7.4 - 1 / 30);
+         await expectCopiedFrameMatches(source, 4, result, 2.7);
+         for (const track of [0, 1]) await expectAudioMatches(source, 4, result, 2.7, track);
+         expect(
+            createHash("sha256")
+               .update(await readFile(source))
+               .digest("hex")
+         ).toBe(sourceHash);
       });
 
       test("repeatedly restore the last edit without losing clips", async ({ launchApp, profile }, testInfo) => {

@@ -3,14 +3,15 @@ import { primaryVideo } from "../../shared/types";
 import { writeFile, copyFile, stat, constants } from "node:fs/promises";
 import { publishOutput } from "./publish.ts";
 import { join, extname, dirname, resolve } from "node:path";
+import { availableParallelism } from "node:os";
 import type { Clip, ExportPlanItem, StreamAssessment, ExportStage } from "../../shared/types.ts";
 import type { ProbedSource, PacketPoint } from "./probe.ts";
-import { packetsAround, assertSourceUnchanged, sourceFrames } from "./probe.ts";
+import { packetsAround, assertSourceUnchanged, sourceFrames, probeSource } from "./probe.ts";
 import { lowerBound } from "../../shared/sorted";
 import { ffmpegBase, runMedia } from "./process.ts";
 import type { RunOptions } from "./process.ts";
 import { metadataInputs, textSubtitleCodecs } from "./metadata.ts";
-import { verifyCopiedFrames, verifyOutputStructure, verifyEncodedFrames } from "./verify.ts";
+import { verifyCutFrames, verifyOutputStructure } from "./verify.ts";
 import {
    encoderArguments,
    aspectArguments,
@@ -283,8 +284,13 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
          const weight = (span: Span) => (span.end - span.start) * (span.encode ? 4 : 1);
          const totalWork = analysis.spans.reduce((sum, span) => sum + weight(span), duration);
          let finishedWork = 0;
-         for (const [index, span] of analysis.spans.entries()) {
-            options.signal?.throwIfAborted();
+         const spanProgress = analysis.spans.map(() => 0);
+         const workers = Math.min(analysis.spans.length, availableParallelism() >= 8 ? 2 : 1);
+         const failed = new AbortController();
+         const spanSignal = options.signal ? AbortSignal.any([options.signal, failed.signal]) : failed.signal;
+         const renderSpan = async (index: number) => {
+            spanSignal.throwIfAborted();
+            const span = analysis.spans[index]!;
             const segmentType = segmentExtension(video.codec);
             const path = join(temporary, `part-${index}${segmentType}`);
             const preroll = span.readStart ?? Math.max(0, span.start - 5);
@@ -332,16 +338,42 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             args.push("-progress", "pipe:1", path);
             await runMedia("ffmpeg", args, {
                ...options,
+               signal: spanSignal,
+               belowNormal: options.belowNormal ?? workers > 1,
                duration: span.end - span.start,
-               onProgress: (fraction) => options.onProgress?.((0.9 * (finishedWork + weight(span) * fraction)) / totalWork),
+               onProgress: (fraction) => {
+                  spanProgress[index] = Math.max(spanProgress[index]!, fraction);
+                  const completed = spanProgress.reduce((sum, progress, position) => sum + weight(analysis.spans[position]!) * progress, 0);
+                  options.onProgress?.((0.9 * completed) / totalWork);
+               },
             });
             // ffmpeg exits 0 even when the trim let nothing through, and the empty segment
             // only surfaces later as a cryptic concat failure. Name the cut instead.
             const written = await stat(path).catch(() => null);
             if (!written || written.size === 0) throw new Error("No video frames were produced for this cut. Try a nearby cut or turn on Snap to keyframes.");
             finishedWork += weight(span);
-            segmentPaths.push(path);
-         }
+            spanProgress[index] = 1;
+            segmentPaths[index] = path;
+         };
+         let nextSpan = 0;
+         let failure: { error: unknown } | undefined;
+         const worker = async () => {
+            while (nextSpan < analysis.spans.length && !spanSignal.aborted) {
+               const index = nextSpan++;
+               try {
+                  await renderSpan(index);
+               } catch (error) {
+                  failure ??= { error };
+                  failed.abort();
+               }
+            }
+         };
+         // Small machines keep one decoder/encoder active. Larger CPUs can prepare
+         // both boundaries together; the shared scheduler still reserves seek capacity.
+         await Promise.all(Array.from({ length: workers }, () => worker()));
+         // Wait for every child to close before the transaction can remove its files.
+         if (failure) throw failure.error;
+         spanSignal.throwIfAborted();
          const listPath = join(temporary, "parts.ffconcat");
          await writeFile(
             listPath,
@@ -417,8 +449,9 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
       if (options.verify ?? true) {
          options.onStage?.("checking");
          options.onProgress?.(0.92);
+         let checkedOutput: ProbedSource | undefined;
          if (analysis.execution !== "file-copy" || !allAudio || extname(destination).toLowerCase() !== source.extension.toLowerCase())
-            await verifyOutputStructure(
+            checkedOutput = await verifyOutputStructure(
                source,
                finalTemporary,
                selectedAudio.map((stream) => stream.index),
@@ -429,8 +462,15 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                analysis.frameDuration,
                analysis.frameCount
             );
-         if (analysis.verifyTimes?.length) await verifyCopiedFrames(source, finalTemporary, clip.start, analysis.verifyTimes, options.signal);
-         if (analysis.encodedVerifyTimes?.length) await verifyEncodedFrames(source, finalTemporary, clip.start, analysis.encodedVerifyTimes, options.signal);
+         if (analysis.verifyTimes?.length || analysis.encodedVerifyTimes?.length)
+            await verifyCutFrames(
+               source,
+               checkedOutput ?? (await probeSource(finalTemporary, options.signal)),
+               clip.start,
+               analysis.verifyTimes,
+               analysis.encodedVerifyTimes,
+               options.signal
+            );
       }
       await assertSourceUnchanged(source);
       options.onStage?.("saving");
