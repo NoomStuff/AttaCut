@@ -91,7 +91,7 @@ for (const variant of variants) {
          await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", "1.3");
          await expect(page.getByRole("slider", { name: "Clip 1 end", exact: true })).toHaveAttribute("aria-valuenow", "8.7");
          await page.getByRole("button", { name: "Export", exact: true }).click();
-         await page.getByRole("button", { name: "Single Video", exact: true }).click();
+         await expect(page.getByRole("button", { name: "Single Video", exact: true })).toHaveAttribute("aria-pressed", "true");
          await page.getByLabel("Save to", { exact: true }).fill(output);
          await page.getByRole("textbox", { name: "Combined filename", exact: true }).fill("workflow");
          await expect(page.getByRole("button", { name: "Audio tracks to export", exact: true })).toContainText("All audio tracks");
