@@ -17,6 +17,7 @@ interface IpcResponses {
    "source:scenes": number[];
    "source:cancel-scenes": void;
    "source:frame-time": number;
+   "source:frame-times": number[];
    "directory:choose": string | null;
    "preferences:save": void;
    "session:save": void;

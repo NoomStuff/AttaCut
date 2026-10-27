@@ -116,6 +116,20 @@ export class SourceSession {
       signal.throwIfAborted();
       return resolveFrameTime(points, time, source.duration, direction);
    }
+   async frameTimes(id: string, times: number[]): Promise<number[]> {
+      const source = this.get(id);
+      const signal = this.signal;
+      const frames = await sourceFrames(source, signal).catch(() => null);
+      signal.throwIfAborted();
+      if (frames) return times.map((time) => resolveFrameTime(frames, time, source.duration));
+      return Promise.all(
+         times.map(async (time) => {
+            const points = await frameTimesAround(source, time, signal);
+            signal.throwIfAborted();
+            return resolveFrameTime(points, time, source.duration);
+         })
+      );
+   }
    cancelPreview(): void {
       this.preview.abort();
    }

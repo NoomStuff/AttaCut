@@ -246,6 +246,47 @@ it("does not restart an old seek after the source changes", async () => {
    session.dispose();
 });
 
+it("resolves a boundary batch against one index while retaining request order and duplicates", async () => {
+   const session = new SourceSession("unused-preview-directory");
+   await session.open("a");
+   vi.mocked(sourceFrames).mockClear();
+   vi.mocked(sourceFrames).mockResolvedValueOnce(new Float64Array([0, 1 / 30, 2 / 30, 4 / 30]));
+   expect(await session.frameTimes("a", [0.11, 0, 0.02, 0.02, 36000])).toEqual([4 / 30, 0, 1 / 30, 1 / 30, 36000]);
+   expect(sourceFrames).toHaveBeenCalledOnce();
+   session.dispose();
+});
+
+it("keeps packet-window boundary resolution available when a full index is unsupported", async () => {
+   const session = new SourceSession("unused-preview-directory");
+   await session.open("a");
+   vi.mocked(packetsAround).mockResolvedValueOnce([
+      { time: 1, key: true, dts: 1 },
+      { time: 1.04, key: false, dts: 1.04 },
+   ]);
+   expect(await session.frameTimes("a", [1.03])).toEqual([1.04]);
+   session.dispose();
+});
+
+it("cancels a pending boundary batch before it can scan the outgoing source", async () => {
+   const session = new SourceSession("unused-preview-directory");
+   await session.open("a");
+   let finish!: (frames: null) => void;
+   vi.mocked(sourceFrames).mockImplementationOnce(
+      () =>
+         new Promise((resolve) => {
+            finish = resolve;
+         })
+   );
+   const pending = session.frameTimes("a", [1, 2]);
+   const rejected = expect(pending).rejects.toThrow();
+   session.close();
+   vi.mocked(packetsAround).mockClear();
+   finish(null);
+   await rejected;
+   expect(packetsAround).not.toHaveBeenCalled();
+   session.dispose();
+});
+
 it("does not write a preview cancelled while startup cache cleanup is pending", async () => {
    let finishCleanup!: () => void;
    const cleanup = new Promise<void>((resolve) => {

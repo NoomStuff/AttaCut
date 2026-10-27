@@ -58,6 +58,7 @@ export interface DesktopApi {
       listener: (chunk: { sourceId: string; requestId: string; rate: number; offset: number; peaks: Uint8Array; priority?: boolean }) => void
    ): () => void;
    frameTime(sourceId: string, time: number, direction: -1 | 0 | 1): Promise<number>;
+   frameTimes(sourceId: string, times: number[]): Promise<number[]>;
    cancelExportPlanning(): Promise<void>;
    cancelExportAnalysis(): Promise<void>;
    flushState(value: { preferences: Preferences; session: SessionInput | null; closing?: boolean; cancelClose?: boolean }): Promise<void>;

@@ -103,7 +103,15 @@ for (const variant of variants) {
             await waitForVideo(page);
             await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(500);
             await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", String(start));
-            measurements.push({ run, readyMs: performance.now() - began });
+            const requests = await app.evaluate(() =>
+               globalThis.attacutTestIpc
+                  ? {
+                       single: globalThis.attacutTestIpc.count("source:frame-time"),
+                       batch: globalThis.attacutTestIpc.count("source:frame-times"),
+                    }
+                  : null
+            );
+            measurements.push({ run, readyMs: performance.now() - began, requests });
          }
          await report(testInfo, "restoration-times", measurements);
       });
