@@ -79,6 +79,9 @@ export class SourceSession {
    cancelOpening(): void {
       this.opening.abort();
    }
+   prefetch(path: string): void {
+      void this.probe.prefetch(path).catch(() => undefined);
+   }
    async open(path: string, validate?: (source: ProbedSource) => void | Promise<void>): Promise<ProbedSource> {
       this.opening.abort();
       const controller = new AbortController();
@@ -233,10 +236,12 @@ export class SourceSession {
    }
    close(): void {
       this.opening.abort();
+      this.probe.cancelPrefetch();
       this.release();
    }
    dispose(): void {
       this.opening.abort();
+      this.probe.cancelPrefetch();
       this.release();
       this.lifetime.abort();
    }

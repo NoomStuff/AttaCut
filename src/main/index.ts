@@ -9,7 +9,7 @@ import { ExportService } from "./exports.ts";
 import { Storage } from "./storage.ts";
 import { serveMedia } from "./media/serve.ts";
 import { videoExtensions } from "./media/formats.ts";
-import { projectExtensions } from "../shared/project";
+import { isProjectPath, projectExtensions } from "../shared/project";
 import { prunePreviews } from "./media/preview.ts";
 import { IpcEvents } from "../shared/ipc.ts";
 import { installMenu } from "./menu.ts";
@@ -146,6 +146,8 @@ async function start(): Promise<void> {
    );
    void previewCleanup.catch(() => undefined);
    const sourceSession = new SourceSession(previewFolder, previewCleanup);
+   const startupSource = pendingFile ?? (storage.preferences.resume ? storage.session?.path : null);
+   if (startupSource && !isProjectPath(startupSource)) sourceSession.prefetch(startupSource);
    // Deny-by-default for renderer permissions; nothing in the app currently requests any.
    session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
       callback(contents === window.webContents && permission === "fullscreen")

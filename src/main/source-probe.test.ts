@@ -96,3 +96,59 @@ it("does not retain a result when its opening was cancelled during probing", asy
    await probe.open(path);
    expect(probeSource).toHaveBeenCalledTimes(2);
 });
+it("shares a startup probe with opening while returning independent source metadata", async () => {
+   const path = await fixture();
+   const probe = new SourceProbe();
+   const implementation = vi.mocked(probeSource).getMockImplementation()!;
+   let finish!: () => void;
+   vi.mocked(probeSource).mockImplementationOnce(async (...args) => {
+      await new Promise<void>((resolve) => {
+         finish = resolve;
+      });
+      return implementation(...args);
+   });
+   const warming = probe.prefetch(path);
+   await vi.waitFor(() => expect(probeSource).toHaveBeenCalledOnce());
+   const opening = probe.open(path);
+   finish();
+   await warming;
+   const source = await opening;
+   expect(probeSource).toHaveBeenCalledOnce();
+   expect(source.id).not.toBe("original");
+});
+it("checks the file again after prefetch and retries a failed prefetch on demand", async () => {
+   const path = await fixture();
+   const probe = new SourceProbe();
+   vi.mocked(probeSource).mockRejectedValueOnce(new Error("Temporary read failure"));
+   await expect(probe.prefetch(path)).rejects.toThrow("Temporary read failure");
+   await probe.open(path);
+   await probe.prefetch(path);
+   await writeFile(path, "new video");
+   await probe.open(path);
+   expect(probeSource).toHaveBeenCalledTimes(3);
+});
+it("cancels speculative work when another source is chosen or the session closes", async () => {
+   const path = await fixture();
+   const other = `${path}.other`;
+   await writeFile(other, "video");
+   const probe = new SourceProbe();
+   const implementation = vi.mocked(probeSource).getMockImplementation()!;
+   const signals: AbortSignal[] = [];
+   vi.mocked(probeSource).mockImplementation(async (...args) => {
+      const signal = args[1]!;
+      signals.push(signal);
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      return implementation(...args);
+   });
+   const warming = probe.prefetch(path);
+   await vi.waitFor(() => expect(signals).toHaveLength(1));
+   vi.mocked(probeSource).mockImplementationOnce(implementation);
+   await probe.open(other);
+   await expect(warming).rejects.toThrow();
+   expect(signals[0]!.aborted).toBe(true);
+   const next = probe.prefetch(path);
+   await vi.waitFor(() => expect(signals).toHaveLength(2));
+   probe.cancelPrefetch();
+   await expect(next).rejects.toThrow();
+   expect(signals[1]!.aborted).toBe(true);
+});

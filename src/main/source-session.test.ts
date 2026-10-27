@@ -15,6 +15,7 @@ vi.mock("./media/probe.ts", () => ({
 }));
 vi.mock("./source-probe", () => ({
    SourceProbe: class {
+      cancelPrefetch() {}
       open(path: string, signal?: AbortSignal) {
          return probeSource(path, signal);
       }

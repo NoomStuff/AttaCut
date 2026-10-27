@@ -6,9 +6,11 @@ export function clipChanges(previous: Clip[], next: Clip[]) {
    const exiting: { clip: Clip; index: number }[] = [];
    const flashes = new Map<string, ("start" | "end")[]>();
    const seams: { time: number; color: number }[] = [];
+   const previousIds = new Set(previous.map((clip) => clip.id));
+   const nextIds = new Set(next.map((clip) => clip.id));
    const contains = (outer: Clip, inner: Clip) => outer.start <= inner.start && outer.end >= inner.end;
    for (const clip of next) {
-      if (previous.some((old) => old.id === clip.id)) continue;
+      if (previousIds.has(clip.id)) continue;
       const parent = previous.find((old) => contains(old, clip));
       if (!parent) entering.push(clip.id);
       else {
@@ -21,7 +23,7 @@ export function clipChanges(previous: Clip[], next: Clip[]) {
       }
    }
    previous.forEach((clip, index) => {
-      if (next.some((item) => item.id === clip.id)) return;
+      if (nextIds.has(clip.id)) return;
       const merged = next.find((item) => contains(item, clip));
       if (merged) {
          flashes.set(merged.id, []);
