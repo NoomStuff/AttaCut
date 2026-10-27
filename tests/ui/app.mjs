@@ -81,16 +81,18 @@ export const test = base.extend({
       const apps = new Set();
       const errors = [];
       const logs = [];
-      await use(async (profile, file) => {
+      await use(async (profile, file, options = {}) => {
          requireDisposableDesktop();
          const app = await electron.launch({
             args: [
                ...(process.env.ATTACUT_EXECUTABLE ? [] : [process.env.ATTACUT_TEST_ENTRY ?? "."]),
                ...(process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : []),
+               ...(options.args ?? []),
             ],
             ...(process.env.ATTACUT_EXECUTABLE ? { executablePath: process.env.ATTACUT_EXECUTABLE } : {}),
             env: {
                ...appEnv,
+               ...options.env,
                ATTACUT_TESTING: "1",
                ATTACUT_HIDDEN: process.env.ATTACUT_TEST_VISIBLE === "1" ? "0" : "1",
                ATTACUT_USER_DATA: profile,

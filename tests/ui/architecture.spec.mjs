@@ -4,6 +4,54 @@ import { resolve } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createServer } from "node:http";
+
+test("only development launches use a renderer server override", async ({ launchApp, profile }) => {
+   let requests = 0;
+   const server = createServer((_request, response) => {
+      requests++;
+      response.setHeader("Content-Type", "text/html");
+      response.end('<html><body><main class="app-shell">Development renderer</main></body></html>');
+   });
+   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+   const url = `http://127.0.0.1:${server.address().port}/`;
+   try {
+      const app = await launchApp(profile, undefined, {
+         args: [resolve("work/fixture.mp4")],
+         env: { ELECTRON_RENDERER_URL: url },
+      });
+      const page = await app.firstWindow();
+      if (process.env.ATTACUT_EXECUTABLE) {
+         expect(page.url()).toBe("app://editor/index.html");
+         expect(await app.evaluate(({ app }) => app.isPackaged && !process.defaultApp)).toBe(true);
+         await expect(page.locator(".title-filename")).toContainText("fixture.mp4");
+         await waitForVideo(page);
+         expect(requests).toBe(0);
+         const executable = await app.evaluate(({ app }) => app.getPath("exe"));
+         const args = process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : [];
+         await promisify(execFile)(executable, [...args, resolve("work/fixture.mkv")], {
+            env: { ...appEnv, ELECTRON_RENDERER_URL: url, ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: "", ATTACUT_HIDDEN: "1" },
+            windowsHide: true,
+            timeout: 20000,
+         });
+         await expect(page.locator(".title-filename")).toContainText("fixture.mkv");
+         expect(requests).toBe(0);
+      } else {
+         expect(page.url()).toBe(url);
+         await expect(page.locator(".app-shell")).toHaveText("Development renderer");
+         expect(requests).toBeGreaterThan(0);
+      }
+   } finally {
+      server.closeAllConnections();
+      await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+   }
+});
+
+test("packaged startup ignores an invalid inherited renderer URL", async ({ launchApp, profile }) => {
+   test.skip(!process.env.ATTACUT_EXECUTABLE, "Packaged startup regression");
+   const app = await launchApp(profile, "", { env: { ELECTRON_RENDERER_URL: "not a renderer URL" } });
+   expect((await app.firstWindow()).url()).toBe("app://editor/index.html");
+});
 
 test("isolated desktop preserves input, unmuted audio and decoded frames", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));

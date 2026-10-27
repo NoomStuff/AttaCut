@@ -304,7 +304,8 @@ async function start(): Promise<void> {
       }
       if (value === "exitFullscreen" && window.isFullScreen()) window.setFullScreen(false);
    });
-   if (process.env["ELECTRON_RENDERER_URL"]) await window.loadURL(process.env["ELECTRON_RENDERER_URL"]);
+   // External launchers can pass their own dev server URL through the environment.
+   if (!isPackagedApp() && process.env["ELECTRON_RENDERER_URL"]) await window.loadURL(process.env["ELECTRON_RENDERER_URL"]);
    else await window.loadURL("app://editor/index.html");
 }
 if (!ownsInstance) app.quit();
