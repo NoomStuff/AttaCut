@@ -1,14 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { hasDisposableDesktop } from "./test-isolation";
+import { prepareLoadingBaseline } from "./loading-baseline";
 
 const suites = ["ui", "playback", "native", "all", "package", "release", "performance"] as const;
 type Suite = (typeof suites)[number];
 function isSuite(value: string): value is Suite {
    return suites.some((suite) => suite === value);
 }
-const command = (args: string[]): void => {
-   execFileSync(process.execPath, args, { stdio: "inherit", windowsHide: true });
+const command = (args: string[], env = process.env): void => {
+   execFileSync(process.execPath, args, { stdio: "inherit", windowsHide: true, env });
 };
 const git = (args: string[]) => execFileSync("git", args, { encoding: "utf8", windowsHide: true }).trim();
 const gh = (args: string[]) => execFileSync("gh", args, { encoding: "utf8", windowsHide: true }).trim();
@@ -25,7 +26,14 @@ export async function runDesktopTests(suite: Suite): Promise<void> {
       if (suite === "playback" || suite === "all") command(["run", "test:media"]);
       else command(["tests/create-fixtures.ts"]);
       command(["run", "build"]);
-      if (suite === "performance") return command(["x", "--no-install", "playwright", "test", "--project=ui", "loading-performance.spec.mjs"]);
+      if (suite === "performance") {
+         const baseline = process.env["ATTACUT_BASELINE_REVISION"];
+         const entry = baseline ? prepareLoadingBaseline(baseline) : undefined;
+         return command(["x", "--no-install", "playwright", "test", "--project=ui", "loading-performance.spec.mjs"], {
+            ...process.env,
+            ...(entry ? { ATTACUT_BASELINE_ENTRY: entry } : {}),
+         });
+      }
       const projects = suite === "all" ? ["--project=ui", "--project=playback"] : [`--project=${suite}`];
       return command(["x", "--no-install", "playwright", "test", ...projects]);
    }
