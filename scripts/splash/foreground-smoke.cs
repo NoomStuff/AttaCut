@@ -29,7 +29,9 @@ internal static class ForegroundSmoke
         Process runtime = Process.GetProcessById(runtimeId);
         int result = 1;
         bool launched = false;
-        bool minimized = args[3] == "minimized";
+        bool minimized = args[3].StartsWith("minimized");
+        bool shell = args[3].EndsWith("shell");
+        DateTime? focusedSince = null;
         DateTime deadline = DateTime.UtcNow.AddSeconds(10);
         using (Form explorer = new Form())
         using (Timer timer = new Timer())
@@ -70,10 +72,10 @@ internal static class ForegroundSmoke
                         finally { if (attached) AttachThreadInput(thread, foregroundThread, false); }
                         return;
                     }
-                    // The foreground process starts the real launcher, just as Explorer
-                    // does for a file association. No test-side foreground grant.
+                    // Exercise direct process starts and shell starts, as Explorer uses.
+                    // Neither case gets a test-side foreground grant.
                     ProcessStartInfo start = new ProcessStartInfo(args[1], "\"" + args[2] + "\"");
-                    start.UseShellExecute = false;
+                    start.UseShellExecute = shell;
                     using (Process launch = Process.Start(start)) { }
                     launched = true;
                     deadline = DateTime.UtcNow.AddSeconds(15);
@@ -82,7 +84,15 @@ internal static class ForegroundSmoke
                 {
                     runtime.Refresh();
                     if (IsIconic(runtime.MainWindowHandle)) return;
+                    if (!focusedSince.HasValue) focusedSince = DateTime.UtcNow;
+                    // Closing a short-lived launcher must not return focus to Explorer.
+                    if ((DateTime.UtcNow - focusedSince.Value).TotalMilliseconds < 1000) return;
                     result = 0;
+                    explorer.Close();
+                }
+                else if (focusedSince.HasValue)
+                {
+                    Console.Error.WriteLine("App lost foreground focus after file-open for " + args[3]);
                     explorer.Close();
                 }
             };

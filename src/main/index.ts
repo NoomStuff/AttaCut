@@ -29,16 +29,19 @@ const fileArgument = (args: string[]): string | null =>
    args.find((arg) => [...videoExtensions, ...projectExtensions].some((extension) => arg.toLowerCase().endsWith(`.${extension}`)) && existsSync(arg)) ?? null;
 let pendingFile = process.env["ATTACUT_OPEN_FILE"] ?? fileArgument(process.argv.slice(1));
 const receiveFile = (path: string | null) => {
+   if (appWindow && !appWindow.isDestroyed() && process.env["ATTACUT_HIDDEN"] !== "1") {
+      if (appWindow.isMinimized()) appWindow.restore();
+      appWindow.show();
+      // Windows can deny foreground focus after the shell hands off a file.
+      // Raise the existing window independently, before loading the new source.
+      if (process.platform === "win32") appWindow.moveTop();
+      appWindow.focus();
+      appWindow.webContents.focus();
+   }
    if (path && rendererReady && appWindow && !appWindow.isDestroyed()) appWindow.webContents.send(IpcEvents.openFile, path);
    else if (path) {
       pendingFile = path;
       if (!isProjectPath(path)) void sourceProbe.prefetch(path).catch(() => undefined);
-   }
-   if (appWindow && !appWindow.isDestroyed() && process.env["ATTACUT_HIDDEN"] !== "1") {
-      if (appWindow.isMinimized()) appWindow.restore();
-      appWindow.show();
-      appWindow.focus();
-      appWindow.webContents.focus();
    }
 };
 app.on("second-instance", (_event, args) => receiveFile(fileArgument(args.slice(1))));

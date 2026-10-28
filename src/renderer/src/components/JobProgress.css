@@ -9,6 +9,8 @@
    max-height: calc(100% - 24px);
 }
 .notification-clear {
+   position: relative;
+   z-index: 1;
    align-self: flex-end;
    padding: 5px 9px;
    margin-bottom: 4px;
@@ -19,6 +21,7 @@
    flex-shrink: 0;
 }
 .notification-scroll {
+   isolation: isolate;
    --fade-top: 0px;
    --fade-bottom: 0px;
    scrollbar-width: none;

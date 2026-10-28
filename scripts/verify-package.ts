@@ -110,7 +110,7 @@ async function smokeLauncher(): Promise<void> {
       });
       // Separate foreground hosts keep each case independent of the previous
       // handoff. Windows need not allow a background test window to reactivate.
-      for (const state of ["normal", "minimized"]) {
+      for (const state of ["normal", "minimized", "normal-shell", "minimized-shell"]) {
          await run(foregroundSmoke, [String(runtimePid), launcher, resolve("work/fixture.mp4"), state], {
             env: { ...process.env, ATTACUT_TESTING: "1", ATTACUT_TEST_INACTIVE: "1", ATTACUT_HIDDEN: "0", ATTACUT_OPEN_FILE: "", ATTACUT_USER_DATA: profile },
             windowsHide: true,
