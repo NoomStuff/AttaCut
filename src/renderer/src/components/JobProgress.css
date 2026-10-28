@@ -31,7 +31,7 @@
    overflow-x: hidden;
    /* Leave room for the shadow to fade before the scroll boundary clips it. */
    padding: 16px 32px;
-   margin: -16px -32px;
+   margin: 0 -32px -16px;
    scroll-padding: 16px;
 }
 .notification-scroll::-webkit-scrollbar {
