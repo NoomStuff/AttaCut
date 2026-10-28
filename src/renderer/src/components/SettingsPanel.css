@@ -158,7 +158,6 @@
 
 .pattern-tokens button {
    padding: 4px 9px;
-   border: 1px solid var(--line);
    border-radius: 5px;
    background: var(--control-background, var(--surface));
    color: var(--muted);
@@ -213,7 +212,6 @@
    display: inline-flex;
    align-items: stretch;
    max-width: 100%;
-   border: 1px solid var(--line);
    background: var(--control-background, var(--surface));
    border-radius: 5px;
    overflow: hidden;
@@ -262,7 +260,6 @@
    margin-top: 10px;
    padding: 12px;
    background: var(--control-background, var(--surface));
-   border: 1px solid var(--line);
    border-radius: 6px;
 }
 

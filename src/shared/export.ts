@@ -3,14 +3,14 @@ import { clipSchema } from "./editing";
 import { clipLimit } from "./defaults";
 import type { Clip } from "./editing";
 import type { AppFailure } from "./failure";
-export const exportItemSchema = z.object({ clip: clipSchema, name: z.string().min(1).max(240) });
+export const exportItemSchema = z.object({ clip: clipSchema, name: z.string().min(1).max(255) });
 export const planRequestSchema = z.object({
    sourceId: z.string(),
    directory: z.string().min(1),
    items: z.array(exportItemSchema).min(1).max(clipLimit),
    mode: z.enum(["separate", "combined"]).default("separate"),
    audioTracks: z.array(z.number().int().nonnegative()).max(100).nullable().default(null),
-   name: z.string().max(240).default("combined"),
+   name: z.string().max(255).default("combined"),
 });
 export type PlanRequest = z.input<typeof planRequestSchema>;
 export const exportApprovalSchema = z.object({

@@ -203,8 +203,8 @@ button:is(:hover:not(:disabled), .shortcut-active) [data-icon="forward-step"] {
    }
 }
 
-button:is(:hover:not(:disabled), .shortcut-active) [data-icon="volume-high"],
-.volume-state-changed [data-icon="volume-high"] {
+button:is(:hover:not(:disabled), .shortcut-active) :is([data-icon="volume-high"], [data-icon="volume-low"], [data-icon="volume-off"]),
+.volume-state-changed :is([data-icon="volume-high"], [data-icon="volume-low"], [data-icon="volume-off"]) {
    animation: icon-wave 400ms ease-out;
 }
 @keyframes icon-wave {

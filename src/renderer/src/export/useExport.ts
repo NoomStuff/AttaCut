@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { substantialEncoding } from "../../../shared/export-policy";
-import { applyNamePattern, duplicateNames, sanitizeName } from "../../../shared/filename";
+import { applyNamePattern, duplicateNames, filenameError } from "../../../shared/filename";
+import { exportExtensionFor } from "../../../shared/export-format";
 import type { Clip, ExportJob, ExportPlan, CutReport, MediaSource, Preferences } from "../../../shared/types";
 import { errorText, isCancellation } from "../lib/errors";
 import { rememberAudioSelection, resolveAudioSelection } from "../playback/audioSelection";
@@ -102,10 +103,8 @@ export function useExport({
       if (clips.length > 1) onPreferences((current) => (current.exportMode === mode ? current : { ...current, exportMode: mode }));
    }, [clips.length, mode, onPreferences]);
    const [confirmation, setConfirmation] = useState<ExportPlan | null>(null);
-   // Clicking off a name field sanitizes what was typed, and an emptied field hands the
-   // name back to its template. Collisions are never rewritten silently: every clip
-   // sharing a name is flagged dangerous and Export stays blocked until the names differ,
-   // since an automatic suffix would decide which clip survives.
+   // Only an empty field hands the name back to its template on blur.
+   // Invalid names stay visible until the user corrects them.
    const normalizeName = (index?: number) => {
       if (index === undefined) {
          if (name.trim() === "") {
@@ -113,14 +112,13 @@ export function useExport({
             setName(generatedCombined());
             return;
          }
-         setName(sanitizeName(name));
          return;
       }
       setRows((current) =>
          current.map((row, i) => {
             if (i !== index) return row;
             if (row.name.trim() === "") return { ...row, altered: false, name: generatedName(row.clip, i) };
-            return { ...row, name: sanitizeName(row.name) };
+            return row;
          })
       );
    };
@@ -148,6 +146,17 @@ export function useExport({
    const [starting, setStarting] = useState(false);
    const [analysis, setAnalysis] = useState<CutReport[] | null>(null);
    const selectedCount = request.items.length;
+   const nameErrors = new Map<string, string>();
+   if (mode === "combined") {
+      const message = filenameError(name, source.exportExtension);
+      if (message) nameErrors.set("combined", message);
+   } else {
+      for (const row of rows.filter((row) => row.included)) {
+         const extension = exportExtensionFor(source, row.clip, { separate: true, allAudio: audioTracks.length === sourceAudio.length });
+         const message = filenameError(row.name, extension);
+         if (message) nameErrors.set(row.clip.id, message);
+      }
+   }
    const selectedClips = useMemo(() => rows.filter((row) => row.included).map((row) => row.clip), [rows]);
    // Media analysis is independent of filenames and destination checks, and reused at export.
    useEffect(() => {
@@ -171,7 +180,8 @@ export function useExport({
       request.items.length > 0 &&
       !!directory.trim() &&
       (mode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim())) &&
-      collisions.size === 0;
+      collisions.size === 0 &&
+      nameErrors.size === 0;
    // Main reports conflicts per clip, so the panel never replicates export naming rules.
    // While a recheck is pending the previous results stay shown: clearing them would replay
    // every row's warning animation on unrelated edits, and the recheck itself is debounced.
@@ -267,6 +277,7 @@ export function useExport({
       conflicts,
       dangers,
       collisions,
+      nameErrors,
       request,
       error,
       setError,

@@ -324,7 +324,7 @@
    border: 1px solid var(--line);
    border-radius: 7px;
    background: var(--surface-raised);
-   box-shadow: 0 3px 12px #0003;
+   box-shadow: var(--shadow-pop);
 }
 .volume-control .volume-popover .volume-slider {
    width: 100px;

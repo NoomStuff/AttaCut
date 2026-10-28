@@ -2,7 +2,7 @@ import { expect } from "@playwright/test";
 import { test, waitForVideo } from "./app.mjs";
 import { resolve } from "node:path";
 
-test("injected progress renders separate success and error cards", async ({ launchApp, profile }) => {
+test("injected progress renders separate success and error cards", async ({ launchApp, profile }, testInfo) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
@@ -43,12 +43,14 @@ test("injected progress renders separate success and error cards", async ({ laun
    await page.locator(".title-filename").click();
    await expect(previous).toHaveAttribute("inert", "");
    const notifications = page.getByRole("region", { name: "Exports" });
-   const clear = page.getByRole("button", { name: "Clear export notifications" });
+   const clear = page.getByRole("button", { name: "Clear 2 export notifications" });
+   await expect(clear).toHaveText("Clear 2");
    await clear.hover();
    await expect(notifications).toHaveAttribute("data-expanded", "false");
    await page.locator(".notification-scroll").hover();
    await expect(notifications).toHaveAttribute("data-expanded", "true");
    await expect(previous).not.toHaveAttribute("inert");
+   await page.screenshot({ path: testInfo.outputPath("notifications-expanded.png") });
    const bounds = await notifications.boundingBox();
    const dock = await page.locator(".editor-dock").boundingBox();
    expect(bounds.y + bounds.height).toBeLessThan(dock.y);

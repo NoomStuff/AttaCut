@@ -30,7 +30,7 @@
    --background: #1c1f24;
    --preview-background: #191c21;
    --surface: #202327;
-   --panel-background: color-mix(in srgb, var(--surface) 94%, transparent);
+   --panel-background: color-mix(in srgb, var(--surface) 88%, transparent);
    --surface-raised: #292d32;
    --surface-hover: #32373d;
    --text: #eef0f3;
@@ -49,8 +49,8 @@
    --accent-hover: color-mix(in srgb, var(--accent) 85%, white);
    --accent-press: color-mix(in srgb, var(--accent) 16%, transparent);
    --backdrop: #06090b94;
-   --modal-shadow: 0 24px 80px #0006;
-   --shadow-pop: 0 10px 28px #0004;
+   --modal-shadow: 0 8px 24px -8px #0003, 0 24px 72px -16px #0005;
+   --shadow-pop: 0 3px 10px -3px #0002, 0 10px 24px -8px #0004;
    --warning: #e6ca4e;
    --warning-soft: color-mix(in srgb, var(--warning) 10%, transparent);
    --warning-hover: color-mix(in srgb, var(--warning) 17%, transparent);
@@ -72,7 +72,7 @@
    --background: #f2f4f7;
    --preview-background: #212429;
    --surface: #fbfcfd;
-   --panel-background: color-mix(in srgb, var(--surface) 96%, transparent);
+   --panel-background: color-mix(in srgb, var(--surface) 90%, transparent);
    --surface-raised: #ffffff;
    --surface-hover: #edf0f4;
    --text: #22262d;
@@ -83,8 +83,8 @@
    --accent-text: #ffffff;
    --accent-hover: color-mix(in srgb, var(--accent) 86%, black);
    --backdrop: #22262d45;
-   --modal-shadow: 0 24px 70px #1d27332b, 0 4px 16px #1d27331f;
-   --shadow-pop: 0 10px 28px #1d273324, 0 2px 8px #1d27331c;
+   --modal-shadow: 0 8px 24px -8px #1d27331a, 0 24px 72px -16px #1d27332b;
+   --shadow-pop: 0 3px 10px -3px #1d273314, 0 10px 24px -8px #1d273324;
    --warning: #8a6400;
    --danger: #d13438;
    --success: #217a46;

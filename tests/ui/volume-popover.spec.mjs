@@ -28,13 +28,16 @@ test("volume opens on hover and keyboard focus in the toolbar and fullscreen", a
          .addEventListener("animationstart", (event) => globalThis.volumeIconAnimations.push(event.animationName));
    });
    await slider.fill("0");
+   await expect(mute.locator("svg")).toHaveAttribute("data-icon", "volume-xmark");
    await expect.poll(() => page.evaluate(() => globalThis.volumeIconAnimations.includes("icon-rattle"))).toBe(true);
    await slider.fill("0.1");
+   await expect(mute.locator("svg")).toHaveAttribute("data-icon", "volume-off");
    await expect.poll(() => page.evaluate(() => globalThis.volumeIconAnimations.includes("icon-wave"))).toBe(true);
    await slider.fill("0.3");
    await expect(page.locator("video")).toHaveJSProperty("volume", 0.3);
    await mute.click();
    await expect(page.locator("video")).toHaveJSProperty("muted", true);
+   await expect(mute.locator("svg")).toHaveAttribute("data-icon", "volume-xmark");
    await mute.click();
    await expect(page.locator("video")).toHaveJSProperty("muted", false);
    await page.locator("video").click();
@@ -52,6 +55,11 @@ test("volume opens on hover and keyboard focus in the toolbar and fullscreen", a
    await expect(fullscreen.locator("input")).toBeVisible();
    await fullscreen.locator("input").fill("0.6");
    await expect(page.locator("video")).toHaveJSProperty("volume", 0.6);
+   await expect(fullscreen.locator("button svg")).toHaveAttribute("data-icon", "volume-low");
+   await fullscreen.locator("input").fill("0.67");
+   await expect(fullscreen.locator("button svg")).toHaveAttribute("data-icon", "volume-high");
+   await fullscreen.locator("input").fill("0.33");
+   await expect(fullscreen.locator("button svg")).toHaveAttribute("data-icon", "volume-low");
    await page.keyboard.press("Escape");
    await mute.hover();
    await expect(control.locator(".volume-popover")).toHaveCSS("opacity", "1");

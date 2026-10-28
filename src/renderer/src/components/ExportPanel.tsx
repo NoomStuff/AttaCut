@@ -38,6 +38,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
       conflicts,
       dangers,
       collisions,
+      nameErrors,
       request,
       error,
       setError,
@@ -200,12 +201,16 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                            <span className="export-name-input">
                               <input
                                  aria-label="Combined filename"
+                                 aria-invalid={nameErrors.has("combined")}
                                  value={name}
                                  disabled={starting}
                                  onBlur={() => normalizeName()}
                                  onChange={(event) => setName(event.target.value)}
                               />
-                              <ConflictIndicator message={conflicts.get("combined") ?? null} tone={dangers.get("combined") ? "danger" : "warning"} />
+                              <ConflictIndicator
+                                 message={nameErrors.get("combined") ?? conflicts.get("combined") ?? null}
+                                 tone={nameErrors.has("combined") || dangers.get("combined") ? "danger" : "warning"}
+                              />
                            </span>
                            <span className="filename-extension">{source.exportExtension}</span>
                         </div>
@@ -257,12 +262,10 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                         // A batch collision outranks a disk conflict: it must be fixed before
                         // Export unlocks, while a replace can still be confirmed.
                         const collides = mode === "separate" && row.included && collisions.has(sanitizeName(row.name).toLowerCase());
-                        const conflict = collides
-                           ? "Another clip exports to this name"
-                           : mode === "separate" && row.included
-                             ? (conflicts.get(row.clip.id) ?? null)
-                             : null;
-                        const tone = collides || dangers.get(row.clip.id) ? "danger" : "warning";
+                        const conflict =
+                           nameErrors.get(row.clip.id) ??
+                           (collides ? "Another clip exports to this name" : mode === "separate" && row.included ? (conflicts.get(row.clip.id) ?? null) : null);
+                        const tone = nameErrors.has(row.clip.id) || collides || dangers.get(row.clip.id) ? "danger" : "warning";
                         return (
                            <div key={row.clip.id} className="export-clip-entry" data-included={row.included}>
                               <div className="export-row">
@@ -280,6 +283,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                                     <span className="export-row-name-input">
                                        <input
                                           aria-label={`Clip ${index + 1} filename`}
+                                          aria-invalid={nameErrors.has(row.clip.id)}
                                           value={row.name}
                                           onBlur={() => normalizeName(index)}
                                           disabled={starting}

@@ -140,7 +140,7 @@
    background: var(--panel-background);
    backdrop-filter: blur(16px);
    color: var(--text);
-   border: 1px solid var(--line);
+   border: 0;
    padding: 0;
    border-radius: var(--radius-panel);
    width: min(720px, calc(100vw - 60px));
@@ -212,7 +212,6 @@
 .modal-tabs {
    display: flex;
    padding: 0 24px;
-   border-bottom: 1px solid var(--line);
    margin-bottom: 15px;
    gap: 12px;
    flex-shrink: 0;
@@ -313,7 +312,6 @@
    align-items: center;
    gap: 20px;
    padding: 16px 0;
-   border-bottom: 1px solid var(--line);
    font-size: 13px;
 }
 .toggle-row {

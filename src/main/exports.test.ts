@@ -90,6 +90,12 @@ describe("continuous combined ranges", () => {
 });
 
 describe("export destination confirmation", () => {
+   it.each(["bad:name", "a/b", "CON", "clip.", "clip ", "a".repeat(252)])("rejects invalid output names at the backend: %s", async (name) => {
+      const { source, request, service } = await fixture();
+      await expect(service.plan(source, { ...request, mode: "combined", name })).rejects.toThrow(/file name/i);
+      await expect(service.plan(source, { ...request, mode: "separate", items: [{ ...request.items[0]!, name }] })).rejects.toThrow(/file name/i);
+      expect(exportCut).not.toHaveBeenCalled();
+   });
    it("requires explicit consent for substantial encoding and declared media loss", async () => {
       const { source, request, service } = await fixture();
       vi.mocked(analyzeCut).mockResolvedValueOnce({

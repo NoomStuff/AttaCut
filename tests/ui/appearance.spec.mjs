@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 import { test } from "./app.mjs";
 
-test("appearance", async ({ launchApp, profile }) => {
+test("appearance", async ({ launchApp, profile }, testInfo) => {
    const launch = () => launchApp(profile, "");
    const application = await launch();
    let page = await application.firstWindow();
@@ -60,6 +60,7 @@ test("appearance", async ({ launchApp, profile }) => {
          expect(contrast.text).toBeGreaterThanOrEqual(4.5);
          if (theme === "Light") for (const ratio of contrast.neutrals) expect(ratio).toBeGreaterThanOrEqual(4.5);
       }
+      await page.screenshot({ path: testInfo.outputPath(`settings-${theme.toLowerCase()}.png`) });
    }
    await page.getByRole("button", { name: "System theme", exact: true }).click();
    for (const colorScheme of ["light", "dark", "light"]) {

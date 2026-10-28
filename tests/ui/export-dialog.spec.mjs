@@ -177,6 +177,15 @@ test("duplicate clip names block the export instead of being rewritten", async (
    await expect(dialog.getByRole("button", { name: "Export 2 clips" })).toBeEnabled();
    const first = dialog.getByRole("textbox", { name: "Clip 1 filename", exact: true });
    const second = dialog.getByRole("textbox", { name: "Clip 2 filename", exact: true });
+   await first.fill("invalid:name");
+   await first.press("Tab");
+   await expect(first).toHaveValue("invalid:name");
+   await expect(first).toHaveAttribute("aria-invalid", "true");
+   await expect(dialog.getByRole("img", { name: /File names cannot contain/ })).toBeVisible();
+   await expect(dialog.getByRole("button", { name: "Export 2 clips" })).toBeDisabled();
+   await dialog.getByRole("checkbox", { name: "Export clip 1", exact: true }).uncheck();
+   await expect(dialog.getByRole("button", { name: "Export clip", exact: true })).toBeEnabled();
+   await dialog.getByRole("checkbox", { name: "Export clip 1", exact: true }).check();
    await first.fill("same-name");
    await second.fill("same-name");
    // Both rows turn dangerous and the export locks; nothing is renamed behind the user's back.
@@ -197,4 +206,13 @@ test("duplicate clip names block the export instead of being rewritten", async (
    await first.press("Tab");
    await expect(first).toHaveValue("fixture (1)");
    await expect(dialog.getByRole("button", { name: "Export 2 clips" })).toBeEnabled();
+   await dialog.getByRole("button", { name: "Single Video", exact: true }).click();
+   const combined = dialog.getByRole("textbox", { name: "Combined filename", exact: true });
+   await combined.fill("invalid:name");
+   await combined.press("Tab");
+   await expect(combined).toHaveValue("invalid:name");
+   await expect(combined).toHaveAttribute("aria-invalid", "true");
+   await expect(dialog.getByRole("button", { name: "Export video", exact: true })).toBeDisabled();
+   await combined.fill("valid name");
+   await expect(dialog.getByRole("button", { name: "Export video", exact: true })).toBeEnabled();
 });

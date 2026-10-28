@@ -1,3 +1,16 @@
+/** Keep output names compatible with the filesystems supported by the app. Never
+ * repair a manually entered name: the caller must show the error before export. */
+export function filenameError(value: string, extension = ""): string | null {
+   if (!value.trim()) return "Enter a file name";
+   if (Array.from(value).some((character) => character.charCodeAt(0) < 32) || /[<>:"/\\|?*]/.test(value))
+      return 'File names cannot contain < > : " / \\ | ? * or control characters';
+   if (/[. ]$/.test(value)) return "File names cannot end with a dot or space";
+   if (/^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(value)) return "This file name is reserved by the filesystem";
+   const fullName = extension && !value.toLowerCase().endsWith(extension.toLowerCase()) ? `${value}${extension}` : value;
+   if (fullName.length > 255 || new TextEncoder().encode(fullName).length > 255) return "This file name is too long";
+   return null;
+}
+
 export function sanitizeName(value: string): string {
    const clean = Array.from(value, (character) => (character.charCodeAt(0) < 32 ? "_" : character))
       .join("")

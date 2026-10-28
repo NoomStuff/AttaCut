@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { applyNamePattern, duplicateNames, hasNameToken, nameTokens, patternTime, sanitizeName } from "./filename";
+import { applyNamePattern, duplicateNames, filenameError, hasNameToken, nameTokens, patternTime, sanitizeName } from "./filename";
+
+describe("filenameError", () => {
+   it.each(["clip: test", "a/b", "a\\b", "a?b", "a*b", 'a"b', "a<b", "a>b", "a|b", "a\u0000b", "a\nb", "clip.", "clip ", "CON", "nul.txt", "COM¹", "..", ""])(
+      "rejects an unusable name without rewriting it: %j",
+      (name) => {
+         expect(filenameError(name, ".mp4")).not.toBeNull();
+      }
+   );
+   it("measures the complete filename in bytes as well as UTF-16 units", () => {
+      expect(filenameError("a".repeat(251), ".mp4")).toBeNull();
+      expect(filenameError(`${"a".repeat(251)}.MP4`, ".mp4")).toBeNull();
+      expect(filenameError("a".repeat(252), ".mp4")).toMatch(/too long/);
+      expect(filenameError("猫".repeat(84), ".mp4")).toMatch(/too long/);
+      expect(filenameError("Summer's clip (2) 猫", ".mkv")).toBeNull();
+   });
+});
 
 describe("sanitizeName", () => {
    it("replaces forbidden characters and reserved device names", () => {

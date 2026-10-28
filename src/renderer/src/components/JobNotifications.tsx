@@ -54,7 +54,7 @@ export function JobNotifications({
    const totalHeight = expanded
       ? jobs.reduce((sum, job) => sum + heightFor(job) + 10, -10)
       : jobs[0]
-        ? heightFor(jobs[0]) + Math.min(jobs.length - 1, 2) * 8
+        ? heightFor(jobs[0]) + Math.min(jobs.length - 1, 2) * 14
         : 0;
    useLayoutEffect(() => {
       // Keep the newest card at the bottom in view throughout the expansion.
@@ -95,8 +95,8 @@ export function JobNotifications({
          }}
       >
          {jobs.length > 1 && (
-            <button className="notification-clear" data-press-ignore aria-label="Clear export notifications" onClick={onClear}>
-               Clear
+            <button className="notification-clear" data-press-ignore aria-label={`Clear ${jobs.length} export notifications`} onClick={onClear}>
+               Clear {jobs.length}
             </button>
          )}
          <div
@@ -117,7 +117,7 @@ export function JobNotifications({
          >
             <div className="notification-list" style={{ height: totalHeight }}>
                {jobs.map((job, index) => {
-                  const bottom = expanded ? offset : Math.min(index, 2) * 8;
+                  const bottom = expanded ? offset : Math.min(index, 2) * 14;
                   offset += heightFor(job) + 10;
                   return (
                      <div

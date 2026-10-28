@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { faVolumeHigh, faVolumeXmark } from "@fortawesome/free-solid-svg-icons";
+import { faVolumeHigh, faVolumeLow, faVolumeOff, faVolumeXmark } from "@fortawesome/free-solid-svg-icons";
 import { IconButton } from "./Controls";
 import { VolumeSlider } from "./VolumeSlider";
 
 export function VolumeControl({ volume, muted, onChange }: { volume: number; muted: boolean; onChange: (value: number, restore: number) => void }) {
    const silent = muted || volume === 0;
+   const icon = silent ? faVolumeXmark : volume < 0.33 ? faVolumeOff : volume < 0.67 ? faVolumeLow : faVolumeHigh;
    const root = useRef<HTMLDivElement>(null);
    const previousSilent = useRef(silent);
    const closeTimer = useRef(0);
@@ -37,7 +38,7 @@ export function VolumeControl({ volume, muted, onChange }: { volume: number; mut
             if (event.animationName === "icon-wave" || event.animationName === "icon-rattle") root.current?.classList.remove("volume-state-changed");
          }}
       >
-         <IconButton command="mute" icon={silent ? faVolumeXmark : faVolumeHigh} label={silent ? "Unmute preview" : "Mute preview"} />
+         <IconButton command="mute" icon={icon} label={silent ? "Unmute preview" : "Mute preview"} />
          <div className="volume-popover">
             <div className="volume-popover-panel">
                <VolumeSlider volume={volume} muted={muted} onChange={onChange} />

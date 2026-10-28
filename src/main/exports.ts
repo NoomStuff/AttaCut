@@ -19,7 +19,7 @@ import type { CutAnalysis } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import { protectSource } from "./media/publish.ts";
 import { exportCombined } from "./media/combine.ts";
-import { duplicateNames, sanitizeName } from "../shared/filename";
+import { duplicateNames, filenameError } from "../shared/filename";
 import { substantialEncoding } from "../shared/export-policy";
 import { waitForWork } from "./media/shared-work";
 import { appFailure } from "./failure";
@@ -342,9 +342,14 @@ function exportAudioTracks(source: ProbedSource, selected: number[] | null): num
    return tracks;
 }
 function outputNames(source: ProbedSource, request: ReturnType<typeof planRequestSchema.parse>): string[] {
+   const outputName = (value: string, extension: string): string => {
+      const error = filenameError(value, extension);
+      if (error) throw new Error(error);
+      return value.toLowerCase().endsWith(extension.toLowerCase()) ? value : `${value}${extension}`;
+   };
    if (request.mode === "combined") {
       const extension = source.exportExtension;
-      return [`${sanitizeName(request.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""))}${extension}`];
+      return [outputName(request.name, extension)];
    }
    const audio = source.streams.filter((stream) => stream.type === "audio");
    const allAudio = (request.audioTracks ?? audio.map((stream) => stream.index)).length === audio.length;
@@ -352,8 +357,7 @@ function outputNames(source: ProbedSource, request: ReturnType<typeof planReques
       .sort((a, b) => a.clip.start - b.clip.start)
       .map((item) => {
          const extension = exportExtensionFor(source, item.clip, { separate: true, allAudio });
-         const stem = sanitizeName(item.name.replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), ""));
-         return `${stem}${extension}`;
+         return outputName(item.name, extension);
       });
 }
 async function exists(path: string): Promise<boolean> {
