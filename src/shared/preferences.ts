@@ -27,7 +27,7 @@ export const preferencesSchema = z.object({
    keepPlaying: z.boolean().default(false),
    autoPlay: z.boolean().default(false),
    audioScrub: z.boolean().default(true),
-   waveform: z.boolean().default(false),
+   waveform: z.boolean().default(true),
    snapping: z.boolean().default(false),
    holdToSnap: z.enum(["Alt", "Shift", "Control", "none"]).default("Alt"),
    volume: z.number().min(0).max(1).default(0.7),

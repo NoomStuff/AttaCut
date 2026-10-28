@@ -14,7 +14,7 @@ export const defaultPreferences: Preferences = {
    keepPlaying: false,
    autoPlay: false,
    audioScrub: true,
-   waveform: false,
+   waveform: true,
    snapping: false,
    holdToSnap: "Alt",
    volume: 0.7,

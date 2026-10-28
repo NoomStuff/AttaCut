@@ -59,6 +59,13 @@ async function trackFixture(profile) {
    return path;
 }
 
+test("fresh profiles show the timeline waveform by default", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   await painted(page);
+});
+
 test("Play inside a kept clip does not wait for frame analysis", async ({ launchApp, profile }) => {
    test.skip(!!process.env.ATTACUT_EXECUTABLE, "Development fault injection");
    await preferences(profile, { waveform: true, keptOnly: true });

@@ -31,9 +31,9 @@ it("renderer defaults match persisted preference defaults", () => {
 it("preserves an explicit audio scrub opt-out when loading saved preferences", () => {
    expect(preferencesSchema.parse({ audioScrub: false }).audioScrub).toBe(false);
 });
-it("keeps waveform off by default and preserves an explicit opt-in", () => {
-   expect(preferencesSchema.parse({}).waveform).toBe(false);
-   expect(preferencesSchema.parse({ waveform: true }).waveform).toBe(true);
+it("enables waveform by default and preserves an explicit opt-out", () => {
+   expect(preferencesSchema.parse({}).waveform).toBe(true);
+   expect(preferencesSchema.parse({ waveform: false }).waveform).toBe(false);
 });
 
 it("defaults old profiles to Alt and preserves each held snapping choice", () => {
