@@ -42,6 +42,16 @@ jobs:
          - run: bun run build
          - run: bun run test:media
          - run: bun x --no-install playwright test
+         - name: Retain browser retry traces
+           if: always()
+           continue-on-error: true
+           uses: actions/upload-artifact@v7
+           with:
+              name: traces-app-checks
+              path: test-results/**/trace.zip
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true
          - name: Retain failure diagnostics
            if: failure()
            uses: actions/upload-artifact@v7

@@ -90,14 +90,14 @@ jobs:
    build:
       needs: [prepare, checks]
       if: needs.prepare.outputs.build == 'true'
-      uses: ./.github/workflows/package.yml
+      uses: ./.github/workflows/candidate-build.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
 
    verify:
       needs: [prepare, build]
       if: needs.prepare.outputs.build == 'true'
-      uses: ./.github/workflows/verify-candidate.yml
+      uses: ./.github/workflows/candidate-verify.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
 
@@ -147,7 +147,7 @@ jobs:
               name: sealed-release-candidate
               path: dist/
               if-no-files-found: error
-              retention-days: 30
+              retention-days: 14
          - name: Record candidate outcome
            if: needs.prepare.outputs.build == 'true'
            run: echo "Verified candidate $CANDIDATE_SHA. Exact artifacts retained. Re-run failed jobs to retry verification without rebuilding successful targets." >> "$GITHUB_STEP_SUMMARY"

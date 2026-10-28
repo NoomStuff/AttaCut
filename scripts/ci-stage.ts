@@ -108,7 +108,7 @@ export async function sealCandidates(root = "work/verified", destination = "dist
    const actual = await readdir(destination);
    if (actual.length !== expected.length || expected.some((name) => !actual.includes(name))) throw new Error("Incomplete release target set.");
    // Exercise updater validation for private candidates too, before publication.
-   execFileSync("bun", ["scripts/prepare-update-feed.mjs", destination, join(destination, "feed"), `v${version}`], { stdio: "inherit" });
+   execFileSync("bun", ["scripts/prepare-update-feed.mjs", destination, join(destination, "feed"), `v${version}`], { stdio: "pipe", windowsHide: true });
    await writeFile(join(destination, "candidate-manifests.json"), JSON.stringify(manifests, null, 2) + "\n");
 }
 

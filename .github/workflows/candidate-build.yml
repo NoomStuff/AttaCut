@@ -60,10 +60,12 @@ jobs:
               ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
 
          - name: Retain exact candidate and verification inputs
+           env:
+              ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
            run: bun scripts/ci-stage.ts pack ${{ matrix.target }}
          - uses: actions/upload-artifact@v7
            with:
               name: candidate-${{ matrix.target }}
               path: work/candidate/
               if-no-files-found: error
-              retention-days: 30
+              retention-days: 14

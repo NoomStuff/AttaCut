@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile, symlink } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { join, resolve } from "node:path";
 import { expect, it, vi } from "vitest";
-import { assertSafeArchivePaths, candidateIdentity, packCandidate, restoreCandidate, sha256, verifyCandidate } from "./ci-candidate";
+import { assertSafeArchivePaths, candidateIdentity, packCandidate, sha256, verifyCandidate } from "./ci-candidate";
 import type { CandidateManifest } from "./ci-candidate";
 
 it.each(["valid", "bytes", "extra", "missing", "duplicate", "traversal", "commit", "target", "runId", "version", "inputsSha256"])(
@@ -57,7 +58,25 @@ it("retains exact artifacts across a separate restore and rejects later corrupti
       await writeFile(join(snapshot, "download.exe"), "exact app bytes");
       if (process.platform !== "win32") await symlink("download.exe", join(snapshot, "app-link"));
       await packCandidate("win-x64", snapshot, candidate);
-      await restoreCandidate("win-x64", candidate, restored);
+      // Run the actual Bun runtime against an existing current directory. Bun
+      // 1.4.2 on Windows throws EEXIST for recursive mkdir("."). Keep the
+      // disposable checkout identity separate from the user's working directory.
+      await mkdir(restored);
+      await copyFile("package.json", join(restored, "package.json"));
+      const moduleUrl = pathToFileURL(resolve("scripts/ci-candidate.ts")).href;
+      execFileSync(
+         "bun",
+         [
+            "-e",
+            `const { restoreCandidate } = await import(${JSON.stringify(moduleUrl)}); await restoreCandidate("win-x64", ${JSON.stringify(candidate)}, ".");`,
+         ],
+         {
+            cwd: restored,
+            env: { ...process.env, GIT_DIR: execFileSync("git", ["rev-parse", "--absolute-git-dir"], { encoding: "utf8" }).trim() },
+            stdio: "pipe",
+            windowsHide: true,
+         }
+      );
       expect(await readFile(join(restored, "download.exe"), "utf8")).toBe("exact app bytes");
       await writeFile(join(candidate, "payload.tar"), "corrupted");
       await expect(verifyCandidate(candidate, await candidateIdentity("win-x64"))).rejects.toThrow("bytes mismatch");

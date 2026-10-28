@@ -61,6 +61,9 @@ jobs:
               FFMPEG_PATH: ${{ github.workspace }}/resources/media/ffmpeg${{ runner.os == 'Windows' && '.exe' || '' }}
               FFPROBE_PATH: ${{ github.workspace }}/resources/media/ffprobe${{ runner.os == 'Windows' && '.exe' || '' }}
          - name: Verify packaged media and editor workflows
+           env:
+              ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+              ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
            run: bun run verify:package
          - name: Record successful verification of unchanged candidate
            run: bun scripts/ci-stage.ts receipt ${{ matrix.target }}
@@ -69,9 +72,19 @@ jobs:
               name: verified-${{ matrix.target }}
               path: work/verified/
               if-no-files-found: error
-              retention-days: 30
-         - name: Retain traces and diagnostics
+              retention-days: 14
+         - name: Retain browser retry traces
            if: always()
+           continue-on-error: true
+           uses: actions/upload-artifact@v7
+           with:
+              name: traces-${{ matrix.target }}
+              path: test-results/**/trace.zip
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true
+         - name: Retain failure diagnostics
+           if: failure()
            continue-on-error: true
            uses: actions/upload-artifact@v7
            with:

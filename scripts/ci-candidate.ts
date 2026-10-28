@@ -80,7 +80,7 @@ export async function restoreCandidate(target: string, directory: string, destin
    if (manifest.files.length !== 1 || manifest.files[0]?.path !== "payload.tar") throw new Error("Expected one candidate payload.");
    const archive = resolve(directory, "payload.tar");
    assertSafeArchivePaths(execFileSync("tar", ["-tf", archive], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 }));
-   await mkdir(destination, { recursive: true });
+   await mkdir(resolve(destination), { recursive: true });
    execFileSync("tar", ["-xf", archive, "-C", destination], { stdio: "inherit" });
    return manifest;
 }
@@ -92,7 +92,7 @@ if (import.meta.main) {
    else if (command === "restore" && destination) await restoreCandidate(target, directory, destination);
    else if (command === "receipt" && destination) {
       await verifyCandidate(directory, await candidateIdentity(target));
-      await mkdir(destination, { recursive: true });
+      await mkdir(resolve(destination), { recursive: true });
       await copyFile(join(directory, "manifest.json"), join(destination, "manifest.json"));
    } else if (command === "verify" && !destination) await verifyCandidate(directory, await candidateIdentity(target));
    else throw new Error("Invalid candidate command.");
