@@ -2,97 +2,174 @@ name: Release
 
 on:
    workflow_dispatch:
+      inputs:
+         candidate_sha:
+            description: Optional exact 40-character commit to verify privately
+            type: string
+            default: ""
+         verify_candidate:
+            description: Verify privately even when the version is already public
+            type: boolean
+            default: false
    push:
-      branches:
-         - main
+      branches: [main]
 
 permissions:
    contents: read
 
 concurrency:
-   group: release
+   group: release-${{ github.event_name == 'workflow_dispatch' && (inputs.verify_candidate || inputs.candidate_sha != '') && github.run_id || 'main' }}
    cancel-in-progress: false
 
 jobs:
    prepare:
-      name: Select unpublished release candidate
+      name: Select candidate
       runs-on: ubuntu-latest
       timeout-minutes: 5
-      permissions:
-         contents: write
       outputs:
-         build: ${{ steps.release.outputs.build }}
-         tag: ${{ steps.release.outputs.tag }}
+         build: ${{ steps.select.outputs.build }}
+         publish: ${{ steps.select.outputs.publish }}
+         candidate_sha: ${{ steps.select.outputs.candidate_sha }}
+         tag: ${{ steps.select.outputs.tag }}
       steps:
          - uses: actions/github-script@v9
-           id: release
+           id: select
+           env:
+              CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+              VERIFY_CANDIDATE: ${{ inputs.verify_candidate }}
            with:
               script: |
                  const { owner, repo } = context.repo;
-                 if (context.ref !== 'refs/heads/main') throw new Error('Release candidates must come from main.');
-                 const main = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
-                 if (main !== context.sha) throw new Error('A newer main commit superseded this candidate.');
-                 const versionAt = async (ref) => {
-                   const { data } = await github.rest.repos.getContent({ owner, repo, path: 'package.json', ref });
-                   return JSON.parse(Buffer.from(data.content, 'base64').toString('utf8')).version;
-                 };
-                 const version = await versionAt(context.sha);
-                 const before = context.payload.before;
-                 const previous = !before || /^0+$/.test(before) ? undefined : await versionAt(before);
-                 if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
-                   throw new Error(`Invalid package version: ${version}`);
+                 const requested = process.env.CANDIDATE_SHA || '';
+                 if (requested && !/^[a-f0-9]{40}$/.test(requested)) throw new Error('candidate_sha must be an exact commit SHA.');
+                 const sha = requested || context.sha;
+                 const resolved = (await github.rest.repos.getCommit({ owner, repo, ref: sha })).data.sha;
+                 if (resolved !== sha) throw new Error('Candidate did not resolve to the exact commit.');
+                 const privateCandidate = context.eventName === 'workflow_dispatch' && (requested !== '' || process.env.VERIFY_CANDIDATE === 'true');
+                 let superseded = false;
+                 if (!privateCandidate) {
+                   if (context.ref !== 'refs/heads/main') throw new Error('Publication requires main. Use verify_candidate for a private candidate.');
+                   const main = (await github.rest.git.getRef({ owner, repo, ref: 'heads/main' })).data.object.sha;
+                   superseded = main !== sha;
                  }
+                 const { data } = await github.rest.repos.getContent({ owner, repo, path: 'package.json', ref: sha });
+                 const version = JSON.parse(Buffer.from(data.content, 'base64').toString('utf8')).version;
+                 if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error('Invalid package version.');
                  const tag = `v${version}`;
-                 let existing;
-                 try {
-                   existing = (await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` })).data;
-                 } catch (error) {
-                   if (error.status !== 404) throw error;
+                 let build = !superseded;
+                 if (!privateCandidate && !superseded) {
+                   try {
+                     const release = (await github.rest.repos.getReleaseByTag({ owner, repo, tag })).data;
+                     build = release.draft;
+                   } catch (error) { if (error.status !== 404) throw error; }
+                   if (build) {
+                     try {
+                       await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
+                       throw new Error('An unpublished release cannot reserve a version tag.');
+                     } catch (error) { if (error.status !== 404) throw error; }
+                   }
                  }
-                 if (version === previous && existing) {
-                   core.info(`Version remains ${version} and ${tag} already exists; skipping release.`);
-                   core.setOutput('build', 'false');
-                   return;
-                 }
-                 if (existing) {
-                   const commit = (await github.rest.repos.getCommit({ owner, repo, ref: `refs/tags/${tag}` })).data;
-                   if (commit.sha !== context.sha) throw new Error(`${tag} already points to another commit. Choose a new version.`);
-                   core.info(`${tag} already points to this commit.`);
-                 } else {
-                   core.info(`${tag} will be created after every package passes verification.`);
-                 }
-                 core.setOutput('build', 'true');
+                 core.setOutput('candidate_sha', sha);
                  core.setOutput('tag', tag);
+                 core.setOutput('build', String(build));
+                 core.setOutput('publish', String(build && !privateCandidate));
+                 await core.summary.addRaw(privateCandidate ? `Private candidate ${sha}, ${tag}. Publication disabled.` : superseded ? `Superseded ${sha}. Running app checks without packaging or publication.` : build ? `Verifying ${tag} at ${sha}.` : `${tag} is public and immutable. Running app checks.`).write();
 
    checks:
-      name: Checks
       needs: prepare
       uses: ./.github/workflows/verify.yml
       with:
-         tag_check: true
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+
+   app-checks:
+      needs: [prepare, checks]
+      uses: ./.github/workflows/app-checks.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
 
    build:
-      needs: prepare
+      needs: [prepare, checks]
       if: needs.prepare.outputs.build == 'true'
       uses: ./.github/workflows/package.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
 
-   release:
+   verify:
+      needs: [prepare, build]
+      if: needs.prepare.outputs.build == 'true'
+      uses: ./.github/workflows/verify-candidate.yml
+      with:
+         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+
+   check:
+      name: Check
+      if: always()
+      needs: [prepare, checks, app-checks, build, verify]
+      runs-on: ubuntu-latest
+      timeout-minutes: 15
+      env:
+         CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+      steps:
+         - uses: actions/github-script@v9
+           env:
+              RESULTS: ${{ toJSON(needs) }}
+           with:
+              script: |
+                 const jobs = JSON.parse(process.env.RESULTS);
+                 for (const name of ['prepare', 'checks', 'app-checks']) {
+                   if (jobs[name].result !== 'success') throw new Error(`${name}: ${jobs[name].result}`);
+                 }
+                 for (const name of ['build', 'verify']) {
+                   const expected = jobs.prepare.outputs.build === 'true' ? 'success' : 'skipped';
+                   if (jobs[name].result !== expected) throw new Error(`${name}: ${jobs[name].result}, expected ${expected}`);
+                 }
+         - uses: actions/checkout@v7
+           if: needs.prepare.outputs.build == 'true'
+           with:
+              ref: ${{ needs.prepare.outputs.candidate_sha }}
+         - uses: oven-sh/setup-bun@v2
+           if: needs.prepare.outputs.build == 'true'
+           with:
+              bun-version: "1.4.2"
+         - run: bun install --frozen-lockfile
+           if: needs.prepare.outputs.build == 'true'
+         - uses: actions/download-artifact@v8
+           if: needs.prepare.outputs.build == 'true'
+           with:
+              pattern: verified-*
+              path: work/verified
+         - name: Seal complete verified target set
+           if: needs.prepare.outputs.build == 'true'
+           run: bun scripts/ci-stage.ts seal
+         - uses: actions/upload-artifact@v7
+           if: needs.prepare.outputs.build == 'true'
+           with:
+              name: sealed-release-candidate
+              path: dist/
+              if-no-files-found: error
+              retention-days: 30
+         - name: Record candidate outcome
+           if: needs.prepare.outputs.build == 'true'
+           run: echo "Verified candidate $CANDIDATE_SHA. Exact artifacts retained. Re-run failed jobs to retry verification without rebuilding successful targets." >> "$GITHUB_STEP_SUMMARY"
+
+   publish:
       name: Publish release
-      if: needs.prepare.outputs.tag != '' && needs.checks.result == 'success' && needs.build.result == 'success'
-      needs: [prepare, checks, build]
+      needs: [prepare, check]
+      if: needs.prepare.outputs.publish == 'true' && needs.check.result == 'success'
       permissions:
          contents: write
       runs-on: ubuntu-latest
-      timeout-minutes: 10
+      timeout-minutes: 15
       steps:
          - uses: actions/checkout@v7
+           with:
+              ref: ${{ needs.prepare.outputs.candidate_sha }}
          - uses: oven-sh/setup-bun@v2
            with:
               bun-version: "1.4.2"
          - uses: actions/download-artifact@v8
            with:
-              pattern: dist-*
-              merge-multiple: true
+              name: sealed-release-candidate
               path: dist
          - name: Prepare update feeds
            env:

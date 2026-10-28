@@ -1,0 +1,62 @@
+name: App checks
+
+on:
+   workflow_call:
+      inputs:
+         candidate_sha:
+            type: string
+            required: true
+
+permissions:
+   contents: read
+
+jobs:
+   verify:
+      name: Verify (${{ github.event_name }})
+      runs-on: windows-2025
+      timeout-minutes: 30
+      # The electron download cache is set per-step because the runner context is not
+      # available in job-level env; using it there fails the whole workflow at parse.
+      steps:
+         - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha }}
+         - uses: actions/setup-node@v6
+           with:
+              node-version: "24.22.1"
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: "1.4.2"
+         - name: Cache Electron and pinned media downloads
+           uses: actions/cache@v6
+           with:
+              path: |
+                 ${{ runner.temp }}/electron-cache
+                 work/media-archives
+              key: verify-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'scripts/media-lock.ts') }}
+              restore-keys: verify-downloads-${{ runner.os }}-${{ runner.arch }}-
+         - run: bun install --frozen-lockfile
+           env:
+              ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+         - run: bun scripts/provision-media.ts
+         - run: bun run build
+         - run: bun run test:media
+         - run: bun x --no-install playwright test
+         - name: Retain failure diagnostics
+           if: failure()
+           uses: actions/upload-artifact@v7
+           with:
+              name: diagnostics-app-checks
+              path: test-results/
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true
+         - name: Retain updater preview
+           if: always()
+           uses: actions/upload-artifact@v7
+           with:
+              name: updater-preview
+              path: test-results/update-ready.png
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true

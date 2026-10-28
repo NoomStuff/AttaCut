@@ -151,7 +151,7 @@ export class UpdateManager {
 
    install(): void {
       if (!this.isReady) throw new Error("The update is not ready yet.");
-      this.updater!.quitAndInstall(false, true);
+      this.updater!.quitAndInstall(true, true);
    }
    get isReady(): boolean {
       return this.readyVersion !== null && this.readyVersion === this.current?.version && this.updater !== null;

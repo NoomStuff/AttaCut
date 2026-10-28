@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { resolve, join, sep } from "node:path";
 import { canReuseMediaVerification } from "./media-verification";
 import { verifyWindowsPayloads } from "./verify-windows-payloads";
+import { verifyUnixPayloads } from "./verify-unix-payloads";
 import { verifyInstaller } from "./verify-installer";
 
 if (!hasDisposableDesktop()) {
@@ -33,6 +34,7 @@ const resources = resolve(base, process.platform === "darwin" ? "Resources" : "r
 const extension = process.platform === "win32" ? ".exe" : "";
 if (!existsSync(executable)) throw new Error(`Packaged app missing: ${executable}`);
 await verifyWindowsPayloads();
+await verifyUnixPayloads();
 await verifyInstaller();
 if (process.platform === "win32") {
    // Check both processes. The launcher can look correct while the runtime still says Electron.

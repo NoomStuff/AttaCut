@@ -1,0 +1,82 @@
+name: Verify candidate
+
+on:
+   workflow_call:
+      inputs:
+         candidate_sha:
+            type: string
+            required: true
+
+permissions:
+   contents: read
+
+jobs:
+   verify:
+      name: Verify ${{ matrix.target }}
+      strategy:
+         fail-fast: false
+         matrix:
+            include:
+               - { os: windows-2025, target: win-x64 }
+               - { os: macos-15-intel, target: mac-x64 }
+               - { os: macos-15, target: mac-arm64 }
+               - { os: ubuntu-24.04, target: linux-x64 }
+               - { os: ubuntu-24.04-arm, target: linux-arm64 }
+      runs-on: ${{ matrix.os }}
+      timeout-minutes: 45
+      env:
+         CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      steps:
+         - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha }}
+         - uses: actions/setup-node@v6
+           with:
+              node-version: "24.22.1"
+         - uses: oven-sh/setup-bun@v2
+           with:
+              bun-version: "1.4.2"
+         - uses: actions/cache@v6
+           with:
+              path: |
+                 ${{ runner.temp }}/electron-cache
+                 ${{ runner.temp }}/electron-builder-cache
+                 work/media-archives
+              key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'scripts/media-lock.ts') }}
+              restore-keys: electron-${{ runner.os }}-${{ runner.arch }}-
+         - run: bun install --frozen-lockfile
+           env:
+              ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+              ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
+
+         - uses: actions/download-artifact@v8
+           with:
+              name: candidate-${{ matrix.target }}
+              path: work/candidate
+         - name: Restore exact candidate
+           run: bun scripts/ci-candidate.ts restore ${{ matrix.target }} work/candidate .
+         - name: Create fixtures before installed and launcher checks
+           run: bun tests/create-fixtures.ts
+           env:
+              FFMPEG_PATH: ${{ github.workspace }}/resources/media/ffmpeg${{ runner.os == 'Windows' && '.exe' || '' }}
+              FFPROBE_PATH: ${{ github.workspace }}/resources/media/ffprobe${{ runner.os == 'Windows' && '.exe' || '' }}
+         - name: Verify packaged media and editor workflows
+           run: bun run verify:package
+         - name: Record successful verification of unchanged candidate
+           run: bun scripts/ci-stage.ts receipt ${{ matrix.target }}
+         - uses: actions/upload-artifact@v7
+           with:
+              name: verified-${{ matrix.target }}
+              path: work/verified/
+              if-no-files-found: error
+              retention-days: 30
+         - name: Retain traces and diagnostics
+           if: always()
+           continue-on-error: true
+           uses: actions/upload-artifact@v7
+           with:
+              name: diagnostics-${{ matrix.target }}
+              path: test-results/
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true

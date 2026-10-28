@@ -7,8 +7,26 @@ concurrency:
    group: checks-${{ github.event.pull_request.number }}
    cancel-in-progress: true
 jobs:
-   verify:
+   checks:
       uses: ./.github/workflows/verify.yml
-   packages:
-      needs: verify
-      uses: ./.github/workflows/package.yml
+      with:
+         candidate_sha: ${{ github.sha }}
+   app-checks:
+      needs: checks
+      uses: ./.github/workflows/app-checks.yml
+      with:
+         candidate_sha: ${{ github.sha }}
+   check:
+      name: Check
+      if: always()
+      needs: [checks, app-checks]
+      runs-on: ubuntu-latest
+      steps:
+         - uses: actions/github-script@v9
+           env:
+              RESULTS: ${{ toJSON(needs) }}
+           with:
+              script: |
+                 for (const [name, job] of Object.entries(JSON.parse(process.env.RESULTS))) {
+                   if (job.result !== 'success') throw new Error(`${name}: ${job.result}`);
+                 }

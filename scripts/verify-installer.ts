@@ -38,6 +38,7 @@ export async function verifyInstaller(): Promise<void> {
       for (const [stage, version] of [
          ["baseline", "0.0.1"],
          ["upgrade", manifest.version],
+         ["silent-upgrade", manifest.version],
       ] as const) {
          const settings = join(profile, "settings.json");
          const previousSettings = existsSync(settings) ? await readFile(settings, "utf8") : null;
@@ -72,7 +73,10 @@ export async function verifyInstaller(): Promise<void> {
             { stdio: "inherit", windowsHide: true }
          );
          const installer = join(root, stage, `AttaCut-${version}-win-x64-Installer.exe`);
-         command(installer, stage === "baseline" ? ["/S", "/currentuser", `/D=${install}`] : []);
+         command(
+            installer,
+            stage === "baseline" ? ["/S", "/currentuser", `/D=${install}`] : stage === "silent-upgrade" ? ["/S", "--updated", "/currentuser"] : []
+         );
          if (previousSettings !== null && (await readFile(settings, "utf8")) !== previousSettings) throw new Error("Installer changed profile settings.");
          const location = command("reg", ["query", `HKCU\\Software\\${guid}`, "/v", "InstallLocation"]).toString();
          if (!location.includes(install) || !existsSync(join(install, "AttaCut.exe"))) throw new Error(`${stage} did not preserve its installation location.`);

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCheck, faDownload, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
+import { faFolderOpen, faDownload, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
 import type { AvailableUpdate, UpdateStatus } from "../../../shared/types";
 import "./UpdateChip.css";
 
@@ -28,7 +28,7 @@ export function UpdateChip({ update, status, onDownload, onRestart, onRelease, o
          ? "Downloading update"
          : `Downloading ${Math.round(percent)}%`
       : phase === "ready"
-        ? "Apply and restart"
+        ? "Restart to update"
         : phase === "downloaded"
           ? "Show in Downloads"
           : phase === "error"
@@ -38,7 +38,7 @@ export function UpdateChip({ update, status, onDownload, onRestart, onRelease, o
             : update.mode === "releases"
               ? "View release"
               : "Download update";
-   const icon = phase === "ready" || phase === "downloaded" ? faCheck : phase === "error" ? faTriangleExclamation : faDownload;
+   const icon = phase === "downloaded" ? faFolderOpen : phase === "error" ? faTriangleExclamation : faDownload;
    const action = downloading
       ? undefined
       : phase === "ready"
