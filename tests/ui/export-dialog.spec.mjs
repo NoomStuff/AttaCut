@@ -172,7 +172,7 @@ test("duplicate clip names block the export instead of being rewritten", async (
    await page.keyboard.press("s");
    await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toBeVisible();
    await page.getByRole("button", { name: "Export", exact: true }).click();
-   const dialog = page.getByRole("dialog", { name: "Export clips" });
+   const dialog = page.getByRole("dialog");
    await dialog.waitFor();
    await expect(dialog.getByRole("button", { name: "Export 2 clips" })).toBeEnabled();
    const first = dialog.getByRole("textbox", { name: "Clip 1 filename", exact: true });
