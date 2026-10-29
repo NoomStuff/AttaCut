@@ -201,7 +201,8 @@ test("a settled region streams before the full scan and does not corrupt its per
    expect((await readFile(join(profile, "waveforms", caches[0]))).length).toBe(16 + covered * 3);
 });
 
-test("waveform is opt-in and stays inside bottom-aligned clips without changing timeline height", async ({ launchApp, profile }) => {
+test("a saved waveform opt-out can be toggled without changing timeline height", async ({ launchApp, profile }) => {
+   await preferences(profile, { waveform: false });
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
