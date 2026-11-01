@@ -15,7 +15,7 @@ function box(name: string, data: Buffer): Buffer {
 async function readTable(
    count: number,
    keys?: number[],
-   options: { scale?: number; delta?: number; mediaTime?: number; extension?: string; composition?: number[] } = {}
+   options: { scale?: number; delta?: number; mediaTime?: number; extension?: string; compositionVersion?: number; composition?: number[] } = {}
 ) {
    const { scale = 30, delta = 1, mediaTime } = options;
    const directory = await mkdtemp(join(tmpdir(), "attacut-table-"));
@@ -31,7 +31,7 @@ async function readTable(
       const tables = [box("stts", timing)];
       if (options.composition) {
          const composition = Buffer.alloc(8 + options.composition.length * 8);
-         composition[0] = 1;
+         composition[0] = options.compositionVersion ?? 1;
          composition.writeUInt32BE(options.composition.length, 4);
          options.composition.forEach((delta, index) => {
             composition.writeUInt32BE(1, 8 + index * 8);
@@ -114,4 +114,10 @@ it("sorts reordered presentation times and sparse keys while keeping duplicate t
    const duplicates = await readTable(3, undefined, { scale: 1, composition: [1, 0, -2] });
    expect(Array.from(duplicates!.frames!)).toEqual([0, 1, 1]);
    expect(duplicates!.keyframes).toBe(duplicates!.frames);
+});
+
+it("matches FFmpeg for MOV writers with signed composition offsets in version 0 tables", async () => {
+   const result = await readTable(5, [1, 4], { compositionVersion: 0, composition: [0, 1, -1, 1, -1] });
+   expect(Array.from(result!.frames!)).toEqual([0, 1 / 30, 2 / 30, 3 / 30, 4 / 30]);
+   expect(Array.from(result!.keyframes)).toEqual([0, 4 / 30]);
 });

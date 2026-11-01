@@ -338,7 +338,7 @@ export default function App() {
                   {projectName ?? source?.name ?? "New cut"}
                </span>
                <AppUpdate update={update} onError={showError} />
-               {!mac && (
+               {platform === "win32" && (
                   <div className="window-controls">
                      <button aria-label="Minimize window" onClick={() => window.desktop.windowAction("minimize")}>
                         <FontAwesomeIcon icon={faMinus} />

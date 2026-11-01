@@ -100,7 +100,9 @@ export async function indexedSampleTimes(source: ProbedSource, signal?: AbortSig
          const composition = ctts
             ? Array.from({ length: entries(data, ctts, 8) }, (_, i) => ({
                  count: data.readUInt32BE(ctts.start + 8 + i * 8),
-                 delta: data[ctts.start] === 1 ? data.readInt32BE(ctts.start + 12 + i * 8) : data.readUInt32BE(ctts.start + 12 + i * 8),
+                 // Some MOV writers store negative offsets in version 0 tables too.
+                 // FFmpeg interprets these as signed, so navigation must use the same times.
+                 delta: data.readInt32BE(ctts.start + 12 + i * 8),
               }))
             : [];
          let editOffset = 0;

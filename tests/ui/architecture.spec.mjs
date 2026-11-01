@@ -1,6 +1,7 @@
 import { expect } from "@playwright/test";
 import { appEnv, test, waitForVideo, waitForPlaybackTime } from "./app.mjs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -159,14 +160,16 @@ test("a second process preserves active cache files and forwards file opens", as
    const marker = resolve(previewFolder, "active-preview-marker");
    await writeFile(marker, "owned by the first process");
    const executable = await app.evaluate(({ app }) => app.getPath("exe"));
-   const args = process.env.ATTACUT_EXECUTABLE ? [] : ["."];
+   const args = process.env.ATTACUT_EXECUTABLE ? [] : [resolve(".")];
    if (process.env.CI && process.platform === "linux") args.push("--no-sandbox");
    const options = { env: { ...appEnv, ATTACUT_HIDDEN: "1", ATTACUT_USER_DATA: profile, ATTACUT_OPEN_FILE: "" }, timeout: 20000, windowsHide: true };
    await promisify(execFile)(executable, args, options);
    expect(await readFile(marker, "utf8")).toBe("owned by the first process");
    await expect(page.locator(".title-filename")).toContainText("fixture.mp4");
-   await promisify(execFile)(executable, [...args, resolve("work/fixture.mkv")], options);
+   await promisify(execFile)(executable, [...args, "fixture.mkv"], { ...options, cwd: resolve("work") });
    await expect(page.locator(".title-filename")).toContainText("fixture.mkv");
+   await promisify(execFile)(executable, [...args, pathToFileURL(resolve("work/fixture.mp4")).href], options);
+   await expect(page.locator(".title-filename")).toContainText("fixture.mp4");
    expect(app.windows()).toHaveLength(1);
    if (process.env.ATTACUT_TEST_VISIBLE !== "1") {
       expect(
@@ -331,4 +334,18 @@ test("the clip limit explains rejected edits and allows editing again after a de
    const saved = JSON.parse(await readFile(resolve(profile, "session.json"), "utf8"));
    expect(saved.session.clips).toHaveLength(1000);
    expect(saved.session.history.past).toHaveLength(2);
+});
+
+test("Linux delegates window decorations to the desktop", async ({ launchApp, profile }) => {
+   test.skip(process.platform !== "linux");
+   const app = await launchApp(profile);
+   const page = await app.firstWindow();
+   await expect(page.locator(".app-shell")).toBeVisible();
+   await expect(page.locator(".window-controls")).toHaveCount(0);
+   expect(
+      await app.evaluate(({ BrowserWindow }) => {
+         const window = BrowserWindow.getAllWindows()[0];
+         return window.isMenuBarVisible();
+      })
+   ).toBe(false);
 });

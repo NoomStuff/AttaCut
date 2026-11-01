@@ -76,7 +76,21 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
          })
       )
    );
-   const duration = Number(result.format.duration);
+   let duration = Number(result.format.duration);
+   if (!Number.isFinite(duration) || duration <= 0) {
+      // Streaming WebM and recordings with unfinished headers can still have a
+      // complete packet timeline. Scan only when the cheap header probe has no duration.
+      let end = 0;
+      const start = Number(result.format.start_time) || 0;
+      await runMedia("ffprobe", ["-v", "error", "-show_packets", "-show_entries", "packet=pts_time,duration_time", "-of", "csv=p=0", fullPath], {
+         signal,
+         onLines: (line) => {
+            const [pts, length] = line.split(",").map(Number);
+            if (Number.isFinite(pts)) end = Math.max(end, pts! + (Number.isFinite(length) ? length! : 0));
+         },
+      });
+      duration = end - start;
+   }
    if (!Number.isFinite(duration) || duration <= 0) throw new Error("This file has no usable video duration.");
    const id = randomUUID();
    const streams = result.streams.map((stream) => ({

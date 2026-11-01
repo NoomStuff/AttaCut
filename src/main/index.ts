@@ -9,13 +9,13 @@ import { pruneWaveforms } from "./media/waveform-cache";
 import { ExportService } from "./exports.ts";
 import { Storage } from "./storage.ts";
 import { serveMedia } from "./media/serve.ts";
-import { videoExtensions } from "./media/formats.ts";
-import { isProjectPath, projectExtensions } from "../shared/project";
+import { isProjectPath } from "../shared/project";
 import { prunePreviews } from "./media/preview.ts";
 import { IpcEvents } from "../shared/ipc.ts";
 import { installMenu } from "./menu.ts";
 import { windowIcon, registerWindowsIdentity, isPackagedApp } from "./identity.ts";
 import { registerIpc } from "./ipc.ts";
+import { fileArgument } from "./launch-file";
 import { IpcTestAdapter } from "./ipc-test-adapter";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
@@ -25,8 +25,6 @@ const sourceProbe = new SourceProbe();
 app.on("before-quit", () => sourceProbe.cancelPrefetch());
 let appWindow: BrowserWindow | null = null;
 let rendererReady = false;
-const fileArgument = (args: string[]): string | null =>
-   args.find((arg) => [...videoExtensions, ...projectExtensions].some((extension) => arg.toLowerCase().endsWith(`.${extension}`)) && existsSync(arg)) ?? null;
 let pendingFile = process.env["ATTACUT_OPEN_FILE"] ?? fileArgument(process.argv.slice(1));
 const receiveFile = (path: string | null) => {
    if (appWindow && !appWindow.isDestroyed() && process.env["ATTACUT_HIDDEN"] !== "1") {
@@ -44,12 +42,13 @@ const receiveFile = (path: string | null) => {
       if (!isProjectPath(path)) void sourceProbe.prefetch(path).catch(() => undefined);
    }
 };
-app.on("second-instance", (_event, args) => receiveFile(fileArgument(args.slice(1))));
+app.on("second-instance", (_event, args, workingDirectory) => receiveFile(fileArgument(args.slice(1), workingDirectory)));
 app.on("open-file", (event, path) => {
    event.preventDefault();
    receiveFile(path);
 });
 app.setName("AttaCut");
+if (process.platform === "linux") app.setDesktopName("attacut.desktop");
 if (process.platform === "win32") app.setAppUserModelId("dev.attacut.app");
 app.commandLine.appendSwitch("enable-blink-features", "AudioVideoTracks");
 if (process.platform === "win32") {
@@ -93,7 +92,7 @@ async function start(): Promise<void> {
       backgroundColor: "#17191c",
       title: "AttaCut",
       ...(icon ? { icon } : {}),
-      titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
+      titleBarStyle: process.platform === "linux" ? "default" : process.platform === "darwin" ? "hiddenInset" : "hidden",
       webPreferences: {
          preload: join(currentDirectory, "../preload/index.cjs"),
          sandbox: true,
@@ -281,6 +280,8 @@ async function start(): Promise<void> {
          });
    });
    installMenu(window);
+   // Linux uses the in-app menus; the native frame must not add a second menu bar.
+   if (process.platform === "linux") window.removeMenu();
    registerIpc({
       testing,
       window,

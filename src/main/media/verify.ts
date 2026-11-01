@@ -162,10 +162,11 @@ async function verifyFrameGroup(source: ProbedSource, output: ProbedSource, star
       referenceHashes.set(source, references);
    }
    const sourceChecks = checks.filter((check) => check.encoded || !references.has(check.time));
-   const args = ["-v", "error", "-copyts"];
+   const args = ["-v", "error", "-copyts", "-filter_complex_threads", "1"];
    const input = (path: string, time: number) => {
       const seek = Math.max(0, time - 5);
-      args.push(...(seek > 0 ? ["-ss", String(seek)] : []), "-noautorotate", "-i", path);
+      // Resolution changes must not reset the one-frame trim counters in each branch.
+      args.push(...(seek > 0 ? ["-ss", String(seek)] : []), "-noautorotate", "-reinit_filter", "0", "-i", path);
    };
    if (sourceChecks.length) input(source.path, sourceChecks[0]!.time);
    input(output.path, checks[0]!.time - start);

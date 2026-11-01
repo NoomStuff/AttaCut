@@ -18,7 +18,7 @@ test("native minimize, restore and activation", async ({ launchApp, profile }) =
       window.focus();
    });
    await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused())).toBe(true);
-   if (process.platform === "darwin") await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize());
+   if (process.platform !== "win32") await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize());
    else await page.getByRole("button", { name: "Minimize window", exact: true }).click();
    await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized())).toBe(true);
    await app.evaluate(({ BrowserWindow }) => {

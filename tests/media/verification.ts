@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { ffmpegBase, runMedia } from "../../src/main/media/process";
 import { probeSource } from "../../src/main/media/probe";
+import { analyzeCut, exportCut } from "../../src/main/media/cut";
+import { ffconcatList } from "../../src/main/media/mux";
 import { verifyCutFrames } from "../../src/main/media/verify";
 
 const folder = await mkdtemp(resolve("work/verification-"));
@@ -71,6 +73,27 @@ try {
    // SSIM conversion must not hide a one-level RGB change from the exact copy check.
    await assert.rejects(verifyCutFrames(rgb, rgbChanged, 0, [0], [0]), /changing copied video/);
    await verifyCutFrames(rgb, rgb, 0, [0], [0]);
+   const parts = [join(folder, "wide.webm"), join(folder, "tall.webm")];
+   for (const [index, size] of ["96x64", "64x96"].entries())
+      await runMedia("ffmpeg", [...ffmpegBase, "-f", "lavfi", "-i", `testsrc2=size=${size}:rate=10:duration=1`, "-c:v", "libvpx", "-g", "1", parts[index]!]);
+   const list = join(folder, "sizes.ffconcat");
+   await writeFile(list, ffconcatList(parts, [1, 1]));
+   const resizing = join(folder, "resizing.webm");
+   await runMedia("ffmpeg", [...ffmpegBase, "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", resizing]);
+   const unfinished = join(folder, "unfinished.webm");
+   const bytes = await readFile(resizing);
+   const durationOffset = bytes.indexOf(Buffer.from([0x44, 0x89, 0x88]));
+   assert.ok(durationOffset >= 0, "Fixture contains a Matroska duration element");
+   bytes.writeDoubleBE(0, durationOffset + 3);
+   await writeFile(unfinished, bytes);
+   const recovered = await probeSource(unfinished);
+   assert.ok(Math.abs(recovered.duration - 2) < 0.01, `Recovered packet duration ${recovered.duration}`);
+   const resizingSource = await probeSource(resizing);
+   await verifyCutFrames(resizingSource, resizingSource, 0, [0.2, 1.2, 1.8]);
+   const resizingCut = join(folder, "resizing-cut.webm");
+   await exportCut(resizingSource, await analyzeCut(resizingSource, { id: "sizes", color: 0, start: 0.2, end: 1.8 }), resizingCut);
+   await runMedia("ffmpeg", ["-v", "error", "-xerror", "-i", resizingCut, "-f", "null", "-"]);
+   console.log("PASS copied cuts retain changing video dimensions without resetting frame checks");
    console.log("Frame verification passed: grouped reads, cached references, changed copied frames, failed quality checks, missing frames, and cancellation.");
 } finally {
    await rm(folder, { recursive: true, force: true });
