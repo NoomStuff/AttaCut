@@ -9,6 +9,7 @@ import { canReuseMediaVerification } from "./media-verification";
 import { verifyWindowsPayloads } from "./verify-windows-payloads";
 import { verifyUnixPayloads } from "./verify-unix-payloads";
 import { verifyInstaller } from "./verify-installer";
+import { verifyUpdate } from "./verify-update";
 
 if (!hasDisposableDesktop()) {
    await runDesktopTests("package");
@@ -36,6 +37,7 @@ if (!existsSync(executable)) throw new Error(`Packaged app missing: ${executable
 await verifyWindowsPayloads();
 await verifyUnixPayloads();
 await verifyInstaller();
+await verifyUpdate();
 if (process.platform === "win32") {
    // Check both processes. The launcher can look correct while the runtime still says Electron.
    for (const file of new Set([executable, resolve(base, "AttaCut.exe")])) {

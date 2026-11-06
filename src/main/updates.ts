@@ -9,8 +9,20 @@ import { basename, join } from "node:path";
 import type { UpdateStatus } from "../shared/types.ts";
 import { IpcEvents } from "../shared/ipc.ts";
 import type { AppUpdater } from "electron-updater";
+import type { UpdateLogger } from "./update-log.ts";
 
 const updateFeedUrl = "https://raw.githubusercontent.com/NoomStuff/AttaCut/updates/";
+const releaseApiUrl = "https://api.github.com/repos/NoomStuff/AttaCut/releases/latest";
+
+/**
+ * Release verification installs a test build and updates it from a local feed. Only a test
+ * launch may redirect updates, and only to a loopback server.
+ */
+export function updateEndpoints(env: NodeJS.ProcessEnv = process.env): { releases: string; feed: string } {
+   const local = env["ATTACUT_TESTING"] === "1" ? env["ATTACUT_TEST_UPDATE_SERVER"] : undefined;
+   if (local && /^http:\/\/127\.0\.0\.1:\d+\/$/.test(local)) return { releases: `${local}releases/latest`, feed: `${local}feed/` };
+   return { releases: releaseApiUrl, feed: updateFeedUrl };
+}
 
 const releaseSchema = z.object({
    tag_name: z.string(),
@@ -47,9 +59,10 @@ export function isNewerVersion(candidate: string, current: string): boolean {
 
 export async function fetchAvailableUpdate(
    currentVersion: string,
-   request: (url: string, init: RequestInit) => Promise<Response>
+   request: (url: string, init: RequestInit) => Promise<Response>,
+   url = releaseApiUrl
 ): Promise<AvailableUpdate | null> {
-   const response = await request("https://api.github.com/repos/NoomStuff/AttaCut/releases/latest", {
+   const response = await request(url, {
       headers: { Accept: "application/vnd.github+json", "User-Agent": `AttaCut/${currentVersion}` },
       signal: AbortSignal.timeout(30_000),
    });
@@ -69,6 +82,27 @@ function updateMode(): AvailableUpdate["mode"] {
    return "releases";
 }
 
+type Spawner = { spawnLog?: (command: string, args?: string[], ...rest: unknown[]) => Promise<boolean> };
+
+/**
+ * NSIS checks its own CRC before running, and for an installer this size it shows a
+ * "verifying installer" window even under /S. electron-updater has already verified the
+ * installer's sha512 after downloading it, so the update run skips that second check.
+ * Installers started by hand keep it. Applies to the direct and elevate.exe launches alike.
+ */
+export function skipInstallerCrc(updater: unknown): void {
+   const target = updater as Spawner;
+   const spawn = target.spawnLog;
+   if (typeof spawn !== "function") return;
+   target.spawnLog = (command, args = [], ...rest) =>
+      spawn.call(
+         updater,
+         command,
+         args.flatMap((arg) => (arg === "--updated" ? [arg, "/NCRC"] : [arg])),
+         ...rest
+      );
+}
+
 export class UpdateManager {
    private readonly window: BrowserWindow;
    private updater: AppUpdater | null = null;
@@ -79,11 +113,18 @@ export class UpdateManager {
    private automaticRunning = false;
    private automaticWired = false;
    downloadedPath: string | null = null;
-   constructor(window: BrowserWindow) {
+   private readonly log: UpdateLogger | null;
+   constructor(window: BrowserWindow, log: UpdateLogger | null = null) {
       this.window = window;
+      this.log = log;
    }
 
-   private emit(status: UpdateStatus): void {
+   /** The version an explicit restart would install. */
+   get readyUpdate(): AvailableUpdate | null {
+      return this.isReady ? this.current : null;
+   }
+
+   emit(status: UpdateStatus): void {
       if (!this.window.isDestroyed()) this.window.webContents.send(IpcEvents.updateStatus, status);
    }
 
@@ -101,7 +142,8 @@ export class UpdateManager {
          const module = await import("electron-updater");
          const updater = module.autoUpdater ?? module.default.autoUpdater;
          this.updater = updater;
-         updater.setFeedURL({ provider: "generic", url: updateFeedUrl });
+         if (this.log) updater.logger = this.log;
+         updater.setFeedURL({ provider: "generic", url: updateEndpoints().feed });
          updater.autoDownload = true;
          updater.autoInstallOnAppQuit = false;
          // Only app packages appear on GitHub Releases; NSIS must download the
@@ -111,6 +153,7 @@ export class UpdateManager {
          // repeated update offers from stacking duplicate progress and error handlers.
          if (!this.automaticWired) {
             this.automaticWired = true;
+            if (process.platform === "win32") skipInstallerCrc(updater);
             updater.on("update-available", (info) => {
                this.automaticVersion = info.version;
             });
@@ -121,14 +164,15 @@ export class UpdateManager {
                this.readyVersion = info.version;
                this.emit({ phase: "ready", version: info.version, percent: 100 });
             });
-            updater.on("error", () =>
+            updater.on("error", (error: Error) => {
+               this.log?.error(error);
                this.emit({
                   phase: "error",
                   version: this.automaticVersion!,
                   percent: null,
                   message: "Could not download the update. Open the release to update manually.",
-               })
-            );
+               });
+            });
          }
          this.emit({ phase: "downloading", version: update.version, percent: null });
          const result = await updater.checkForUpdates();
@@ -140,7 +184,8 @@ export class UpdateManager {
                percent: null,
                message: "The update package is not available yet. Open the release to update manually.",
             });
-      } catch {
+      } catch (error) {
+         this.log?.error(error);
          this.emit({ phase: "error", version: update.version, percent: null, message: "Could not download the update. Open the release to update manually." });
       } finally {
          this.automaticRunning = false;
@@ -149,8 +194,14 @@ export class UpdateManager {
       }
    }
 
+   /**
+    * Hand over to the installer. Callers finish their own teardown first: quitAndInstall
+    * spawns the silent installer and quits on the next tick, and the installer waits for
+    * this process to exit before it replaces any files.
+    */
    install(): void {
       if (!this.isReady) throw new Error("The update is not ready yet.");
+      this.log?.info(`Restarting from ${app.getVersion()} to install ${this.readyVersion}`);
       this.updater!.quitAndInstall(true, true);
    }
    get isReady(): boolean {

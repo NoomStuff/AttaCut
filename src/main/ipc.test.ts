@@ -36,7 +36,7 @@ function persistenceFixture() {
       exportsService: {},
       takeInitialFile: vi.fn(),
       onFlushed,
-      onApplyUpdate: vi.fn(),
+      updates: { downloadedPath: null },
    } as unknown as Parameters<typeof registerIpc>[0]);
    const invoke = (channel: string, value: unknown) => {
       const handler = vi.mocked(ipcMain.handle).mock.calls.find(([name]) => name === channel)![1];
@@ -102,7 +102,7 @@ it("preserves update-check failures instead of claiming no newer release exists"
       exportsService: {},
       takeInitialFile: vi.fn(),
       onFlushed: vi.fn(),
-      onApplyUpdate: vi.fn(),
+      updates: { downloadedPath: null },
    } as unknown as Parameters<typeof registerIpc>[0]);
    vi.mocked(net.fetch).mockResolvedValueOnce(new Response("", { status: 503 }));
    const handler = vi
@@ -126,7 +126,7 @@ it("rejects both another sender and a subframe before consuming bootstrap state"
       exportsService: {},
       takeInitialFile,
       onFlushed: vi.fn(),
-      onApplyUpdate: vi.fn(),
+      updates: { downloadedPath: null },
    } as unknown as Parameters<typeof registerIpc>[0]);
    const handler = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === "app:bootstrap")![1];
    for (const event of [
