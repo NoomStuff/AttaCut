@@ -79,7 +79,14 @@ test("export workflow", async ({ launchApp, profile }) => {
    await handle.focus();
    await handle.press("ArrowRight");
    await expect(handle).toHaveAttribute("aria-valuenow", "10");
-   const frameTime = await page.locator("video").evaluate((video) => video.currentTime);
+   // The playhead follows the snapped handle with a seek; compare against where it settles.
+   const frameTime = await page.locator("video").evaluate(async (video) => {
+      for (;;) {
+         const time = video.currentTime;
+         await new Promise((resolve) => setTimeout(resolve, 250));
+         if (!video.seeking && video.readyState >= 2 && video.currentTime === time) return time;
+      }
+   });
    await page.getByRole("button", { name: "Export current frame", exact: true }).click();
    await page.getByRole("dialog", { name: "Export current frame", exact: true }).waitFor();
    await expect(page.locator(".frame-thumbnail")).toBeVisible();
