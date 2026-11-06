@@ -52,7 +52,7 @@ export async function verifyUpdate(): Promise<void> {
    const [major, minor, patch] = manifest.version.split(/[.-]/).map(Number) as [number, number, number];
    const oldVersion = manifest.version;
    const newVersion = `${major}.${minor}.${patch + 1}`;
-   const results = resolve("test-results/update-e2e");
+   const results = resolve("work/update-e2e");
    await mkdir(results, { recursive: true });
    await mkdir("work", { recursive: true });
    const root = await mkdtemp(resolve("work/update-test-"));
@@ -278,7 +278,7 @@ export async function verifyUpdate(): Promise<void> {
             const log = await readFile(join(logs, "updater.log"), "utf8");
             await writeFile(join(results, `updater-${scope}.log`), log);
             // Which of electron-updater's install paths ran: direct spawn, elevate.exe, or the interactive fallback.
-            report["installPath"] = log.split("\n").filter((line) => /Executing:|Cannot run installer|isAdminRightsRequired|Install:/.test(line));
+            report["installPath"] = log.split("\n").filter((line) => /Executing:|Cannot run installer|isAdminRightsRequired|Install:|Handing over/.test(line));
          } else failures.push(`${scope}: the updater wrote no log.`);
          await cp(samplesPath, join(results, `windows-${scope}.jsonl`));
          reports.push(report);
