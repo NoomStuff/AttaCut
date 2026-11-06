@@ -20,6 +20,9 @@ import { fileArgument } from "./launch-file";
 import { IpcTestAdapter } from "./ipc-test-adapter";
 import { UpdateManager } from "./updates.ts";
 import { createUpdateLog } from "./update-log.ts";
+import { clearInstallRecord, takeInstallOutcome, writeInstallRecord } from "./update-install-record.ts";
+import type { AvailableUpdate } from "../shared/types";
+import type { ExportJob } from "../shared/export";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 if (process.env["ATTACUT_USER_DATA"]) app.setPath("userData", process.env["ATTACUT_USER_DATA"]);
@@ -111,9 +114,11 @@ async function start(): Promise<void> {
    // The test harness maps an inactive window for compositing. Hiding it again
    // stops Linux screenshot capture and OffscreenCanvas presentation under Xvfb.
    const testing = !isPackagedApp() && process.env["ATTACUT_TESTING"] === "1" ? new IpcTestAdapter() : null;
+   let onExportProgress: ((job: ExportJob) => void) | null = null;
    const exportsService = new ExportService(
       (job) => {
          if (!window.isDestroyed()) window.webContents.send(IpcEvents.jobProgress, job);
+         onExportProgress?.(job);
       },
       testing ? (signal) => testing.invoke("test:export-item", () => undefined, signal) : undefined
    );
@@ -192,7 +197,7 @@ async function start(): Promise<void> {
       return net.fetch(pathToFileURL(target).toString());
    });
    let confirmedClose = false;
-   let applyUpdate: (() => void) | null = null;
+   let quittingForUpdate = false;
    let closing = false;
    let resolveFlush: ((proceed: boolean) => void) | null = null;
    let rejectFlush: ((error: Error) => void) | null = null;
@@ -217,6 +222,34 @@ async function start(): Promise<void> {
    });
    window.webContents.on("render-process-gone", failFlush);
    window.webContents.on("destroyed", failFlush);
+   /** Resolves false when the editor cancels, for example from its unsaved-project prompt. */
+   const flushRenderer = (): Promise<boolean> => {
+      if (!rendererReady || window.webContents.isDestroyed()) return Promise.resolve(true);
+      return new Promise<boolean>((resolve, reject) => {
+         flushTimer = setTimeout(failFlush, 10000);
+         resolveFlush = (proceed) => {
+            disarmFlush();
+            resolveFlush = null;
+            rejectFlush = null;
+            resolve(proceed);
+         };
+         rejectFlush = reject;
+         window.webContents.send(IpcEvents.flush);
+      });
+   };
+   /** Stop helper processes, bounded so a stuck child cannot hold the app open. */
+   const teardown = (limit: number) => {
+      sourceProbe.cancelPrefetch();
+      sourceSession.dispose();
+      exportsService.cancelPlanning();
+      exportsService.cancel();
+      // Killed children get a bounded window for their cleanup handlers, so temporary
+      // export folders are removed instead of stranded beside the user's output.
+      return Promise.race([
+         Promise.all([exportsService.waitForIdle(), sourceSession.waitForWaveformIdle()]),
+         new Promise((resolve) => setTimeout(resolve, limit)),
+      ]).catch(() => undefined);
+   };
    window.on("close", (event) => {
       if (confirmedClose) return;
       event.preventDefault();
@@ -232,36 +265,16 @@ async function start(): Promise<void> {
                defaultId: 0,
                cancelId: 0,
             });
-            if (response !== 1) {
-               applyUpdate = null;
-               return;
-            }
+            if (response !== 1) return;
             exportsService.cancel();
             await exportsService.waitForIdle();
          }
-         if (rendererReady && !window.webContents.isDestroyed()) {
-            const proceed = await new Promise<boolean>((resolve, reject) => {
-               flushTimer = setTimeout(failFlush, 10000);
-               resolveFlush = (proceed) => {
-                  disarmFlush();
-                  resolveFlush = null;
-                  rejectFlush = null;
-                  resolve(proceed);
-               };
-               rejectFlush = reject;
-               window.webContents.send(IpcEvents.flush);
-            });
-            if (!proceed) {
-               applyUpdate = null;
-               return;
-            }
-         }
+         if (!(await flushRenderer())) return;
          await storage.flush();
          confirmedClose = true;
          window.close();
       })()
          .catch((error: unknown) => {
-            applyUpdate = null;
             dialog.showErrorBox("Could not save before closing", error instanceof Error ? error.message : String(error));
          })
          .finally(() => {
@@ -269,20 +282,9 @@ async function start(): Promise<void> {
          });
    });
    app.on("window-all-closed", () => {
-      sourceSession.dispose();
-      exportsService.cancelPlanning();
-      exportsService.cancel();
-      // Give killed children and their cleanup handlers a bounded window to finish so
-      // temporary export folders are removed instead of stranded beside the user's output.
-      void Promise.race([
-         Promise.all([exportsService.waitForIdle(), sourceSession.waitForWaveformIdle()]),
-         new Promise((resolve) => setTimeout(resolve, 15_000)),
-      ])
-         .catch(() => undefined)
-         .finally(() => {
-            if (applyUpdate) applyUpdate();
-            else app.quit();
-         });
+      // An update restart already tore everything down before handing over to the installer.
+      if (quittingForUpdate) return;
+      void teardown(15_000).finally(() => app.quit());
    });
    await recentReady;
    const clearRecent = () => void recent.clear().catch(() => undefined);
@@ -299,7 +301,104 @@ async function start(): Promise<void> {
          for (const file of [...files].reverse()) app.addRecentDocument(file.path);
       }
    });
-   const updates = new UpdateManager(window, createUpdateLog(app.getPath("logs")));
+   const updateLog = createUpdateLog(app.getPath("logs"));
+   const updates = new UpdateManager(window, updateLog);
+   const userData = app.getPath("userData");
+   // A launch that still runs the version which started an install means it did not apply.
+   const installOutcome = takeInstallOutcome(userData, app.getVersion())
+      .then((outcome): AvailableUpdate | null => {
+         if (!outcome) return null;
+         updateLog.info(
+            outcome.applied ? `Started after installing ${outcome.targetVersion}` : `${outcome.targetVersion} did not apply; still ${app.getVersion()}`
+         );
+         if (outcome.applied) return null;
+         const version = outcome.targetVersion;
+         return {
+            version,
+            name: `AttaCut ${version}`,
+            url: `https://github.com/NoomStuff/AttaCut/releases/tag/v${version}`,
+            mode: "releases",
+            notApplied: true,
+         };
+      })
+      .catch(() => null);
+   let outcomeTaken = false;
+   let restart: { cancel: () => void } | null = null;
+   const exportPercent = (job: ExportJob | null) => {
+      if (!job?.items.length) return null;
+      const weight = (item: ExportJob["items"][number]) => item.duration ?? 1;
+      const finished = (item: ExportJob["items"][number]) => ["completed", "failed", "cancelled"].includes(item.status);
+      const done = job.items.reduce((sum, item) => sum + weight(item) * (finished(item) ? 1 : item.progress), 0);
+      return Math.round((done / job.items.reduce((sum, item) => sum + weight(item), 0)) * 100);
+   };
+   /**
+    * An explicit "Restart to update" is not an accidental quit: a running export finishes,
+    * with its progress in the update chip, instead of prompting to cancel it. Only unsaved
+    * project changes still ask. Teardown completes before quitAndInstall, so the silent
+    * installer never waits on, or has to kill, a process that is still shutting down.
+    */
+   const restartToUpdate = () => {
+      const target = updates.readyUpdate;
+      if (restart || !target) return;
+      const clicked = Date.now();
+      let cancelled = false;
+      let wake = () => {};
+      restart = {
+         cancel: () => {
+            cancelled = true;
+            wake();
+         },
+      };
+      const installing = (percent: number | null, waitingFor?: "export") =>
+         updates.emit({ phase: "installing", version: target.version, percent, ...(waitingFor ? { waitingFor } : {}) });
+      const ready = () => updates.emit({ phase: "ready", version: target.version, percent: 100 });
+      let handedOver = false;
+      void (async () => {
+         onExportProgress = (job) => {
+            if (job.running) installing(exportPercent(job), "export");
+         };
+         while (exportsService.running && !cancelled) {
+            installing(exportPercent(exportsService.current), "export");
+            await Promise.race([
+               exportsService.waitForIdle(),
+               new Promise<void>((resolve) => {
+                  wake = resolve;
+               }),
+            ]);
+         }
+         onExportProgress = null;
+         if (cancelled) return ready();
+         installing(null);
+         if (!(await flushRenderer())) return ready();
+         await storage.flush();
+         confirmedClose = true;
+         quittingForUpdate = true;
+         handedOver = true;
+         window.hide();
+         await teardown(5_000);
+         await writeInstallRecord(userData, { fromVersion: app.getVersion(), targetVersion: target.version });
+         updateLog.info(`Handing over to the installer ${Date.now() - clicked}ms after Restart to update`);
+         updates.install();
+         // quitAndInstall quits on the next tick. If it could not start the installer, still
+         // close: the install record makes the next launch report that the update did not apply.
+         setTimeout(() => app.quit(), 10_000).unref();
+      })()
+         .catch(async (error: unknown) => {
+            updateLog.error(error);
+            onExportProgress = null;
+            if (handedOver) return app.quit();
+            await clearInstallRecord(userData).catch(() => undefined);
+            updates.emit({
+               phase: "error",
+               version: target.version,
+               percent: null,
+               message: "Could not restart to update. Open the release to update manually.",
+            });
+         })
+         .finally(() => {
+            restart = null;
+         });
+   };
    registerIpc({
       testing,
       updates,
@@ -317,12 +416,14 @@ async function start(): Promise<void> {
       onFlushed: (proceed = true) => {
          resolveFlush?.(proceed);
       },
-      onRestartToUpdate: () => {
-         applyUpdate = () => updates.install();
-         window.close();
+      onRestartToUpdate: restartToUpdate,
+      onCancelUpdateRestart: () => restart?.cancel(),
+      takeUpdateOutcome: async () => {
+         const outcome = await installOutcome;
+         if (outcomeTaken) return null;
+         outcomeTaken = true;
+         return outcome;
       },
-      onCancelUpdateRestart: () => undefined,
-      takeUpdateOutcome: () => null,
    });
    ipcMain.on(IpcEvents.windowAction, (event, value: unknown) => {
       if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return;

@@ -52,7 +52,7 @@ export function registerIpc({
    updates: UpdateManager;
    onRestartToUpdate: () => void;
    onCancelUpdateRestart: () => void;
-   takeUpdateOutcome: () => AvailableUpdate | null;
+   takeUpdateOutcome: () => Promise<AvailableUpdate | null>;
    testing?: IpcTestAdapter | null;
 }): void {
    const frameOutputs = new Set<string>();

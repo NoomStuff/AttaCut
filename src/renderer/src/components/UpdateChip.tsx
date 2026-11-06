@@ -11,47 +11,63 @@ interface Props {
    onRestart: () => void;
    onRelease: () => void;
    onReveal: () => void;
+   onCancelRestart: () => void;
 }
 
 const ringLength = 53.4;
 
-export function UpdateChip({ update, status, onDownload, onRestart, onRelease, onReveal }: Props) {
+export function UpdateChip({ update, status, onDownload, onRestart, onRelease, onReveal, onCancelRestart }: Props) {
    const [announce, setAnnounce] = useState(true);
    const [expandedWidth, setExpandedWidth] = useState(160);
    const labelRef = useRef<HTMLSpanElement>(null);
    const downloadWidthRef = useRef<HTMLSpanElement>(null);
    const phase = status?.version === update.version ? status.phase : null;
-   const downloading = phase === "downloading" || (update.mode === "automatic" && !phase);
+   const installing = phase === "installing";
+   const waitingForExport = installing && status?.waitingFor === "export";
+   // The ring shows download progress, or the export an explicit restart is waiting for.
+   const downloading = phase === "downloading" || installing || (update.mode === "automatic" && !phase);
    const percent = status?.version === update.version ? status.percent : null;
-   const label = downloading
+   const label = waitingForExport
       ? percent == null
-         ? "Downloading update"
-         : `Downloading ${Math.round(percent)}%`
-      : phase === "ready"
-        ? "Restart to update"
-        : phase === "downloaded"
-          ? "Show in Downloads"
-          : phase === "error"
-            ? update.mode === "download"
-               ? "Retry download"
-               : "View release"
-            : update.mode === "releases"
-              ? "View release"
-              : "Download update";
-   const icon = phase === "downloaded" ? faFolderOpen : phase === "error" ? faTriangleExclamation : faDownload;
-   const action = downloading
-      ? undefined
-      : phase === "ready"
-        ? onRestart
-        : phase === "downloaded"
-          ? onReveal
-          : phase === "error"
-            ? update.mode === "download"
-               ? onDownload
-               : onRelease
-            : update.mode === "releases"
-              ? onRelease
-              : onDownload;
+         ? "Updating after export"
+         : `Updating after export ${Math.round(percent)}%`
+      : installing
+        ? "Restarting to update"
+        : downloading
+          ? percent == null
+             ? "Downloading update"
+             : `Downloading ${Math.round(percent)}%`
+          : phase === "not-applied"
+            ? "Update didn't apply"
+            : phase === "ready"
+              ? "Restart to update"
+              : phase === "downloaded"
+                ? "Show in Downloads"
+                : phase === "error"
+                  ? update.mode === "download"
+                     ? "Retry download"
+                     : "View release"
+                  : update.mode === "releases"
+                    ? "View release"
+                    : "Download update";
+   const icon = phase === "downloaded" ? faFolderOpen : phase === "error" || phase === "not-applied" ? faTriangleExclamation : faDownload;
+   const action = waitingForExport
+      ? onCancelRestart
+      : downloading
+        ? undefined
+        : phase === "not-applied"
+          ? onRelease
+          : phase === "ready"
+            ? onRestart
+            : phase === "downloaded"
+              ? onReveal
+              : phase === "error"
+                ? update.mode === "download"
+                   ? onDownload
+                   : onRelease
+                : update.mode === "releases"
+                  ? onRelease
+                  : onDownload;
 
    useEffect(() => {
       setAnnounce(true);
@@ -72,7 +88,15 @@ export function UpdateChip({ update, status, onDownload, onRestart, onRelease, o
             className={`update-chip-trigger${phase ? ` ${phase}` : ""}`}
             aria-label={label}
             aria-disabled={!action}
-            title={phase === "error" && status?.message ? status.message : `AttaCut ${update.version} · ${label}`}
+            title={
+               waitingForExport
+                  ? `AttaCut ${update.version} installs when the export finishes. Click to cancel the restart.`
+                  : phase === "not-applied"
+                    ? `AttaCut ${update.version} didn't finish installing. Open the release to install it manually.`
+                    : phase === "error" && status?.message
+                      ? status.message
+                      : `AttaCut ${update.version} · ${label}`
+            }
             onClick={action}
             style={{ "--update-expanded-width": `${expandedWidth}px` } as React.CSSProperties}
          >

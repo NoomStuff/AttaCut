@@ -188,19 +188,31 @@ export async function verifyUpdate(): Promise<void> {
          // A loaded video gives the restart real work to tear down: previews, waveform and probes.
          const video = resolve("work/fixture.mp4");
          const application = await electron.launch({ executablePath: appExe, env: { ...environment, ATTACUT_OPEN_FILE: existsSync(video) ? video : "" } });
-         const oldPid = application.process().pid!;
+         const readSamples = async () =>
+            existsSync(samplesPath)
+               ? (await readFile(samplesPath, "utf8"))
+                    .split("\n")
+                    .filter(Boolean)
+                    .map((line) => JSON.parse(line) as Sample)
+               : [];
+         // Every runtime process of the old app, not only the one Playwright started.
+         const oldPids = new Set<number>();
          const report: Record<string, unknown> = { scope, oldVersion, newVersion };
          try {
             const page = await application.firstWindow();
             const restart = page.getByRole("button", { name: "Restart to update", exact: true });
             await restart.waitFor({ state: "visible", timeout: 180_000 });
+            await sleep(500);
+            for (const sample of await readSamples())
+               for (const entry of [...sample.processes, ...sample.windows]) if (same(entry.path, appExe) && alive(entry.pid)) oldPids.add(entry.pid);
+            if (!oldPids.size) throw new Error(`${scope}: the recorder did not see the running app.`);
             const clicked = Date.now();
             report["clicked"] = clicked;
             await restart.click();
             let exited = 0;
             const exitDeadline = Date.now() + 120_000;
             while (!exited && Date.now() < exitDeadline) {
-               if (!alive(oldPid)) exited = Date.now();
+               if (![...oldPids].some(alive)) exited = Date.now();
                else await sleep(50);
             }
             report["clickToExitMs"] = exited ? exited - clicked : null;
@@ -210,44 +222,46 @@ export async function verifyUpdate(): Promise<void> {
             const relaunchDeadline = Date.now() + 240_000;
             while (!relaunched && Date.now() < relaunchDeadline) {
                await sleep(250);
-               const samples = existsSync(samplesPath)
-                  ? (await readFile(samplesPath, "utf8"))
-                       .split("\n")
-                       .filter(Boolean)
-                       .map((line) => JSON.parse(line) as Sample)
-                  : [];
-               const found = samples.find(
-                  (sample) => sample.t > clicked && sample.windows.some((window) => window.pid !== oldPid && same(window.path, appExe) && window.title)
+               const found = (await readSamples()).find(
+                  (sample) => sample.t > clicked && sample.windows.some((window) => !oldPids.has(window.pid) && same(window.path, appExe) && window.title)
                );
                if (found) relaunched = found.t;
             }
             report["clickToRelaunchMs"] = relaunched ? relaunched - clicked : null;
             if (!relaunched) failures.push(`${scope}: ${newVersion} did not relaunch within 240s.`);
+            // Keep recording until the installer has exited, plus a moment for late dialogs.
+            const installerDeadline = Date.now() + 60_000;
+            while (Date.now() < installerDeadline) {
+               const last = (await readSamples()).at(-1);
+               if (last && !last.processes.some((entry) => canonical(entry.path).startsWith(canonical(updaterCache)))) break;
+               await sleep(250);
+            }
             await sleep(3000);
          } finally {
             await writeFile(stop, "");
             await new Promise((resolveExit) => recorder.once("exit", resolveExit));
             await application.close().catch(() => undefined);
          }
-         const samples = (await readFile(samplesPath, "utf8"))
-            .split("\n")
-            .filter(Boolean)
-            .map((line) => JSON.parse(line) as Sample);
+         const samples = await readSamples();
          const clicked = report["clicked"] as number;
          const after = samples.filter((sample) => sample.t >= clicked);
-         const windowGone = after.find((sample) => !sample.windows.some((window) => window.pid === oldPid));
+         const windowGone = after.find((sample) => !sample.windows.some((window) => oldPids.has(window.pid)));
          report["clickToWindowGoneMs"] = windowGone ? windowGone.t - clicked : null;
-         const installerSeen = after.filter((sample) => sample.processes.some((entry) => entry.path.toLowerCase().includes(updaterCache.toLowerCase())));
-         report["installerStartMs"] = installerSeen[0] ? installerSeen[0].t - clicked : null;
-         report["installerEndMs"] = installerSeen.length ? installerSeen[installerSeen.length - 1]!.t - clicked : null;
+         const runsInstaller = (sample: Sample) => sample.processes.some((entry) => canonical(entry.path).startsWith(canonical(updaterCache)));
+         const start = after.findIndex(runsInstaller);
+         const end = start < 0 ? -1 : after.findIndex((sample, index) => index > start && !runsInstaller(sample));
+         report["installerStartMs"] = start < 0 ? null : after[start]!.t - clicked;
+         report["installerEndMs"] = end < 0 ? null : after[end]!.t - clicked;
          const foreign = new Map<number, Sample["windows"][number]>();
          for (const sample of after)
             for (const window of sample.windows) {
-               if (window.pid === oldPid || same(window.path, appExe) || same(window.path, join(install, "AttaCut.exe"))) continue;
+               if (oldPids.has(window.pid) || same(window.path, appExe) || same(window.path, join(install, "AttaCut.exe"))) continue;
                const path = canonical(window.path);
                const watched =
                   [install, updaterCache].some((folder) => path.startsWith(canonical(folder))) || watchedFragments.some((fragment) => path.includes(fragment));
-               if (watched || window.class === "#32770") foreign.set(window.hwnd, window);
+               // Unrelated runner dialogs are not installer windows; anything the installer,
+               // uninstaller, elevate.exe or the app folder shows is.
+               if (watched) foreign.set(window.hwnd, window);
             }
          report["installerWindows"] = [...foreign.values()];
          if (foreign.size) failures.push(`${scope}: ${foreign.size} installer window(s) appeared: ${JSON.stringify([...foreign.values()])}`);

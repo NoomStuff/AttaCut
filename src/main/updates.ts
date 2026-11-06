@@ -82,6 +82,27 @@ function updateMode(): AvailableUpdate["mode"] {
    return "releases";
 }
 
+type Spawner = { spawnLog?: (command: string, args?: string[], ...rest: unknown[]) => Promise<boolean> };
+
+/**
+ * NSIS checks its own CRC before running, and for an installer this size it shows a
+ * "verifying installer" window even under /S. electron-updater has already verified the
+ * installer's sha512 after downloading it, so the update run skips that second check.
+ * Installers started by hand keep it. Applies to the direct and elevate.exe launches alike.
+ */
+export function skipInstallerCrc(updater: unknown): void {
+   const target = updater as Spawner;
+   const spawn = target.spawnLog;
+   if (typeof spawn !== "function") return;
+   target.spawnLog = (command, args = [], ...rest) =>
+      spawn.call(
+         updater,
+         command,
+         args.flatMap((arg) => (arg === "--updated" ? [arg, "/NCRC"] : [arg])),
+         ...rest
+      );
+}
+
 export class UpdateManager {
    private readonly window: BrowserWindow;
    private updater: AppUpdater | null = null;
@@ -132,6 +153,7 @@ export class UpdateManager {
          // repeated update offers from stacking duplicate progress and error handlers.
          if (!this.automaticWired) {
             this.automaticWired = true;
+            if (process.platform === "win32") skipInstallerCrc(updater);
             updater.on("update-available", (info) => {
                this.automaticVersion = info.version;
             });

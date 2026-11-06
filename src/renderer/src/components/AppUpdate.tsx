@@ -6,9 +6,10 @@ import { UpdateChip } from "./UpdateChip";
 /** Update availability, download events and actions have one owner. Availability comes from
     App so the Help menu's "Check for updates" and the chip share one result. */
 export function AppUpdate({ update, onError }: { update: AvailableUpdate | null; onError: (message: string) => void }) {
-   const [status, setStatus] = useState<UpdateStatus | null>(null);
+   const [received, setStatus] = useState<UpdateStatus | null>(null);
    useEffect(() => window.desktop.onUpdateStatus(setStatus), []);
    if (!update) return null;
+   const status = received ?? (update.notApplied ? { phase: "not-applied" as const, version: update.version, percent: null } : null);
    const failure = (value: unknown) => setStatus({ phase: "error", version: update.version, percent: null, message: errorText(value) });
    return (
       <UpdateChip
@@ -23,6 +24,9 @@ export function AppUpdate({ update, onError }: { update: AvailableUpdate | null;
          }}
          onRelease={() => {
             void window.desktop.openExternal(update.url).catch((value) => onError(errorText(value)));
+         }}
+         onCancelRestart={() => {
+            void window.desktop.cancelUpdateRestart().catch(failure);
          }}
          onReveal={() => {
             if (status?.path) void window.desktop.revealOutput(status.path).catch((value) => onError(errorText(value)));
