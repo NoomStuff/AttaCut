@@ -82,29 +82,47 @@ jobs:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
 
    app-checks:
-      needs: [prepare, checks]
+      needs: prepare
       uses: ./.github/workflows/app-checks.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
 
-   build:
-      needs: [prepare, checks]
+   # Each target is built and verified on its own chain, alongside the shared checks.
+   # Publication still waits for every one of them through the Check gate.
+   win-x64:
+      needs: prepare
       if: needs.prepare.outputs.build == 'true'
-      uses: ./.github/workflows/candidate-build.yml
-      with:
-         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+      uses: ./.github/workflows/candidate.yml
+      with: { candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}", target: win-x64, os: windows-2025 }
 
-   verify:
-      needs: [prepare, build]
+   mac-x64:
+      needs: prepare
       if: needs.prepare.outputs.build == 'true'
-      uses: ./.github/workflows/candidate-verify.yml
-      with:
-         candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
+      uses: ./.github/workflows/candidate.yml
+      with: { candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}", target: mac-x64, os: macos-15-intel }
+
+   mac-arm64:
+      needs: prepare
+      if: needs.prepare.outputs.build == 'true'
+      uses: ./.github/workflows/candidate.yml
+      with: { candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}", target: mac-arm64, os: macos-15 }
+
+   linux-x64:
+      needs: prepare
+      if: needs.prepare.outputs.build == 'true'
+      uses: ./.github/workflows/candidate.yml
+      with: { candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}", target: linux-x64, os: ubuntu-24.04 }
+
+   linux-arm64:
+      needs: prepare
+      if: needs.prepare.outputs.build == 'true'
+      uses: ./.github/workflows/candidate.yml
+      with: { candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}", target: linux-arm64, os: ubuntu-24.04-arm }
 
    check:
       name: Check
       if: always()
-      needs: [prepare, checks, app-checks, build, verify]
+      needs: [prepare, checks, app-checks, win-x64, mac-x64, mac-arm64, linux-x64, linux-arm64]
       runs-on: ubuntu-latest
       timeout-minutes: 15
       env:
@@ -119,7 +137,7 @@ jobs:
                  for (const name of ['prepare', 'checks', 'app-checks']) {
                    if (jobs[name].result !== 'success') throw new Error(`${name}: ${jobs[name].result}`);
                  }
-                 for (const name of ['build', 'verify']) {
+                 for (const name of ['win-x64', 'mac-x64', 'mac-arm64', 'linux-x64', 'linux-arm64']) {
                    const expected = jobs.prepare.outputs.build === 'true' ? 'success' : 'skipped';
                    if (jobs[name].result !== expected) throw new Error(`${name}: ${jobs[name].result}, expected ${expected}`);
                  }

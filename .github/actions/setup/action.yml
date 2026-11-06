@@ -1,0 +1,52 @@
+name: Set up AttaCut toolchain
+description: Pinned Node and Bun, download caches keyed by what they contain, and a frozen install.
+
+inputs:
+   media:
+      description: Restore the pinned media archive cache
+      default: "false"
+   builder:
+      description: Restore the electron-builder download cache
+      default: "false"
+
+runs:
+   using: composite
+   steps:
+      - uses: actions/setup-node@v6
+        with:
+           node-version: "24.22.1"
+      - uses: oven-sh/setup-bun@v2
+        with:
+           bun-version: "1.4.2"
+      # Each cache follows exactly what it holds, so a lockfile change that does not move
+      # Electron, electron-builder or the media pins keeps every download warm.
+      - name: Resolve cache keys
+        id: keys
+        shell: bash
+        run: |
+           electron=$(grep -oE '"electron": \["electron@[^"]+"' bun.lock | head -1 | sed -E 's/.*@//; s/"$//')
+           builder=$(grep -oE '"app-builder-lib": \["app-builder-lib@[^"]+"' bun.lock | head -1 | sed -E 's/.*@//; s/"$//')
+           test -n "$electron" && test -n "$builder"
+           echo "electron=$electron" >> "$GITHUB_OUTPUT"
+           echo "builder=$builder" >> "$GITHUB_OUTPUT"
+           echo "ELECTRON_CACHE=$RUNNER_TEMP/electron-cache" >> "$GITHUB_ENV"
+           echo "ELECTRON_BUILDER_CACHE=$RUNNER_TEMP/electron-builder-cache" >> "$GITHUB_ENV"
+      - name: Cache Electron download
+        uses: actions/cache@v6
+        with:
+           path: ${{ runner.temp }}/electron-cache
+           key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.keys.outputs.electron }}
+      - name: Cache electron-builder downloads
+        if: inputs.builder == 'true'
+        uses: actions/cache@v6
+        with:
+           path: ${{ runner.temp }}/electron-builder-cache
+           key: electron-builder-${{ runner.os }}-${{ runner.arch }}-${{ steps.keys.outputs.builder }}
+      - name: Cache pinned media archives
+        if: inputs.media == 'true'
+        uses: actions/cache@v6
+        with:
+           path: work/media-archives
+           key: media-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/media-lock.ts') }}
+      - run: bun install --frozen-lockfile
+        shell: bash

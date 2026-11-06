@@ -1,0 +1,115 @@
+name: Candidate
+
+# One call per release target: each target's verification waits only for its own build,
+# and pull requests run exactly the packaging and verification that releases run.
+on:
+   workflow_call:
+      inputs:
+         candidate_sha:
+            type: string
+            required: true
+         target:
+            type: string
+            required: true
+         os:
+            type: string
+            required: true
+
+permissions:
+   contents: read
+
+jobs:
+   build:
+      name: Build
+      runs-on: ${{ inputs.os }}
+      timeout-minutes: 45
+      env:
+         CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      steps:
+         - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha }}
+         - uses: ./.github/actions/setup
+           with:
+              media: "true"
+              builder: "true"
+         - name: Provision pinned media binaries
+           run: bun scripts/provision-media.ts
+         - name: Package
+           run: ${{ runner.os == 'Windows' && 'bun run dist:win:all' || runner.os == 'macOS' && 'bun run dist:mac:all' || 'bun run dist' }}
+           env:
+              CSC_IDENTITY_AUTO_DISCOVERY: false
+         - name: Retain exact candidate and verification inputs
+           run: bun scripts/ci-stage.ts pack ${{ inputs.target }}
+         - uses: actions/upload-artifact@v7
+           with:
+              name: candidate-${{ inputs.target }}
+              path: work/candidate/
+              if-no-files-found: error
+              retention-days: 14
+
+   verify:
+      name: Verify
+      needs: build
+      runs-on: ${{ inputs.os }}
+      timeout-minutes: 60
+      env:
+         CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      steps:
+         - uses: actions/checkout@v7
+           with:
+              ref: ${{ inputs.candidate_sha }}
+         - uses: ./.github/actions/setup
+           with:
+              builder: "true"
+         - uses: actions/download-artifact@v8
+           with:
+              name: candidate-${{ inputs.target }}
+              path: work/candidate
+         - name: Restore exact candidate
+           run: bun scripts/ci-candidate.ts restore ${{ inputs.target }} work/candidate .
+         - name: Create fixtures before installed and launcher checks
+           run: bun tests/create-fixtures.ts
+           env:
+              FFMPEG_PATH: ${{ github.workspace }}/resources/media/ffmpeg${{ runner.os == 'Windows' && '.exe' || '' }}
+              FFPROBE_PATH: ${{ github.workspace }}/resources/media/ffprobe${{ runner.os == 'Windows' && '.exe' || '' }}
+         - name: Verify packaged media, installer, in-app update and editor workflows
+           run: bun run verify:package
+         - name: Record successful verification of unchanged candidate
+           run: bun scripts/ci-stage.ts receipt ${{ inputs.target }}
+         - uses: actions/upload-artifact@v7
+           with:
+              name: verified-${{ inputs.target }}
+              path: work/verified/
+              if-no-files-found: error
+              retention-days: 14
+         - name: Retain in-app update evidence
+           if: always() && runner.os == 'Windows'
+           continue-on-error: true
+           uses: actions/upload-artifact@v7
+           with:
+              name: update-e2e-${{ inputs.target }}
+              path: test-results/update-e2e/
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true
+         - name: Retain browser retry traces
+           if: always()
+           continue-on-error: true
+           uses: actions/upload-artifact@v7
+           with:
+              name: traces-${{ inputs.target }}
+              path: test-results/**/trace.zip
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true
+         - name: Retain failure diagnostics
+           if: failure()
+           continue-on-error: true
+           uses: actions/upload-artifact@v7
+           with:
+              name: diagnostics-${{ inputs.target }}
+              path: test-results/
+              if-no-files-found: ignore
+              retention-days: 14
+              overwrite: true

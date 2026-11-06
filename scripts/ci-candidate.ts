@@ -30,7 +30,7 @@ export async function sha256(path: string): Promise<string> {
 
 export async function candidateIdentity(target: string): Promise<Omit<CandidateManifest, "files">> {
    // Git object IDs avoid CRLF differences between Windows and Unix checkouts.
-   const recipes = execFileSync("git", ["ls-tree", "-r", "HEAD", "--", "package.json", "bun.lock", "scripts", ".github/workflows"], { encoding: "utf8" });
+   const recipes = execFileSync("git", ["ls-tree", "-r", "HEAD", "--", "package.json", "bun.lock", "scripts", ".github"], { encoding: "utf8" });
    const hash = createHash("sha256").update(recipes);
    const { version } = JSON.parse(await readFile("package.json", "utf8")) as { version: unknown };
    const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
