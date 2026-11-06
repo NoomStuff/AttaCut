@@ -1,13 +1,27 @@
 import { useContext } from "react";
 import { CommandContext, bindingsFor, displayBindings } from "../editor/commands";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faScissors, faFolderOpen, faArrowRight } from "@fortawesome/free-solid-svg-icons";
+import { faScissors, faFolderOpen, faArrowRight, faFilm, faFileLines } from "@fortawesome/free-solid-svg-icons";
+import type { RecentEntry } from "../../../shared/recent";
+import { formatTime } from "../../../shared/time";
 import { Button } from "./Controls";
 
 const HERO_HOLES = [15, 27, 39, 51, 63, 75, 87];
 const HERO_HOLES_RIGHT = [104, 116, 128];
 
-export function EmptyState({ onImport, loading, mac }: { onImport: () => void; loading: boolean; mac: boolean }) {
+export function EmptyState({
+   onImport,
+   loading,
+   mac,
+   recent,
+   onOpenRecent,
+}: {
+   onImport: () => void;
+   loading: boolean;
+   mac: boolean;
+   recent: RecentEntry[];
+   onOpenRecent: (path: string) => void;
+}) {
    const context = useContext(CommandContext);
    const shortcut = context ? displayBindings(bindingsFor("open", context.overrides), mac) : "";
    return (
@@ -50,13 +64,36 @@ export function EmptyState({ onImport, loading, mac }: { onImport: () => void; l
                or use <kbd>{shortcut}</kbd>
             </span>
          )}
-         <div className="empty-timeline" aria-hidden="true">
-            <i className="empty-track" />
-            <span className="empty-clip c0" />
-            <span className="empty-clip c1" />
-            <span className="empty-clip c2" />
-            <span className="empty-playhead" />
-         </div>
+         {recent.length ? (
+            <section className="recent-videos" aria-label="Recent videos">
+               <h2>Recent</h2>
+               <ul>
+                  {recent.slice(0, 4).map((item) => (
+                     <li key={item.path}>
+                        <button
+                           disabled={loading || item.missing}
+                           data-missing={item.missing || undefined}
+                           onClick={() => onOpenRecent(item.path)}
+                           title={item.missing ? `Not found: ${item.path}` : item.path}
+                        >
+                           <FontAwesomeIcon icon={item.kind === "project" ? faFileLines : faFilm} />
+                           <span className="recent-name">{item.name}</span>
+                           <span className="recent-folder">{item.directory.split(/[\\/]/).filter(Boolean).pop()}</span>
+                           {item.missing ? <span className="recent-missing">Not found</span> : <time>{formatTime(item.duration, 0)}</time>}
+                        </button>
+                     </li>
+                  ))}
+               </ul>
+            </section>
+         ) : (
+            <div className="empty-timeline" aria-hidden="true">
+               <i className="empty-track" />
+               <span className="empty-clip c0" />
+               <span className="empty-clip c1" />
+               <span className="empty-clip c2" />
+               <span className="empty-playhead" />
+            </div>
+         )}
       </div>
    );
 }

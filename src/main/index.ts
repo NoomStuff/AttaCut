@@ -13,6 +13,7 @@ import { isProjectPath } from "../shared/project";
 import { prunePreviews } from "./media/preview.ts";
 import { IpcEvents } from "../shared/ipc.ts";
 import { installMenu } from "./menu.ts";
+import { RecentFiles } from "./recent.ts";
 import { windowIcon, registerWindowsIdentity, isPackagedApp } from "./identity.ts";
 import { registerIpc } from "./ipc.ts";
 import { fileArgument } from "./launch-file";
@@ -67,6 +68,8 @@ async function start(): Promise<void> {
    // handlers that answer from storage go live only after it resolves below.
    const storage = new Storage(app.getPath("userData"));
    const storageReady = storage.load();
+   const recent = new RecentFiles(app.getPath("userData"));
+   const recentReady = recent.load();
    // A launch argument is known before Electron initializes its window. Recovery
    // becomes known after storage loads. Neither probe waits for renderer startup.
    const prefetchStartup = () => {
@@ -279,13 +282,26 @@ async function start(): Promise<void> {
             else app.quit();
          });
    });
-   installMenu(window);
+   await recentReady;
+   const clearRecent = () => void recent.clear().catch(() => undefined);
+   installMenu(window, recent.files, clearRecent);
    // Linux uses the in-app menus; the native frame must not add a second menu bar.
    if (process.platform === "linux") window.removeMenu();
+   recent.onChange((files) => {
+      // Rebuilding the application menu on Linux would re-add the native menu bar.
+      if (process.platform !== "linux") installMenu(window, files, clearRecent);
+      if (!window.isDestroyed()) window.webContents.send(IpcEvents.recentChanged);
+      // The Windows jump list and the macOS Dock menu follow the same history.
+      if (process.platform !== "linux") {
+         app.clearRecentDocuments();
+         for (const file of [...files].reverse()) app.addRecentDocument(file.path);
+      }
+   });
    registerIpc({
       testing,
       window,
       storage,
+      recent,
       sourceSession,
       exportsService,
       takeInitialFile: () => {

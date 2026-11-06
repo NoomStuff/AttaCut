@@ -1,14 +1,24 @@
 import { Menu, type BrowserWindow } from "electron";
 import { IpcEvents } from "../shared/ipc.ts";
 import { isPackagedApp } from "./identity.ts";
+import type { RecentFile } from "../shared/recent.ts";
 
-export function installMenu(window: BrowserWindow): void {
+export function installMenu(window: BrowserWindow, recent: RecentFile[], onClearRecent: () => void): void {
    const item = (label: string, id: string) => ({ label, click: () => window.webContents.send(IpcEvents.command, id) });
+   // The renderer opens these like a dropped file, so unsaved project changes still get a prompt.
+   const recentMenu: Electron.MenuItemConstructorOptions[] = recent.length
+      ? [
+           ...recent.map((file) => ({ label: file.name, toolTip: file.path, click: () => window.webContents.send(IpcEvents.openFile, file.path) })),
+           { type: "separator" as const },
+           { label: "Clear recent", click: onClearRecent },
+        ]
+      : [{ label: "No recent files", enabled: false }];
    const template: Electron.MenuItemConstructorOptions[] = [
       {
          label: "File",
          submenu: [
             item("Open file…", "open"),
+            { label: "Open recent", submenu: recentMenu },
             { type: "separator" },
             item("Export…", "export"),
             item("Export current frame…", "frame"),

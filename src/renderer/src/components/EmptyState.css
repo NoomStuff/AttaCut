@@ -214,3 +214,66 @@
       margin-bottom: 18px;
    }
 }
+.recent-videos {
+   width: min(440px, 100%);
+   margin-top: 40px;
+}
+.recent-videos h2 {
+   margin: 0 0 6px 10px;
+   font-size: 11px;
+   font-weight: 600;
+   color: var(--faint);
+}
+.recent-videos ul {
+   margin: 0;
+   padding: 0;
+   list-style: none;
+}
+.recent-videos button {
+   width: 100%;
+   display: grid;
+   grid-template-columns: 16px minmax(0, 1fr) auto auto;
+   align-items: center;
+   gap: 10px;
+   padding: 8px 10px;
+   border-radius: var(--radius-control);
+   text-align: left;
+   font-size: 12px;
+   color: var(--muted);
+   transition: background-color 150ms ease-out;
+}
+.recent-videos button:hover {
+   background: var(--surface-hover);
+   color: var(--text);
+   transition-duration: 0ms;
+}
+.recent-videos svg {
+   color: var(--faint);
+   font-size: 12px;
+}
+.recent-name {
+   overflow: hidden;
+   text-overflow: ellipsis;
+   color: var(--text);
+   font-weight: 500;
+   white-space: nowrap;
+}
+.recent-folder {
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+   max-width: 160px;
+   color: var(--faint);
+}
+.recent-videos time {
+   font-variant-numeric: tabular-nums;
+   color: var(--faint);
+}
+.recent-videos button[data-missing] {
+   opacity: 0.55;
+   cursor: default;
+}
+.recent-missing {
+   font-size: 11px;
+   color: var(--faint);
+}
