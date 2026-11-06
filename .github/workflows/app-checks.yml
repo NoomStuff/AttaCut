@@ -27,6 +27,9 @@ jobs:
               media: "true"
          - run: bun scripts/provision-media.ts
          - run: bun run test:media
+         # Playback checks read the format manifest the media suite just wrote.
+         - run: bun run build
+         - run: bun x --no-install playwright test --project=playback
          - name: Retain failure diagnostics
            if: failure()
            uses: actions/upload-artifact@v7
@@ -55,7 +58,7 @@ jobs:
          - run: bun scripts/provision-media.ts
          - run: bun run build
          - run: bun tests/create-fixtures.ts
-         - run: bun x --no-install playwright test --shard=${{ matrix.shard }}/2
+         - run: bun x --no-install playwright test --project=ui --project=native --shard=${{ matrix.shard }}/2
          - name: Retain browser retry traces
            if: always()
            continue-on-error: true
