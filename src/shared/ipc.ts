@@ -7,6 +7,8 @@ interface IpcResponses {
    "update:check": Result<"checkForUpdate">;
    "update:download": void;
    "update:restart": void;
+   "update:cancel-restart": void;
+   "update:outcome": Result<"takeUpdateOutcome">;
    "source:choose": string | null;
    "source:open": Result<"openSource">;
    "project:open": Result<"openProject">;

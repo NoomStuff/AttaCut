@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { join, resolve, dirname, basename } from "node:path";
 import { stat, writeFile } from "node:fs/promises";
 import { statOrNull } from "./files";
-import type { SavedSession } from "../shared/types";
+import type { AvailableUpdate, SavedSession } from "../shared/types";
 import { projectExtension, projectExtensions, projectHasChanges, discardProjectChanges } from "../shared/project";
 import { readProject, projectSourcePaths, validateProjectSource, writeProject, updateProjectSource } from "./project-document";
 import { diagnosticReport, recordDiagnostic, recordAssessment, protectDiagnosticDestination } from "./diagnostics";
@@ -19,7 +19,7 @@ import { ipcRequestSchemas } from "../shared/ipc-requests";
 import { IpcEvents, type IpcCalls, type IpcRequest } from "../shared/ipc";
 import { exportFrame } from "./media/frame.ts";
 import { videoExtensions } from "./media/formats.ts";
-import { fetchAvailableUpdate, UpdateManager } from "./updates.ts";
+import { fetchAvailableUpdate, updateEndpoints, type UpdateManager } from "./updates.ts";
 import type { SourceSession } from "./source-session.ts";
 import type { ExportService } from "./exports.ts";
 import type { Storage } from "./storage.ts";
@@ -36,7 +36,10 @@ export function registerIpc({
    exportsService,
    takeInitialFile,
    onFlushed,
-   onApplyUpdate,
+   updates,
+   onRestartToUpdate,
+   onCancelUpdateRestart,
+   takeUpdateOutcome,
    testing = null,
 }: {
    window: BrowserWindow;
@@ -46,10 +49,12 @@ export function registerIpc({
    exportsService: ExportService;
    takeInitialFile: () => string | null;
    onFlushed: (proceed?: boolean) => void;
-   onApplyUpdate: (install: () => void) => void;
+   updates: UpdateManager;
+   onRestartToUpdate: () => void;
+   onCancelUpdateRestart: () => void;
+   takeUpdateOutcome: () => AvailableUpdate | null;
    testing?: IpcTestAdapter | null;
 }): void {
-   const updates = new UpdateManager(window);
    const frameOutputs = new Set<string>();
    // The final close snapshot outranks delayed autosaves. A cancelled close releases
    // those saves again so the live edit remains recoverable.
@@ -134,14 +139,16 @@ export function registerIpc({
    });
    handle("update:check", async () => {
       if (!isPackagedApp()) return null;
-      const update = await fetchAvailableUpdate(app.getVersion(), (url, init) => net.fetch(url, init));
+      const update = await fetchAvailableUpdate(app.getVersion(), (url, init) => net.fetch(url, init), updateEndpoints().releases);
       return update ? updates.offer(update) : null;
    });
    handle("update:download", async (value) => updates.downloadPortable(value));
    handle("update:restart", () => {
       if (!updates.isReady) throw new Error("The update is not ready yet.");
-      onApplyUpdate(() => updates.install());
+      onRestartToUpdate();
    });
+   handle("update:cancel-restart", () => onCancelUpdateRestart());
+   handle("update:outcome", () => takeUpdateOutcome());
    handle("source:choose", async () => {
       const result = await dialog.showOpenDialog(window, {
          title: "Open video or project",

@@ -18,6 +18,8 @@ import { windowIcon, registerWindowsIdentity, isPackagedApp } from "./identity.t
 import { registerIpc } from "./ipc.ts";
 import { fileArgument } from "./launch-file";
 import { IpcTestAdapter } from "./ipc-test-adapter";
+import { UpdateManager } from "./updates.ts";
+import { createUpdateLog } from "./update-log.ts";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 if (process.env["ATTACUT_USER_DATA"]) app.setPath("userData", process.env["ATTACUT_USER_DATA"]);
@@ -297,8 +299,10 @@ async function start(): Promise<void> {
          for (const file of [...files].reverse()) app.addRecentDocument(file.path);
       }
    });
+   const updates = new UpdateManager(window, createUpdateLog(app.getPath("logs")));
    registerIpc({
       testing,
+      updates,
       window,
       storage,
       recent,
@@ -313,10 +317,12 @@ async function start(): Promise<void> {
       onFlushed: (proceed = true) => {
          resolveFlush?.(proceed);
       },
-      onApplyUpdate: (install) => {
-         applyUpdate = install;
+      onRestartToUpdate: () => {
+         applyUpdate = () => updates.install();
          window.close();
       },
+      onCancelUpdateRestart: () => undefined,
+      takeUpdateOutcome: () => null,
    });
    ipcMain.on(IpcEvents.windowAction, (event, value: unknown) => {
       if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return;

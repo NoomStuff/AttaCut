@@ -20,17 +20,23 @@ export interface AvailableUpdate {
    mode: "automatic" | "download" | "releases";
 }
 export interface UpdateStatus {
-   phase: "downloading" | "ready" | "downloaded" | "error";
+   /** "installing" follows an explicit restart: it can wait for an export, then hands over to the installer. */
+   phase: "downloading" | "ready" | "downloaded" | "error" | "installing" | "not-applied";
    version: string;
    percent: number | null;
    message?: string;
    path?: string;
+   /** Set while an explicit restart waits for the running export to finish. */
+   waitingFor?: "export";
 }
 export interface DesktopApi {
    bootstrap(): Promise<Bootstrap>;
    checkForUpdate(): Promise<AvailableUpdate | null>;
    downloadUpdate(version: string): Promise<void>;
    restartToUpdate(): Promise<void>;
+   cancelUpdateRestart(): Promise<void>;
+   /** The update a previous restart tried and failed to apply, reported once. */
+   takeUpdateOutcome(): Promise<AvailableUpdate | null>;
    onUpdateStatus(listener: (status: UpdateStatus) => void): () => void;
    chooseSource(): Promise<string | null>;
    openSource(path: string): Promise<MediaSource>;

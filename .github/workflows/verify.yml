@@ -12,32 +12,14 @@ permissions:
 
 jobs:
    verify:
-      name: Verify (${{ github.event_name }})
+      name: Verify
       runs-on: windows-2025
       timeout-minutes: 30
-      # The electron download cache is set per-step because the runner context is not
-      # available in job-level env; using it there fails the whole workflow at parse.
       steps:
          - uses: actions/checkout@v7
            with:
               ref: ${{ inputs.candidate_sha }}
-         - uses: actions/setup-node@v6
-           with:
-              node-version: "24.22.1"
-         - uses: oven-sh/setup-bun@v2
-           with:
-              bun-version: "1.4.2"
-         - name: Cache Electron and pinned media downloads
-           uses: actions/cache@v6
-           with:
-              path: |
-                 ${{ runner.temp }}/electron-cache
-                 work/media-archives
-              key: verify-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'scripts/media-lock.ts') }}
-              restore-keys: verify-downloads-${{ runner.os }}-${{ runner.arch }}-
-         - run: bun install --frozen-lockfile
-           env:
-              ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+         - uses: ./.github/actions/setup
          - run: bun scripts/lint-workflows.ts
          - run: bun scripts/release-preflight.ts
          - run: bun run verify
