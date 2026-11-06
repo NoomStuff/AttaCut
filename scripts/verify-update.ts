@@ -185,7 +185,9 @@ export async function verifyUpdate(): Promise<void> {
             stdio: "ignore",
             windowsHide: true,
          });
-         const application = await electron.launch({ executablePath: appExe, env: environment });
+         // A loaded video gives the restart real work to tear down: previews, waveform and probes.
+         const video = resolve("work/fixture.mp4");
+         const application = await electron.launch({ executablePath: appExe, env: { ...environment, ATTACUT_OPEN_FILE: existsSync(video) ? video : "" } });
          const oldPid = application.process().pid!;
          const report: Record<string, unknown> = { scope, oldVersion, newVersion };
          try {
