@@ -1,3 +1,4 @@
+import { audioStreams } from "../../../shared/media";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { MediaSource } from "../../../shared/types";
 import type { EditDocument } from "../editor/model";
@@ -181,7 +182,7 @@ export function Transport({
          <div className="volume-controls">
             <div className="audio-controls">
                <SpeedPicker speed={speed} onChange={onSpeed} />
-               <AudioPicker tracks={source.streams.filter((stream) => stream.type === "audio")} selected={audioIndices} onSelect={onAudio} />
+               <AudioPicker tracks={audioStreams(source)} selected={audioIndices} onSelect={onAudio} />
                <VolumeControl volume={volume} muted={muted} onChange={onVolume} />
             </div>
             <span className="control-divider preview-tools-divider" />

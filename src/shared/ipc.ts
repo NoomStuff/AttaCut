@@ -36,7 +36,6 @@ interface IpcResponses {
    "export:plan": Result<"planExport">;
    "export:check-destinations": Result<"checkExportDestinations">;
    "export:analyze": Result<"analyzeExport">;
-   "export:cancel-planning": void;
    "export:cancel-analysis": void;
    "export:start": Result<"startExport">;
    "export:cancel": void;

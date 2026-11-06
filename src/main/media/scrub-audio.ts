@@ -1,6 +1,6 @@
 import type { ProbedSource } from "./probe.ts";
 import { runMedia } from "./process.ts";
-import { scrubChunkSeconds } from "../../shared/media";
+import { scrubChunkSeconds, audioStreams } from "../../shared/media";
 import { alignedAudioFilters } from "./audio-filter.ts";
 export { scrubChunkSeconds } from "../../shared/media";
 
@@ -12,7 +12,7 @@ export async function extractScrubPcm(
    signal?: AbortSignal,
    start = 0
 ): Promise<{ sampleRate: number; pcm: ArrayBuffer; start: number } | null> {
-   const available = new Set(source.streams.filter((stream) => stream.type === "audio").map((stream) => stream.index));
+   const available = new Set(audioStreams(source).map((stream) => stream.index));
    if (!streamIndices.length || streamIndices.some((index) => !available.has(index))) return null;
    const duration = Math.min(scrubChunkSeconds, source.duration - start);
    if (duration <= 0) return null;

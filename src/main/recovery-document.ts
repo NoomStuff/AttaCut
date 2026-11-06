@@ -1,4 +1,5 @@
 import { copyFile, readFile, rename, writeFile } from "node:fs/promises";
+import { copyAtomically } from "./files";
 import { join } from "node:path";
 import { sessionStorageSchema } from "../shared/session-storage";
 import { encodeSession } from "../shared/session-codec";
@@ -45,11 +46,7 @@ export class RecoveryDocument {
          await copyFile(target, join(this.directory, `session.unreadable-${Date.now()}.json`));
          this.unreadable = false;
       }
-      if (this.valid) {
-         const backup = join(this.directory, "session.backup.json");
-         await copyFile(target, `${backup}.tmp`);
-         await rename(`${backup}.tmp`, backup);
-      }
+      if (this.valid) await copyAtomically(target, join(this.directory, "session.backup.json"));
       await rename(`${target}.tmp`, target);
       this.valid = true;
       this.last = session;
@@ -57,8 +54,6 @@ export class RecoveryDocument {
    async reset(): Promise<void> {
       this.last = undefined;
       await this.save(null);
-      const backup = join(this.directory, "session.backup.json");
-      await copyFile(join(this.directory, "session.json"), `${backup}.tmp`);
-      await rename(`${backup}.tmp`, backup);
+      await copyAtomically(join(this.directory, "session.json"), join(this.directory, "session.backup.json"));
    }
 }

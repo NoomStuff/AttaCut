@@ -1,8 +1,8 @@
 import { link, open, rename, rm, stat } from "node:fs/promises";
+import { samePath, statOrNull } from "../files";
 import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import { resolve } from "node:path";
 
 /** Publish verified output; replacements require explicit approval. */
 export async function publishOutput(temporary: string, destination: string, overwrite = false, source?: string, replaceSource = false): Promise<void> {
@@ -51,15 +51,11 @@ export async function protectSource(source: string, destination: string, replace
       if (error.code === "ENOENT") throw new Error("The original file changed. Reopen it before exporting.");
       throw error;
    });
-   const output = await stat(destination).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-   });
-   const samePath =
-      process.platform === "win32" ? resolve(source).toLowerCase() === resolve(destination).toLowerCase() : resolve(source) === resolve(destination);
-   if (samePath && !replaceSource) throw new Error("Confirm replacing the source video before exporting.");
-   if (!samePath && output && output.dev === original.dev && output.ino === original.ino)
+   const output = await statOrNull(destination);
+   const replacing = samePath(source, destination);
+   if (replacing && !replaceSource) throw new Error("Confirm replacing the source video before exporting.");
+   if (!replacing && output && output.dev === original.dev && output.ino === original.ino)
       throw new Error("This filename is linked to the source video. Choose a different filename.");
    if (output && !output.isFile()) throw new Error("An output filename belongs to a folder. Choose a different filename.");
-   return samePath;
+   return replacing;
 }

@@ -1,7 +1,7 @@
 import type { ProbedSource } from "./probe.ts";
 import { runMedia } from "./process.ts";
 import { WaveformEncoder } from "./waveform-encoder.ts";
-import { waveformSampleRate, waveformResolution } from "../../shared/media.ts";
+import { waveformSampleRate, waveformResolution, audioStreams } from "../../shared/media.ts";
 import { alignedAudioFilters } from "./audio-filter.ts";
 
 export interface WaveformChunk {
@@ -33,7 +33,7 @@ export async function decodeWaveform(
    consume: (chunk: WaveformChunk) => Promise<void>,
    options: { decodePath?: string; wait?: () => Promise<void>; range?: WaveformRange; measure?: (timings: WaveformTimings) => void } = {}
 ): Promise<WaveformResult | null> {
-   const audio = new Set(source.streams.filter((stream) => stream.type === "audio").map((stream) => stream.index));
+   const audio = new Set(audioStreams(source).map((stream) => stream.index));
    if (!tracks.length || new Set(tracks).size !== tracks.length || tracks.some((index) => !audio.has(index))) return null;
    const rate = waveformResolution(source.duration);
    if (!rate) return null;

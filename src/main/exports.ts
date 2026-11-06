@@ -1,5 +1,7 @@
+import { audioStreams } from "../shared/media";
 import { randomUUID } from "node:crypto";
-import { access, constants, mkdir, stat } from "node:fs/promises";
+import { access, constants, mkdir } from "node:fs/promises";
+import { statOrNull } from "./files";
 import { join, resolve } from "node:path";
 import type {
    AnalyzeRequest,
@@ -34,29 +36,30 @@ interface StoredPlan {
 }
 export class ExportService {
    private plans = new Map<string, StoredPlan>();
+   private analyses = new Map<string, Promise<CutAnalysis>>();
    private analysisController = new AbortController();
    private inspectionController = new AbortController();
+   private controller: AbortController | null = null;
+   private job: ExportJob | null = null;
+   private runningPlan: StoredPlan | null = null;
+   private completion: Promise<void> = Promise.resolve();
+   private readonly emit: (job: ExportJob) => void;
+   private readonly beforeItem: ((signal: AbortSignal) => Promise<void>) | undefined;
+   constructor(emit: (job: ExportJob) => void, beforeItem?: (signal: AbortSignal) => Promise<void>) {
+      this.emit = emit;
+      this.beforeItem = beforeItem;
+   }
    cancelAnalysis(): void {
       this.inspectionController.abort();
       this.inspectionController = new AbortController();
    }
-   private analyses = new Map<string, Promise<CutAnalysis>>();
+   /** Drop every plan and cached analysis; they describe a source that is no longer open. */
    cancelPlanning(): void {
       this.cancelAnalysis();
       this.analysisController.abort();
       this.analysisController = new AbortController();
       this.analyses.clear();
       this.plans.clear();
-   }
-   private controller: AbortController | null = null;
-   private job: ExportJob | null = null;
-   private runningPlan: StoredPlan | null = null;
-   private completion: Promise<void> = Promise.resolve();
-   private emit: (job: ExportJob) => void;
-   private readonly beforeItem: ((signal: AbortSignal) => Promise<void>) | undefined;
-   constructor(emit: (job: ExportJob) => void, beforeItem?: (signal: AbortSignal) => Promise<void>) {
-      this.emit = emit;
-      this.beforeItem = beforeItem;
    }
    get running(): boolean {
       return this.job?.running ?? false;
@@ -88,7 +91,7 @@ export class ExportService {
    }
    private async analyze(source: ProbedSource, request: AnalyzeRequest, signal = this.analysisController.signal): Promise<CutAnalysis[]> {
       const settings = analyzeRequestSchema.parse(request);
-      const audio = source.streams.filter((stream) => stream.type === "audio");
+      const audio = audioStreams(source);
       const tracks = exportAudioTracks(source, settings.audioTracks);
       const sorted = settings.items.map((item) => ({ ...item.clip })).sort((a, b) => a.start - b.start);
       const clips: Clip[] = [];
@@ -141,8 +144,7 @@ export class ExportService {
       const signal = this.analysisController.signal;
       const audioTracks = exportAudioTracks(source, settings.audioTracks);
       const directoryPath = resolve(settings.directory);
-      const directory = await stat(directoryPath).catch((error: NodeJS.ErrnoException) => {
-         if (error.code === "ENOENT") return null;
+      const directory = await statOrNull(directoryPath).catch((error: Error) => {
          throw new Error(`Cannot access the output folder: ${error.message}`);
       });
       if (directory && !directory.isDirectory()) throw new Error("Choose an output folder, not a file.");
@@ -335,7 +337,7 @@ export class ExportService {
    }
 }
 function exportAudioTracks(source: ProbedSource, selected: number[] | null): number[] {
-   const available = source.streams.filter((stream) => stream.type === "audio").map((stream) => stream.index);
+   const available = audioStreams(source).map((stream) => stream.index);
    const tracks = selected ?? available;
    if (new Set(tracks).size !== tracks.length || tracks.some((index) => !available.includes(index)))
       throw new Error("One or more selected audio tracks were not found.");
@@ -351,7 +353,7 @@ function outputNames(source: ProbedSource, request: ReturnType<typeof planReques
       const extension = source.exportExtension;
       return [outputName(request.name, extension)];
    }
-   const audio = source.streams.filter((stream) => stream.type === "audio");
+   const audio = audioStreams(source);
    const allAudio = (request.audioTracks ?? audio.map((stream) => stream.index)).length === audio.length;
    return [...request.items]
       .sort((a, b) => a.clip.start - b.clip.start)
@@ -361,13 +363,7 @@ function outputNames(source: ProbedSource, request: ReturnType<typeof planReques
       });
 }
 async function exists(path: string): Promise<boolean> {
-   try {
-      await access(path);
-      return true;
-   } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw error;
-   }
+   return (await statOrNull(path)) !== null;
 }
 /** Keep large clip batches from issuing hundreds of filesystem requests at once. */
 async function mapConcurrent<T, R>(items: T[], visit: (item: T, index: number) => Promise<R>, concurrency = 16): Promise<R[]> {
