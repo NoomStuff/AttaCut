@@ -54,7 +54,6 @@ export const ipcRequestSchemas = {
    "export:plan": planRequestSchema,
    "export:check-destinations": planRequestSchema,
    "export:analyze": analyzeRequestSchema,
-   "export:cancel-planning": z.void(),
    "export:cancel-analysis": z.void(),
    "export:start": z.object({ id: z.string(), approval: exportApprovalSchema.optional() }),
    "export:cancel": z.void(),

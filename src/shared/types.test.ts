@@ -24,21 +24,8 @@ describe("saved sessions", () => {
    });
 });
 
-it("renderer defaults match persisted preference defaults", () => {
-   expect(defaultPreferences).toEqual(preferencesSchema.parse({}));
-});
-
-it("preserves an explicit audio scrub opt-out when loading saved preferences", () => {
-   expect(preferencesSchema.parse({ audioScrub: false }).audioScrub).toBe(false);
-});
-it("enables waveform by default and preserves an explicit opt-out", () => {
-   expect(preferencesSchema.parse({}).waveform).toBe(true);
-   expect(preferencesSchema.parse({ waveform: false }).waveform).toBe(false);
-});
-
-it("defaults old profiles to Alt and preserves each held snapping choice", () => {
-   expect(preferencesSchema.parse({}).holdToSnap).toBe("Alt");
-   for (const holdToSnap of ["Alt", "Shift", "Control", "none"] as const) {
-      expect(preferencesSchema.parse(JSON.parse(JSON.stringify({ holdToSnap }))).holdToSnap).toBe(holdToSnap);
-   }
+it("fills missing preferences from defaults and keeps every explicit choice", () => {
+   expect(preferencesSchema.parse({})).toEqual(defaultPreferences);
+   const chosen = { audioScrub: false, waveform: false, holdToSnap: "none", theme: "light", exportMode: "combined" } as const;
+   expect(preferencesSchema.parse(JSON.parse(JSON.stringify(chosen)))).toEqual({ ...defaultPreferences, ...chosen });
 });

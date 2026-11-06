@@ -1,4 +1,5 @@
 import { primaryVideo } from "../../shared/types";
+import { pathKey } from "../files";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, rename, rm, stat, readFile, writeFile, utimes } from "node:fs/promises";
 import { join } from "node:path";
@@ -39,18 +40,7 @@ export function releasePreview(path: string): void {
  */
 function previewId(source: ProbedSource, audioKey: string, transcode: boolean, tool: string): string {
    return createHash("sha256")
-      .update(
-         JSON.stringify([
-            4,
-            process.platform === "win32" ? source.path.toLowerCase() : source.path,
-            source.size,
-            source.modified,
-            source.fileIdentity,
-            audioKey,
-            transcode,
-            tool,
-         ])
-      )
+      .update(JSON.stringify([4, pathKey(source.path), source.size, source.modified, source.fileIdentity, audioKey, transcode, tool]))
       .digest("hex");
 }
 

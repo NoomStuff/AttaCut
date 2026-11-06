@@ -3,8 +3,7 @@ import type { MediaSource } from "../shared/media";
 import type { FailureCode } from "../shared/failure";
 import type { IpcCalls } from "../shared/ipc";
 import type { ProbedSource } from "./media/probe";
-import { stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { samePath, statOrNull } from "./files";
 
 interface DiagnosticEvent {
    action:
@@ -31,19 +30,12 @@ export function recordDiagnostic(action: DiagnosticEvent["action"], elapsedMs: n
 }
 /** Diagnostics must remain available after a source disappears, while still protecting its surviving hard links. */
 export async function protectDiagnosticDestination(destination: string, sources: Iterable<ProbedSource | null>): Promise<void> {
-   const output = await stat(destination).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-   });
+   const output = await statOrNull(destination);
    if (output && !output.isFile()) throw new Error("Choose a file for the diagnostic report.");
-   const normalized = (path: string) => (process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path));
    for (const source of sources) {
       if (!source) continue;
-      if (normalized(destination) === normalized(source.path)) throw new Error("The diagnostic report cannot replace the source video.");
-      const current = await stat(source.path).catch((error: NodeJS.ErrnoException) => {
-         if (error.code === "ENOENT") return null;
-         throw error;
-      });
+      if (samePath(destination, source.path)) throw new Error("The diagnostic report cannot replace the source video.");
+      const current = await statOrNull(source.path);
       const identities = [source.fileIdentity, current ? { device: current.dev, inode: current.ino } : null];
       if (output && identities.some((identity) => identity && output.dev === identity.device && output.ino === identity.inode))
          throw new Error("The diagnostic filename is linked to the source video. Choose a different filename.");

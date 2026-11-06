@@ -49,7 +49,6 @@ const api: DesktopApi = {
    onWaveformChunk: (callback) => listen(IpcEvents.waveformChunk, callback),
    frameTime: (sourceId, time, direction) => invoke("source:frame-time", { sourceId, time, direction }),
    frameTimes: (sourceId, times) => invoke("source:frame-times", { sourceId, times }),
-   cancelExportPlanning: () => invoke("export:cancel-planning"),
    cancelExportAnalysis: () => invoke("export:cancel-analysis"),
    flushState: (value) => invoke("state:flush", value),
    onFlush: (callback) => listen<void>(IpcEvents.flush, callback),

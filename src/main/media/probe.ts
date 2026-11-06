@@ -1,4 +1,5 @@
 import { primaryVideo } from "../../shared/types";
+import { pathKey } from "../files";
 import { stat } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -242,14 +243,7 @@ export function setSourceLifetime(source: ProbedSource, signal: AbortSignal): vo
 function sampleTimes(source: ProbedSource, signal?: AbortSignal): Promise<SampleTimes | null> {
    let cached = sampleIndexes.get(source);
    if (!cached) {
-      const identity = JSON.stringify([
-         process.platform === "win32" ? source.path.toLowerCase() : source.path,
-         source.size,
-         source.modified,
-         source.fileIdentity,
-         source.startOffset,
-         source.duration,
-      ]);
+      const identity = JSON.stringify([pathKey(source.path), source.size, source.modified, source.fileIdentity, source.startOffset, source.duration]);
       const reusable = reopenedIndexes.get(identity);
       if (reusable) {
          reopenedIndexes.delete(identity);

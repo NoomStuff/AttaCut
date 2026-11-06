@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { pathKey } from "../files";
 import { mkdir, open, readdir, rename, rm, stat, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProbedSource } from "./probe.ts";
@@ -15,7 +16,7 @@ export function waveformCacheKey(source: ProbedSource, tracks: number[], preview
       .update(
          JSON.stringify([
             4,
-            process.platform === "win32" ? source.path.toLowerCase() : source.path,
+            pathKey(source.path),
             source.fileIdentity,
             source.size,
             source.modified,

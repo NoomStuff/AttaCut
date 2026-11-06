@@ -1,3 +1,4 @@
+import { audioStreams } from "../../../shared/media";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { MediaSource, Preferences } from "../../../shared/types";
@@ -114,7 +115,7 @@ export function usePlayback({
       scrubber.reset();
       setAudioIndices(indices);
       if (source) {
-         const tracks = source.streams.filter((stream) => stream.type === "audio");
+         const tracks = audioStreams(source);
          setPreferences((current) => ({ ...current, playbackAudio: rememberAudioSelection(tracks, indices) }));
          const video = videoRef.current;
          if (video) video.muted = muted || !indices.length;

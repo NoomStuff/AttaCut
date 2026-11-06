@@ -1,3 +1,4 @@
+import { audioStreams } from "../../../shared/media";
 import { useEffect, useMemo, useState } from "react";
 import { substantialEncoding } from "../../../shared/export-policy";
 import { applyNamePattern, duplicateNames, filenameError } from "../../../shared/filename";
@@ -42,7 +43,7 @@ export function useExport({
    onSourceReplaceStartFailed,
 }: ExportOptions) {
    const saved = draft?.sourceId === source.id ? draft : null;
-   const sourceAudio = source.streams.filter((stream) => stream.type === "audio");
+   const sourceAudio = audioStreams(source);
    const [directory, setDirectory] = useState(saved?.directory ?? (preferences.outputDirectory || source.directory));
    const [mode, setMode] = useState<Preferences["exportMode"]>(clips.length === 1 ? "combined" : (saved?.mode ?? preferences.exportMode));
    const [audioTracks, updateAudioTracks] = useState(saved?.audioTracks ?? resolveAudioSelection(sourceAudio, preferences.exportAudio, true));

@@ -1,14 +1,11 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { statOrNull } from "../files";
 import { extname } from "node:path";
 import { Readable } from "node:stream";
 
 /** Video seeking needs explicit byte ranges; a plain file fetch can expose an empty seekable range. */
 export async function serveMedia(path: string, request: Request): Promise<Response> {
-   const info = await stat(path).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-   });
+   const info = await statOrNull(path);
    if (!info?.isFile()) return new Response(null, { status: 404 });
    const { size } = info;
    const mime: Record<string, string> = {

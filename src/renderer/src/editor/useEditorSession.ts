@@ -1,3 +1,4 @@
+import { audioStreams } from "../../../shared/media";
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { flushSync } from "react-dom";
@@ -159,7 +160,7 @@ export function useEditorSession({
          clock.set(0);
          setPlaying(false);
          if (autoPlay) playback.request(false);
-         const sourceAudio = media.streams.filter((stream) => stream.type === "audio");
+         const sourceAudio = audioStreams(media);
          const selectedAudio = resolveAudioSelection(sourceAudio, playbackAudio);
          const firstAudio = sourceAudio.find((stream) => selectedAudio.includes(stream.index));
          // Chromium may silently omit an unsupported audio track while playing video.
@@ -229,7 +230,6 @@ export function useEditorSession({
       clock.set(0);
       setPlaying(false);
       dispatch({ type: "load", document: { clips: [], selectedId: null } });
-      void window.desktop.setWindowTitle("AttaCut").catch(() => {});
    };
    // The reset IPC runs before any teardown: if it failed midway, the workspace must not
    // already be cleared, or the start screen would claim a reset that never happened.

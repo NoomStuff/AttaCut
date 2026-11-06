@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
-import { UpdateChip } from "../src/renderer/src/components/UpdateChip";
+import { UpdateChip } from "./UpdateChip";
 
 it.each([
    ["ready", "automatic", "Restart to update", "download"],

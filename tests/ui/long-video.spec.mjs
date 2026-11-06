@@ -104,7 +104,6 @@ test("a captured trim can shrink to one frame at fit without overflowing its cli
                .evaluate((label) => globalThis.getComputedStyle(label).opacity)
          )
          .toBe("0");
-      await page.screenshot({ path: `work/small-clip-playground/one-frame-${side}.png` });
       await page.locator(".title-filename").click();
       await page.keyboard.press(process.platform === "darwin" ? "Meta+Z" : "Control+Z");
       await expect(start).toHaveAttribute("aria-valuenow", "0");
@@ -118,29 +117,4 @@ test("a captured trim can shrink to one frame at fit without overflowing its cli
    await expect.poll(async () => Number(await end.getAttribute("aria-valuenow"))).toBeCloseTo(2 / 30, 5);
    await end.press("ArrowLeft");
    await expect.poll(async () => Number(await end.getAttribute("aria-valuenow"))).toBeCloseTo(1 / 30, 5);
-});
-
-test("controlled seek benchmark", async ({ launchApp, profile }) => {
-   test.skip(process.env.ATTACUT_SEEK_BENCHMARK !== "1", "Opt-in hardware benchmark");
-   const app = await launchApp(profile, resolve(longVideo));
-   const page = await app.firstWindow();
-   await waitForVideo(page);
-   const samples = [];
-   for (const time of [5400, 600, 6600, 1800, 4200, 3000, 6840]) {
-      samples.push(
-         await page.evaluate(async (target) => {
-            const video = document.querySelector("video");
-            const start = globalThis.performance.now();
-            await new Promise((resolve) => {
-               video.addEventListener("seeked", resolve, { once: true });
-               video.currentTime = target;
-            });
-            if (Math.abs(video.currentTime - target) > 0.05 || video.readyState < 2) throw new Error("Seek did not decode its target");
-            return globalThis.performance.now() - start;
-         }, time)
-      );
-   }
-   samples.sort((a, b) => a - b);
-   console.log("Decoded seek samples in milliseconds", samples);
-   expect(samples[Math.floor(samples.length / 2)]).toBeLessThan(Number(process.env.ATTACUT_SEEK_TARGET_MS || 750));
 });

@@ -1,3 +1,4 @@
+import { audioStreams } from "../../../shared/media";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, RefObject } from "react";
 import type { Clip, MediaSource } from "../../../shared/types";
@@ -254,7 +255,7 @@ export function Player({
    ]
       .filter(Boolean)
       .join(" ");
-   const audioTracks = source.streams.filter((stream) => stream.type === "audio");
+   const audioTracks = audioStreams(source);
    return (
       <div
          className={stageClass}
@@ -321,7 +322,7 @@ export function Player({
                   !selectNativeAudio(videoRef.current, source, audioIndices) &&
                   playback.get().phase === "source"
                ) {
-                  const tracks = source.streams.filter((stream) => stream.type === "audio");
+                  const tracks = audioStreams(source);
                   const defaultTrack = tracks.find((track) => track.disposition["default"] === 1) ?? tracks[0];
                   if (defaultTrack && audioIndices[0] !== defaultTrack.index) {
                      onAudioFallback();

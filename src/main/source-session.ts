@@ -13,55 +13,28 @@ import { detectSceneCuts } from "./media/scenes";
 
 /** Owns the active source. Export plans retain their own immutable source reference. */
 export class SourceSession {
+   readonly mediaPaths = new Map<string, string>();
    private readonly probe: SourceProbe;
+   private readonly previewFolder: string;
+   private readonly previewReady: Promise<void>;
+   private source: ProbedSource | null = null;
+   private keys: Promise<number[]> | null = null;
    private opening = new AbortController();
    private lifetime = new AbortController();
    private preview = new AbortController();
+   private previewFiles: string[] = [];
+   private previewAudio: number[] | null = null;
+   private previewPath: string | null = null;
    private scrub = new AbortController();
+   private pcm: { key: string; value: Promise<ScrubAudio | null> } | null = null;
+   private sceneScan: { requestId: string; controller: AbortController } | null = null;
    private wave = new AbortController();
    private waveRequest: string | null = null;
    private waveJobs = new Set<Promise<WaveformResult | null>>();
-   async waitForWaveformIdle(): Promise<void> {
-      await Promise.allSettled([...this.waveJobs]);
-   }
    private waveActivity: ((busy: boolean) => void) | null = null;
    private waveBusy = false;
    private waveRegion: WaveformRange | null = null;
    private waveRegionListener: ((from: number, to: number) => void) | null = null;
-   waveformRegion(requestId: string, from: number, to: number): void {
-      if (requestId !== this.waveRequest) return;
-      this.waveRegion = { from, to };
-      this.waveRegionListener?.(from, to);
-   }
-   waveformActivity(requestId: string, busy: boolean): void {
-      if (requestId !== this.waveRequest) return;
-      this.waveBusy = busy;
-      this.waveActivity?.(busy);
-   }
-   private source: ProbedSource | null = null;
-   private keys: Promise<number[]> | null = null;
-   private sceneScan: { requestId: string; controller: AbortController } | null = null;
-   async autoDetectCuts(id: string, requestId: string, threshold: number): Promise<number[]> {
-      const source = this.get(id);
-      this.sceneScan?.controller.abort();
-      const scan = { requestId, controller: new AbortController() };
-      this.sceneScan = scan;
-      try {
-         return await detectSceneCuts(source, threshold, AbortSignal.any([this.signal, scan.controller.signal]));
-      } finally {
-         if (this.sceneScan === scan) this.sceneScan = null;
-      }
-   }
-   cancelScenes(requestId: string): void {
-      if (this.sceneScan?.requestId === requestId) this.sceneScan.controller.abort();
-   }
-   private pcm: { key: string; value: Promise<ScrubAudio | null> } | null = null;
-   private previewFiles: string[] = [];
-   private previewAudio: number[] | null = null;
-   private previewPath: string | null = null;
-   readonly mediaPaths = new Map<string, string>();
-   private previewFolder: string;
-   private previewReady: Promise<void>;
    constructor(previewFolder: string, previewReady: Promise<void> = Promise.resolve(), probe = new SourceProbe()) {
       this.previewFolder = previewFolder;
       this.previewReady = previewReady;
@@ -127,6 +100,20 @@ export class SourceSession {
             return resolveFrameTime(points, time, source.duration);
          })
       );
+   }
+   async autoDetectCuts(id: string, requestId: string, threshold: number): Promise<number[]> {
+      const source = this.get(id);
+      this.sceneScan?.controller.abort();
+      const scan = { requestId, controller: new AbortController() };
+      this.sceneScan = scan;
+      try {
+         return await detectSceneCuts(source, threshold, AbortSignal.any([this.signal, scan.controller.signal]));
+      } finally {
+         if (this.sceneScan === scan) this.sceneScan = null;
+      }
+   }
+   cancelScenes(requestId: string): void {
+      if (this.sceneScan?.requestId === requestId) this.sceneScan.controller.abort();
    }
    cancelPreview(): void {
       this.preview.abort();
@@ -232,6 +219,19 @@ export class SourceSession {
       void pending.then(finished, finished);
       return pending;
    }
+   waveformRegion(requestId: string, from: number, to: number): void {
+      if (requestId !== this.waveRequest) return;
+      this.waveRegion = { from, to };
+      this.waveRegionListener?.(from, to);
+   }
+   waveformActivity(requestId: string, busy: boolean): void {
+      if (requestId !== this.waveRequest) return;
+      this.waveBusy = busy;
+      this.waveActivity?.(busy);
+   }
+   async waitForWaveformIdle(): Promise<void> {
+      await Promise.allSettled([...this.waveJobs]);
+   }
    private release(): void {
       this.lifetime.abort();
       this.lifetime = new AbortController();
@@ -251,10 +251,9 @@ export class SourceSession {
       this.probe.cancelPrefetch();
       this.release();
    }
+   /** Close for good: the fresh lifetime release() leaves behind is aborted too. */
    dispose(): void {
-      this.opening.abort();
-      this.probe.cancelPrefetch();
-      this.release();
+      this.close();
       this.lifetime.abort();
    }
 }

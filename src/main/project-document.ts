@@ -5,6 +5,7 @@ import { legacySessionSchema, storedSessionSchema } from "../shared/session-stor
 import { encodeSession } from "../shared/session-codec";
 import type { MediaSource, SavedSession } from "../shared/types";
 import { protectSource, publishOutput } from "./media/publish";
+import { samePath } from "./files";
 import { withTemporaryOutput } from "./media/transaction";
 
 // Project files cross the disk boundary here. Renderer project helpers need no validators.
@@ -65,18 +66,16 @@ export function validateProjectSource(session: SavedSession, source: Pick<MediaS
 export async function writeProject(path: string, session: SavedSession): Promise<SavedSession> {
    const saved = { ...session };
    delete saved.project;
-   const sourceRelative = relative(dirname(path), session.path);
    const document = {
       format: "AttaCut",
       version: 2,
-      relativeSource: sourceRelative && !isAbsolute(sourceRelative) ? sourceRelative.replaceAll("\\", "/") : null,
+      relativeSource: relativeSource(path, session.path),
       session: encodeSession(saved),
    };
    projectFileSchema.parse(document);
    const text = `${JSON.stringify(document, null, 2)}\n`;
    if (Buffer.byteLength(text) > maxProjectBytes) throw new Error("This project file is too large to save.");
-   const normalize = (value: string) => (process.platform === "win32" ? resolve(value).toLowerCase() : resolve(value));
-   if (normalize(path) === normalize(session.path)) throw new Error("A project file cannot replace the source video. Choose a different filename.");
+   if (samePath(path, session.path)) throw new Error("A project file cannot replace the source video. Choose a different filename.");
    await protectSource(session.path, path);
    await withTemporaryOutput(dirname(path), ".attacut-project-", async (directory) => {
       const temporary = join(directory, "project.json");
@@ -87,7 +86,12 @@ export async function writeProject(path: string, session: SavedSession): Promise
 }
 
 export async function updateProjectSource(path: string, project: ProjectFile, sourcePath: string): Promise<void> {
-   const sourceRelative = relative(dirname(path), sourcePath);
-   const relativeSource = sourceRelative && !isAbsolute(sourceRelative) ? sourceRelative.replaceAll("\\", "/") : null;
-   if (project.session.path !== sourcePath || project.relativeSource !== relativeSource) await writeProject(path, { ...project.session, path: sourcePath });
+   if (project.session.path !== sourcePath || project.relativeSource !== relativeSource(path, sourcePath))
+      await writeProject(path, { ...project.session, path: sourcePath });
+}
+
+/** The source path relative to the project, with portable separators, or null across volumes. */
+function relativeSource(projectPath: string, sourcePath: string): string | null {
+   const path = relative(dirname(projectPath), sourcePath);
+   return path && !isAbsolute(path) ? path.replaceAll("\\", "/") : null;
 }

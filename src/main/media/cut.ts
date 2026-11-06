@@ -1,3 +1,4 @@
+import { audioStreams } from "../../shared/media";
 import { withTemporaryOutput } from "./transaction";
 import { primaryVideo } from "../../shared/types";
 import { writeFile, copyFile, stat, constants } from "node:fs/promises";
@@ -247,7 +248,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
       const finalTemporary = join(temporary, `output${extname(destination)}`);
       const { clip } = analysis;
       const duration = clip.end - clip.start;
-      const sourceAudio = source.streams.filter((stream) => stream.type === "audio");
+      const sourceAudio = audioStreams(source);
       const selectedAudio = options.audioTracks === undefined ? sourceAudio : sourceAudio.filter((stream) => options.audioTracks!.includes(stream.index));
       const allAudio = selectedAudio.length === sourceAudio.length;
       // Matroska-family muxers silently drop data streams, so their absence is expected by verification.
@@ -325,14 +326,10 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                   "-c:v",
                   "copy",
                   "-bsf:v",
-                  `${dropOutside(absoluteStart - epsilon, absoluteEnd - epsilon)},setts=pts=PTS-${absoluteStart}/TB:dts=DTS-${absoluteStart}/TB`
+                  // MPEG-4 Part 2 repeats its headers so each copied segment decodes on its own.
+                  `${dropOutside(absoluteStart - epsilon, absoluteEnd - epsilon)},setts=pts=PTS-${absoluteStart}/TB:dts=DTS-${absoluteStart}/TB${video.codec === "mpeg4" ? ",dump_extra=freq=keyframe" : ""}`
                );
             args.push("-t", String(span.encode ? span.end - span.start : absoluteEnd));
-            if (video.codec === "mpeg4" && !span.encode)
-               args.push(
-                  "-bsf:v",
-                  `${dropOutside(absoluteStart - epsilon, absoluteEnd - epsilon)},setts=pts=PTS-${absoluteStart}/TB:dts=DTS-${absoluteStart}/TB,dump_extra=freq=keyframe`
-               );
             args.push("-avoid_negative_ts", segmentType === ".ts" ? "make_zero" : "disabled");
             if (segmentType === ".ts") args.push("-mpegts_flags", "+resend_headers", "-f", "mpegts");
             args.push("-progress", "pipe:1", path);

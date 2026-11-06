@@ -49,6 +49,9 @@ export interface MediaSource {
    url: string;
    chapters: { start: number; end: number; title: string; tags?: Record<string, string> }[];
 }
+export function audioStreams(source: Pick<MediaSource, "streams">): MediaStream[] {
+   return source.streams.filter((stream) => stream.type === "audio");
+}
 export function primaryVideo(source: Pick<MediaSource, "streams" | "primaryVideoIndex">): MediaStream | undefined {
    return source.primaryVideoIndex === undefined
       ? source.streams.find((stream) => stream.type === "video" && !stream.attachedPicture)

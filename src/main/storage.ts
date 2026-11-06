@@ -1,4 +1,5 @@
 import { mkdir, readFile, rename, writeFile, copyFile } from "node:fs/promises";
+import { copyAtomically } from "./files";
 import { join } from "node:path";
 import { z } from "zod";
 import { defaultPreferences, preferencesSchema, savedSessionSchema } from "../shared/types.ts";
@@ -69,11 +70,7 @@ export class Storage {
                      await copyFile(target, join(this.directory, `settings.unreadable-${Date.now()}.json`));
                      this.unreadable = false;
                   }
-                  if (this.primaryValid) {
-                     const backup = join(this.directory, "settings.backup.json");
-                     await copyFile(target, `${backup}.tmp`);
-                     await rename(`${backup}.tmp`, backup);
-                  }
+                  if (this.primaryValid) await copyAtomically(target, join(this.directory, "settings.backup.json"));
                   await rename(`${target}.tmp`, target);
                   this.primaryValid = true;
                }
@@ -98,8 +95,7 @@ export class Storage {
       const saved = this.save();
       this.resetting = saved
          .then(async () => {
-            await copyFile(join(this.directory, "settings.json"), join(this.directory, "settings.backup.json.tmp"));
-            await rename(join(this.directory, "settings.backup.json.tmp"), join(this.directory, "settings.backup.json"));
+            await copyAtomically(join(this.directory, "settings.json"), join(this.directory, "settings.backup.json"));
             await this.recovery.reset();
             this.preferences = structuredClone(defaultPreferences);
             this.session = null;

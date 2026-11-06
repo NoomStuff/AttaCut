@@ -2,12 +2,11 @@ import { useEditorCommands } from "./editor/useEditorCommands";
 import type { EditorPanel } from "./editor/useEditorCommands";
 import { useEditorInteraction } from "./editor/useEditorInteraction";
 import { useEditorSession } from "./editor/useEditorSession";
-import { NavDropdown } from "./components/NavDropdown";
+import type { EditorNotice } from "./editor/useEditorSession";
 import { useAppearance } from "./lib/appearance";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import type { ExportJob, AvailableUpdate } from "../../shared/types";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import type { ExportJob } from "../../shared/types";
 import { CommandContext, useCommands } from "./editor/commands";
-import type { CommandId } from "./editor/commands";
 import { createDraftStore } from "./editor/draftStore";
 import { Button, Modal } from "./components/Controls";
 import { Player } from "./components/Player";
@@ -15,7 +14,9 @@ import { Timeline } from "./components/Timeline";
 import { Transport } from "./components/Transport";
 import { LoadingEditor } from "./components/LoadingEditor";
 import { TopActions } from "./components/TopActions";
-import { AppUpdate } from "./components/AppUpdate";
+import { Titlebar } from "./components/Titlebar";
+import { MenuBar } from "./components/MenuBar";
+import { NoticeBanner } from "./components/NoticeBanner";
 import { JobNotifications } from "./components/JobNotifications";
 import { EmptyState } from "./components/EmptyState";
 import type { ExportDraft } from "./export/useExport";
@@ -24,19 +25,11 @@ import { prefetchModules } from "./lib/prefetch";
 import { useKeyframes } from "./lib/keyframes";
 import { useWaveform } from "./lib/waveform";
 import { useTemporarySnapping } from "./lib/temporarySnapping";
-import { errorText } from "./lib/errors";
-import { useExitValue, usePressFeedback } from "./lib/motion";
+import { useFullscreen } from "./lib/fullscreen";
+import { useUpdates } from "./lib/updates";
+import { usePressFeedback } from "./lib/motion";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-   faScissors,
-   faFolderOpen,
-   faMinus,
-   faSquare,
-   faXmark,
-   faCircleExclamation,
-   faCircleInfo,
-   faTriangleExclamation,
-} from "@fortawesome/free-solid-svg-icons";
+import { faFolderOpen } from "@fortawesome/free-solid-svg-icons";
 
 const loadFramePanel = () => import("./components/FramePanel").then((module) => ({ default: module.FramePanel }));
 const FramePanel = lazy(loadFramePanel);
@@ -62,12 +55,9 @@ export default function App() {
    const [helpTab, setHelpTab] = useState<HelpTab>("intro");
    const [exportHelp, setExportHelp] = useState(false);
    const [menu, setMenu] = useState<string | null>(null);
-   const [menuFocusLast, setMenuFocusLast] = useState(false);
    const [confirmReset, setConfirmReset] = useState(false);
-   const [error, setError] = useState<{ text: string; tone: "error" | "warning" | "info" } | null>(null);
-   /** Errors interrupt work and deserve the red banner; warnings only explain a recoverable state. */
+   const [error, setError] = useState<EditorNotice | null>(null);
    const showError = useCallback((message: string | null) => setError(message === null ? null : { text: message, tone: "error" }), []);
-   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
    const [job, setJob] = useState<ExportJob | null>(null);
    const [notifications, setNotifications] = useState<ExportJob[]>([]);
    const receiveJob = useCallback((updated: ExportJob, starting = false) => {
@@ -84,20 +74,6 @@ export default function App() {
    const [zoom, setZoom] = useState(100);
    // Pans (preview) or zooms and pans (focus) the timeline onto a clip range.
    const [viewRequest, setViewRequest] = useState({ id: 0, start: 0, end: 0, zoom: false });
-   // The player overlays the window while the window itself takes over the screen, so the
-   // custom controls stay and window management, multi-monitor layouts, and background
-   // presentation behave identically in and out.
-   const [fullscreenState, setFullscreenState] = useState<"off" | "on" | "returning">("off");
-   const fullscreenPresented = fullscreenState === "on";
-   const setFullscreen = useCallback((value: boolean | ((current: boolean) => boolean)) => {
-      setFullscreenState((current) => {
-         const next = typeof value === "function" ? value(current === "on") : value;
-         return next ? "on" : current === "off" ? "off" : "returning";
-      });
-   }, []);
-   const finishFullscreenReturn = useCallback(() => {
-      setFullscreenState((current) => (current === "returning" ? "off" : current));
-   }, []);
    const [dragStore] = useState(createDraftStore);
    const session = useEditorSession({
       setError,
@@ -153,33 +129,10 @@ export default function App() {
       preparePreview,
       changeAudio,
    } = session.player;
-   // The startup check stays quiet, runs once, and only an explicit check reports when
-   // nothing was found.
-   const startupUpdateCheck = useRef(false);
-   useEffect(() => {
-      if (!ready || startupUpdateCheck.current) return;
-      startupUpdateCheck.current = true;
-      if (!preferences.updateCheck) return;
-      let active = true;
-      void window.desktop
-         .checkForUpdate()
-         .then((value) => {
-            if (active) setUpdate(value);
-         })
-         .catch(() => {});
-      return () => {
-         active = false;
-      };
-   }, [ready, preferences.updateCheck]);
-   const checkForUpdates = useCallback(() => {
-      void window.desktop
-         .checkForUpdate()
-         .then((value) => {
-            setUpdate(value);
-            if (!value) setError({ text: "You're on the latest version of AttaCut.", tone: "info" });
-         })
-         .catch((value: unknown) => showError(errorText(value)));
-   }, [showError]);
+   const fullscreen = useFullscreen(!!source);
+   const { setFullscreen } = fullscreen;
+   const showLatest = useCallback(() => setError({ text: "You're on the latest version of AttaCut.", tone: "info" }), []);
+   const updates = useUpdates({ ready, enabled: preferences.updateCheck, onLatest: showLatest, onError: showError });
    const temporarySnapping = useTemporarySnapping(!!panel || loading || !source, preferences.holdToSnap);
    const snapping = preferences.snapping || temporarySnapping;
    const [draggingFile, setDraggingFile] = useState(false);
@@ -192,31 +145,6 @@ export default function App() {
       },
       [setMuted, setPreferences]
    );
-   // Native fullscreen changes immediately. The return animation belongs to the
-   // windowed preview, so it never holds up window management.
-   useEffect(
-      () =>
-         window.desktop.onWindowFullscreen((value) => {
-            // Native exits have already resized the window. A late enter notification
-            // must not cancel an exit the user requested while the window was entering.
-            setFullscreenState((current) => (value ? (current === "returning" ? current : "on") : current === "on" ? "returning" : current));
-         }),
-      []
-   );
-   useEffect(() => {
-      // A removed player or reduced-motion mode has no exit animation to await.
-      if (fullscreenState !== "returning") return;
-      const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-      const finishWithoutMotion = () => {
-         if (!source || motion.matches) finishFullscreenReturn();
-      };
-      finishWithoutMotion();
-      motion.addEventListener("change", finishWithoutMotion);
-      return () => motion.removeEventListener("change", finishWithoutMotion);
-   }, [fullscreenState, source, finishFullscreenReturn]);
-   useEffect(() => {
-      window.desktop.windowAction(fullscreenPresented ? "enterFullscreen" : "exitFullscreen");
-   }, [fullscreenPresented]);
    // The export panel must never show its loader behind a click, and the idle prefetch
    // below waits out preview preparation first. Import it eagerly once a source exists.
    useEffect(() => {
@@ -239,22 +167,9 @@ export default function App() {
    const waveformDecodeId = source && (preparing ? null : waveformMediaId && waveformMediaId !== source.id ? waveformMediaId : source.id);
    const waveform = useWaveform({ source, enabled: preferences.waveform, audioIndices, decodeMediaId: waveformDecodeId, videoRef, seeker });
    useAppearance(preferences);
-   useEffect(() => {
-      if (!menu) return;
-      const close = (event: PointerEvent) => {
-         if (!(event.target instanceof Element && event.target.closest("[data-menu]"))) setMenu(null);
-      };
-      const escape = (event: KeyboardEvent) => {
-         if (event.key === "Escape") setMenu(null);
-      };
-      window.addEventListener("pointerdown", close);
-      window.addEventListener("keydown", escape);
-      return () => {
-         window.removeEventListener("pointerdown", close);
-         window.removeEventListener("keydown", escape);
-      };
-   }, [menu]);
    // Panels open above the workspace; fullscreen video yields to all of them.
+   // A panel's exit fade can outlive it; closing only clears the panel that is still current.
+   const closePanel = () => setPanel((current) => (current === panel ? null : current));
    const openPanel = (next: EditorPanel) => {
       setFullscreen(false);
       setPanel(next);
@@ -287,7 +202,7 @@ export default function App() {
             setHelpTab("intro");
             openPanel("help");
          },
-         checkForUpdates,
+         checkForUpdates: updates.check,
       },
    });
    // Panel dialogs guard themselves: the command handler checks the live dialog state, so the
@@ -299,13 +214,6 @@ export default function App() {
       !!menu,
       preferences.holdToSnap === "none" ? false : preferences.holdToSnap === "Control" ? (mac ? "Ctrl" : "Mod") : preferences.holdToSnap
    );
-   const menuSections: Record<string, CommandId[][]> = {
-      File: [["open"], ["frame", "export"], ["saveProject", "saveProjectAs", "closeProject"], ["quit"]],
-      Edit: [["undo", "redo"], ["split", "merge", "autoDetectCuts"], ["setStart", "setEnd", "add", "delete"], ["preview"], ["settings"]],
-      View: [["zoomIn", "zoomOut", "fit", "focusClip"], ["preview"], ["fullscreen"], ["options"]],
-      Help: [["help", "shortcuts", "about"], ["updates", "releases"], ["reset"]],
-   };
-   const errorPresence = useExitValue(error, 190);
    return (
       <CommandContext.Provider value={{ commands, overrides: preferences.shortcuts, mac, holdToSnap: preferences.holdToSnap }}>
          <div
@@ -327,98 +235,23 @@ export default function App() {
                }
             }}
          >
-            <div className={`titlebar ${mac ? "mac" : ""}`}>
-               <div className="app-mark">
-                  <FontAwesomeIcon icon={faScissors} />
-               </div>
-               <span className="app-name">AttaCut</span>
-               <span className="title-separator">/</span>
-               <span className="title-filename" title={projectDirty ? "Unsaved project changes" : project?.path}>
-                  {projectDirty ? "* " : ""}
-                  {projectName ?? source?.name ?? "New cut"}
-               </span>
-               <AppUpdate update={update} onError={showError} />
-               {platform === "win32" && (
-                  <div className="window-controls">
-                     <button aria-label="Minimize window" onClick={() => window.desktop.windowAction("minimize")}>
-                        <FontAwesomeIcon icon={faMinus} />
-                     </button>
-                     <button aria-label="Maximize window" onClick={() => window.desktop.windowAction("maximize")}>
-                        <FontAwesomeIcon icon={faSquare} />
-                     </button>
-                     <button aria-label="Close window" onClick={() => window.desktop.windowAction("close")}>
-                        <FontAwesomeIcon icon={faXmark} />
-                     </button>
-                  </div>
-               )}
-            </div>
+            <Titlebar
+               platform={platform}
+               name={projectName ?? source?.name ?? "New cut"}
+               dirty={projectDirty}
+               path={project?.path}
+               update={updates.update}
+               onError={showError}
+            />
             <header className="toolbar">
-               <nav aria-label="Application menu">
-                  {Object.entries(menuSections).map(([name, sections]) => (
-                     <div className="app-menu" key={name} data-menu>
-                        <button
-                           aria-haspopup="menu"
-                           aria-expanded={menu === name}
-                           onClick={() => {
-                              setMenuFocusLast(false);
-                              setMenu(menu === name ? null : name);
-                           }}
-                           onKeyDown={(event) => {
-                              if (event.key === "Tab") setMenu(null);
-                              if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
-                              event.preventDefault();
-                              setMenuFocusLast(event.key === "ArrowUp");
-                              setMenu(name);
-                           }}
-                        >
-                           {name}
-                        </button>
-                        <NavDropdown
-                           clock={clock}
-                           open={menu === name}
-                           focusLast={menuFocusLast}
-                           sections={sections}
-                           commands={commands}
-                           shortcuts={preferences.shortcuts}
-                           mac={mac}
-                           close={() => setMenu(null)}
-                        />
-                     </div>
-                  ))}
-               </nav>
+               <MenuBar menu={menu} onMenu={setMenu} commands={commands} clock={clock} shortcuts={preferences.shortcuts} mac={mac} />
                <TopActions commands={commands} clock={clock} />
             </header>
-            {errorPresence.mounted && errorPresence.value && (
-               <div className={`error-wrap${errorPresence.closing ? " closing" : ""}`}>
-                  <div
-                     className={`error-banner${errorPresence.value.tone === "warning" ? " warning" : errorPresence.value.tone === "info" ? " info" : ""}`}
-                     role={errorPresence.value.tone === "error" ? "alert" : "status"}
-                  >
-                     <FontAwesomeIcon
-                        icon={
-                           errorPresence.value.tone === "warning"
-                              ? faTriangleExclamation
-                              : errorPresence.value.tone === "info"
-                                ? faCircleInfo
-                                : faCircleExclamation
-                        }
-                     />
-                     <span>{errorPresence.value.text}</span>
-                     {restore && (
-                        <Button
-                           onClick={() => {
-                              void choose(restore);
-                           }}
-                        >
-                           Locate video
-                        </Button>
-                     )}
-                     <button aria-label="Dismiss error" onClick={() => setError(null)}>
-                        <FontAwesomeIcon icon={faXmark} />
-                     </button>
-                  </div>
-               </div>
-            )}
+            <NoticeBanner
+               notice={error}
+               onDismiss={() => setError(null)}
+               action={restore && <Button onClick={() => void choose(restore)}>Locate video</Button>}
+            />
             <main className="workspace">
                <div className="preview-workspace">
                   {source ? (
@@ -440,9 +273,9 @@ export default function App() {
                         onAudio={changeAudio}
                         onVolume={updateVolume}
                         onSeek={seek}
-                        fullscreen={fullscreenPresented}
-                        returningFromFullscreen={fullscreenState === "returning"}
-                        onFullscreenReturnEnd={finishFullscreenReturn}
+                        fullscreen={fullscreen.presented}
+                        returningFromFullscreen={fullscreen.returning}
+                        onFullscreenReturnEnd={fullscreen.finishReturn}
                         onSetFullscreen={setFullscreen}
                         onTogglePlay={togglePlay}
                         onPlaying={(value) => {
@@ -542,7 +375,7 @@ export default function App() {
                      clips={editor.document.clips}
                      preferences={preferences}
                      onPreferences={setPreferences}
-                     onClose={() => setPanel((current) => (current === panel ? null : current))}
+                     onClose={closePanel}
                      onStarted={(started) => receiveJob(started, true)}
                      onBeforeSourceReplace={beforeSourceReplace}
                      onSourceReplaceStartFailed={sourceReplaceStartFailed}
@@ -560,14 +393,14 @@ export default function App() {
                      seeker={seeker}
                      preferences={preferences}
                      onPreferences={setPreferences}
-                     onClose={() => setPanel((current) => (current === panel ? null : current))}
+                     onClose={closePanel}
                   />
                )}
                {(panel === "settings" || panel === "shortcuts") && (
                   <SettingsPanel
                      preferences={preferences}
                      onChange={setPreferences}
-                     onClose={() => setPanel((current) => (current === panel ? null : current))}
+                     onClose={closePanel}
                      mac={mac}
                      initialTab={panel === "shortcuts" ? "shortcuts" : settingsTab}
                      onTabChange={setSettingsTab}
@@ -584,7 +417,7 @@ export default function App() {
                      }}
                   />
                )}
-               {panel === "about" && <AboutPanel version={version} onClose={() => setPanel((current) => (current === panel ? null : current))} />}
+               {panel === "about" && <AboutPanel version={version} onClose={closePanel} />}
             </Suspense>
             {confirmReset && (
                <Modal title="Reset AttaCut?" onClose={() => setConfirmReset(false)} className="reset-confirm">

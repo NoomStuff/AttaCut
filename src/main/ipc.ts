@@ -6,6 +6,7 @@ import type { IpcResult } from "../shared/failure";
 import { existsSync } from "node:fs";
 import { join, resolve, dirname, basename } from "node:path";
 import { stat, writeFile } from "node:fs/promises";
+import { statOrNull } from "./files";
 import type { SavedSession } from "../shared/types";
 import { projectExtension, projectExtensions, projectHasChanges, discardProjectChanges } from "../shared/project";
 import { readProject, projectSourcePaths, validateProjectSource, writeProject, updateProjectSource } from "./project-document";
@@ -51,6 +52,18 @@ export function registerIpc({
    let closingSnapshot: Promise<boolean> | null = null;
    let openSequence = 0;
    const getSource = (id: string) => sourceSession.get(id);
+   /** Resolve the source and refuse indices that are not among its audio streams. */
+   const sourceWithAudio = (id: string, indices: number[]) => {
+      const source = getSource(id);
+      if (indices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
+         throw new Error("Audio track not found.");
+      return source;
+   };
+   /** Plans and frame outputs belong to the source they were made from. */
+   const forgetSourceWork = () => {
+      exportsService.cancelPlanning();
+      frameOutputs.clear();
+   };
    const confirmProject = async (session: SavedSession): Promise<"save" | "discard" | "cancel"> => {
       if (!projectHasChanges(session)) return "discard";
       const { response } = await dialog.showMessageBox(window, {
@@ -136,9 +149,7 @@ export function registerIpc({
    });
    handle("source:open", async (value) => {
       const source = await sourceSession.open(value);
-      exportsService.cancelPlanning();
-      frameOutputs.clear();
-      window.setTitle(`${source.name} — AttaCut`);
+      forgetSourceWork();
       return source;
    });
    handle("project:open", async (path) => {
@@ -151,10 +162,7 @@ export function registerIpc({
       let sourcePath: string | undefined;
       let changed = false;
       for (const candidate of projectSourcePaths(path, project)) {
-         const info = await stat(candidate).catch((error: NodeJS.ErrnoException) => {
-            if (error.code === "ENOENT") return null;
-            throw error;
-         });
+         const info = await statOrNull(candidate);
          if (!info) continue;
          if (info.isFile() && info.size === project.session.size && info.mtimeMs === project.session.modified) {
             sourcePath = candidate;
@@ -194,49 +202,34 @@ export function registerIpc({
          validateProjectSource(saved, media);
          await updateProjectSource(path, project, media.path);
       });
-      exportsService.cancelPlanning();
-      frameOutputs.clear();
+      forgetSourceWork();
       return { source, session: { ...saved, path: source.path, project: { path: resolve(path), savedClips: saved.clips } } };
    });
    handle("project:save", ({ session, saveAs }) => saveProject(session, saveAs));
    handle("project:confirm", confirmProject);
    handle("source:close", () => {
       sourceSession.close();
-      exportsService.cancelPlanning();
-      frameOutputs.clear();
-      window.setTitle("AttaCut");
+      forgetSourceWork();
    });
-   handle("directory:choose", async (value) => {
-      const current = value;
+   handle("directory:choose", async (current) => {
       const result = await dialog.showOpenDialog(window, {
          properties: ["openDirectory", "createDirectory"],
          ...(current ? { defaultPath: current } : {}),
       });
       return result.filePaths[0] ?? null;
    });
-   handle("source:keyframes", async (value) => {
-      return sourceSession.keyframes(value);
-   });
+   handle("source:keyframes", (id) => sourceSession.keyframes(id));
    handle("source:scenes", ({ sourceId, requestId, threshold }) => sourceSession.autoDetectCuts(sourceId, requestId, threshold));
    handle("source:cancel-scenes", (requestId) => sourceSession.cancelScenes(requestId));
-   handle("source:frame-time", async (value) => {
-      const request = value;
-      return sourceSession.frameTime(request.sourceId, request.time, request.direction);
-   });
+   handle("source:frame-time", (request) => sourceSession.frameTime(request.sourceId, request.time, request.direction));
    handle("source:frame-times", (request) => sourceSession.frameTimes(request.sourceId, request.times));
-   handle("audio:scrub", async (value) => {
-      const request = value;
-      const source = getSource(request.sourceId);
-      if (request.streamIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
-         throw new Error("Audio track not found.");
+   handle("audio:scrub", (request) => {
+      const source = sourceWithAudio(request.sourceId, request.streamIndices);
       return sourceSession.scrubAudio(source.id, request.streamIndices, request.time);
    });
    handle("audio:cancel", () => sourceSession.cancelScrub());
-   handle("waveform:start", async (value) => {
-      const request = value;
-      const source = getSource(request.sourceId);
-      if (request.streamIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
-         throw new Error("Audio track not found.");
+   handle("waveform:start", (request) => {
+      const source = sourceWithAudio(request.sourceId, request.streamIndices);
       // Only decode from a prepared preview when it is the source's own id or one whose
       // audio selection matches the request; anything else decodes from the source.
       let decodePath: string | undefined;
@@ -254,10 +247,8 @@ export function registerIpc({
    handle("waveform:cancel", (request) => sourceSession.cancelWaveform(request.requestId));
    handle("waveform:activity", (request) => sourceSession.waveformActivity(request.requestId, request.busy));
    handle("waveform:region", (request) => sourceSession.waveformRegion(request.requestId, request.from, request.to));
-   handle("export:cancel-planning", () => exportsService.cancelPlanning());
    handle("export:cancel-analysis", () => exportsService.cancelAnalysis());
-   handle("state:flush", async (value) => {
-      const snapshot = value;
+   handle("state:flush", async (snapshot) => {
       let resolveClose!: (proceed: boolean) => void;
       closingSnapshot = new Promise((resolve) => {
          resolveClose = resolve;
@@ -298,8 +289,7 @@ export function registerIpc({
          throw error;
       }
    });
-   handle("frame:export", async (value) => {
-      const request = value;
+   handle("frame:export", async (request) => {
       const path = await exportFrame(getSource(request.sourceId), request, sourceSession.signal);
       frameOutputs.add(path);
       return path;
@@ -314,58 +304,35 @@ export function registerIpc({
       storage.session = value;
       await storage.save();
    });
-   handle("app:factory-reset", async () => {
-      await storage.reset();
-   });
-   handle("window:title", (value) => {
-      window.setTitle(value);
-   });
-   handle("preview:prepare", async (value) => {
-      const request = value;
-      const source = getSource(request.sourceId);
-      if (request.audioIndices.some((index) => !source.streams.some((stream) => stream.type === "audio" && stream.index === index)))
-         throw new Error("Audio track not found.");
+   handle("app:factory-reset", () => storage.reset());
+   handle("window:title", (title) => window.setTitle(title));
+   handle("preview:prepare", (request) => {
+      const source = sourceWithAudio(request.sourceId, request.audioIndices);
       return sourceSession.prepare(source.id, request.audioIndices, request.transcode);
    });
-   handle("preview:cancel", () => {
-      sourceSession.cancelPreview();
-   });
-   handle("export:plan", async (value) => {
-      const request = value;
+   handle("preview:cancel", () => sourceSession.cancelPreview());
+   handle("export:plan", async (request) => {
       const result = await exportsService.plan(getSource(request.sourceId), request);
       recordAssessment(request.sourceId, result.items);
       return result;
    });
-   handle("export:check-destinations", (value) => {
-      const request = value;
-      return exportsService.checkDestinations(getSource(request.sourceId), request);
-   });
-   handle("export:analyze", async (value) => {
-      const request = value;
+   handle("export:check-destinations", (request) => exportsService.checkDestinations(getSource(request.sourceId), request));
+   handle("export:analyze", async (request) => {
       const result = await exportsService.inspect(getSource(request.sourceId), request);
       recordAssessment(request.sourceId, result);
       return result;
    });
-   handle("export:start", (value) => {
-      const request = value;
-      return exportsService.start(request.id, request.approval);
-   });
+   handle("export:start", (request) => exportsService.start(request.id, request.approval));
    handle("export:cancel", () => exportsService.cancel());
    handle("export:retry", (value) => exportsService.retry(value));
-   handle("output:open", async (value) => {
-      const path = value;
-      if (!exportsService.current?.items.some((item) => item.outputPath === path && item.status === "completed")) throw new Error("Exported file not found.");
+   const completedOutput = (path: string) => !!exportsService.current?.items.some((item) => item.outputPath === path && item.status === "completed");
+   handle("output:open", async (path) => {
+      if (!completedOutput(path)) throw new Error("Exported file not found.");
       const failure = await shell.openPath(path);
       if (failure) throw new Error(failure);
    });
-   handle("output:reveal", async (value) => {
-      const path = value;
-      if (frameOutputs.has(path) || updates.downloadedPath === path) {
-         shell.showItemInFolder(path);
-         return;
-      }
-      const job = exportsService.current;
-      if (!job || !job.items.some((item) => item.outputPath === path && item.status === "completed")) throw new Error("Output not found.");
+   handle("output:reveal", (path) => {
+      if (!frameOutputs.has(path) && updates.downloadedPath !== path && !completedOutput(path)) throw new Error("Output not found.");
       shell.showItemInFolder(path);
    });
    // The renderer only ever opens links to project-owned sites; the allowlist keeps a

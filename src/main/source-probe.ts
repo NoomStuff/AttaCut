@@ -4,6 +4,11 @@ import { randomUUID } from "node:crypto";
 import { probeSource } from "./media/probe";
 import type { ProbedSource } from "./media/probe";
 import { waitForWork } from "./media/shared-work";
+import type { Stats } from "node:fs";
+
+function fileIdentity(info: Stats): string {
+   return JSON.stringify([info.dev, info.ino, info.size, info.mtimeMs, info.ctimeMs, info.birthtimeMs]);
+}
 
 /** Only editor opens reuse metadata. Export verification always probes its input again. */
 export class SourceProbe {
@@ -42,15 +47,14 @@ export class SourceProbe {
       return this.read(fullPath, signal);
    }
 
-   private async read(path: string, signal?: AbortSignal): Promise<ProbedSource> {
+   /** `fullPath` is already resolved by the public entry points. */
+   private async read(fullPath: string, signal?: AbortSignal): Promise<ProbedSource> {
       signal?.throwIfAborted();
-      const fullPath = resolve(path);
-      const info = await stat(fullPath);
+      const identity = fileIdentity(await stat(fullPath));
       signal?.throwIfAborted();
-      const identity = JSON.stringify([info.dev, info.ino, info.size, info.mtimeMs, info.ctimeMs, info.birthtimeMs]);
       const cached = this.cached.get(fullPath);
       this.cached.delete(fullPath);
-      if (info.isFile() && cached?.identity === identity) {
+      if (cached?.identity === identity) {
          this.cached.set(fullPath, cached);
          const source = structuredClone(cached.source);
          source.id = randomUUID();
@@ -60,9 +64,9 @@ export class SourceProbe {
       const source = await probeSource(fullPath, signal);
       signal?.throwIfAborted();
       // A file may change while ffprobe reads it. Such a result must never enter the cache.
-      const after = await stat(fullPath);
+      const after = fileIdentity(await stat(fullPath));
       signal?.throwIfAborted();
-      if (identity === JSON.stringify([after.dev, after.ino, after.size, after.mtimeMs, after.ctimeMs, after.birthtimeMs])) {
+      if (identity === after) {
          this.cached.set(fullPath, { identity, source: structuredClone(source) });
          while (this.cached.size > 4) this.cached.delete(this.cached.keys().next().value!);
       }
