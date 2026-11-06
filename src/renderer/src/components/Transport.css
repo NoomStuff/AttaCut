@@ -343,3 +343,51 @@
       transition: none;
    }
 }
+/* Start and End group their label and value as one field. The outline only appears on
+   hover and focus so the row stays quiet while watching. */
+.clip-boundaries {
+   gap: 6px;
+}
+.time-field {
+   gap: 0;
+   height: 28px;
+   border: 1px solid transparent;
+   border-radius: var(--radius-control);
+   cursor: text;
+   transition:
+      border-color 150ms ease-out,
+      background-color 150ms ease-out;
+}
+.time-field:hover {
+   border-color: var(--line);
+   background: var(--surface-raised);
+   transition-duration: 0ms;
+}
+.time-field:focus-within {
+   border-color: var(--accent);
+   background: var(--surface-raised);
+}
+.time-field > span:first-child {
+   padding: 0 2px 0 8px;
+   color: var(--faint);
+}
+.time-field input,
+.time-field input:hover,
+.time-field input:focus {
+   width: 68px;
+   height: 26px;
+   min-height: 26px;
+   padding: 3px 8px 3px 4px;
+   border: 0;
+   background: transparent;
+}
+.clip-duration {
+   margin-left: 4px;
+   gap: 5px;
+}
+.clip-duration small {
+   color: var(--faint);
+}
+.clip-duration time {
+   color: var(--text);
+}

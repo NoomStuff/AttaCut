@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Preferences } from "../../../shared/types";
 import type { CommandId, Commands } from "../editor/commands";
 import type { PlaybackClock } from "../playback/clock";
-import { NavDropdown } from "./NavDropdown";
+import { NavDropdown, type RecentMenu } from "./NavDropdown";
 
 const menuSections: Record<string, CommandId[][]> = {
    File: [["open"], ["frame", "export"], ["saveProject", "saveProjectAs", "closeProject"], ["quit"]],
@@ -19,6 +19,7 @@ export function MenuBar({
    clock,
    shortcuts,
    mac,
+   recent,
 }: {
    menu: string | null;
    onMenu: (menu: string | null) => void;
@@ -26,6 +27,7 @@ export function MenuBar({
    clock: PlaybackClock;
    shortcuts: Preferences["shortcuts"];
    mac: boolean;
+   recent: RecentMenu;
 }) {
    const [focusLast, setFocusLast] = useState(false);
    useEffect(() => {
@@ -72,6 +74,7 @@ export function MenuBar({
                   commands={commands}
                   shortcuts={shortcuts}
                   mac={mac}
+                  recent={name === "File" ? recent : undefined}
                   close={() => onMenu(null)}
                />
             </div>

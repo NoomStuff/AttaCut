@@ -28,6 +28,7 @@ import { useTemporarySnapping } from "./lib/temporarySnapping";
 import { useFullscreen } from "./lib/fullscreen";
 import { useUpdates } from "./lib/updates";
 import { usePressFeedback } from "./lib/motion";
+import { useRecentFiles } from "./lib/recent";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFolderOpen } from "@fortawesome/free-solid-svg-icons";
 
@@ -150,6 +151,7 @@ export default function App() {
    useEffect(() => {
       if (source) void loadExportPanel();
    }, [source]);
+   const recent = useRecentFiles();
    useEffect(() => {
       if (!ready || loading || preparing) return;
       return prefetchModules([loadSettingsPanel, loadFramePanel, loadHelpPanel, loadAboutPanel]);
@@ -244,7 +246,15 @@ export default function App() {
                onError={showError}
             />
             <header className="toolbar">
-               <MenuBar menu={menu} onMenu={setMenu} commands={commands} clock={clock} shortcuts={preferences.shortcuts} mac={mac} />
+               <MenuBar
+                  menu={menu}
+                  onMenu={setMenu}
+                  commands={commands}
+                  clock={clock}
+                  shortcuts={preferences.shortcuts}
+                  mac={mac}
+                  recent={{ files: recent, open: (path) => void openPath(path), clear: () => void window.desktop.clearRecentFiles().catch(showError) }}
+               />
                <TopActions commands={commands} clock={clock} />
             </header>
             <NoticeBanner
@@ -300,7 +310,7 @@ export default function App() {
                         trimming={trimming}
                      />
                   ) : (
-                     <EmptyState onImport={() => void choose()} loading={loading} mac={mac} />
+                     <EmptyState onImport={() => void choose()} loading={loading} mac={mac} recent={recent} onOpenRecent={(path) => void openPath(path)} />
                   )}
                   <JobNotifications
                      onReopen={() => void choose()}

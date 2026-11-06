@@ -1,9 +1,20 @@
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faChevronRight } from "@fortawesome/free-solid-svg-icons";
+import type { RecentEntry } from "../../../shared/recent";
 import type { Preferences } from "../../../shared/types";
 import { bindingsFor, commandDefinitions, displayBindings } from "../editor/commands";
 import type { CommandId, Commands } from "../editor/commands";
 import { type PlaybackClock, useClock } from "../playback/clock";
 import { useExitValue } from "../lib/motion";
+
+export interface RecentMenu {
+   files: RecentEntry[];
+   open: (path: string) => void;
+   clear: () => void;
+}
+/** Only the top-level items take part in the menu's arrow keys; the flyout handles its own. */
+const topItems = ":scope > button:not(:disabled), :scope > .dropdown-submenu > button:not(:disabled)";
 
 export function NavDropdown({
    clock,
@@ -13,8 +24,10 @@ export function NavDropdown({
    commands,
    shortcuts,
    mac,
+   recent,
    close,
 }: {
+   recent?: RecentMenu | undefined;
    clock: PlaybackClock;
    open: boolean;
    focusLast: boolean;
@@ -35,6 +48,7 @@ export function NavDropdown({
          commands={commands}
          shortcuts={shortcuts}
          mac={mac}
+         recent={recent}
          close={close}
       />
    );
@@ -48,8 +62,10 @@ function NavDropdownItems({
    commands,
    shortcuts,
    mac,
+   recent,
    close,
 }: {
+   recent?: RecentMenu | undefined;
    clock: PlaybackClock;
    closing: boolean;
    focusLast: boolean;
@@ -66,7 +82,7 @@ function NavDropdownItems({
    // before that mount, leaving keyboard users on the trigger with no selected item.
    useEffect(() => {
       if (closing) return;
-      const items = root.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+      const items = root.current?.querySelectorAll<HTMLButtonElement>(topItems);
       if (items?.length) items[focusLast ? items.length - 1 : 0]?.focus();
    }, [closing, focusLast]);
    return (
@@ -80,7 +96,7 @@ function NavDropdownItems({
          }}
          onKeyDown={(event) => {
             if (event.key === "Tab") close();
-            const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+            const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(topItems)];
             const index = items.indexOf(document.activeElement as HTMLButtonElement);
             const target =
                event.key === "Home"
@@ -108,23 +124,124 @@ function NavDropdownItems({
             <Fragment key={index}>
                {index > 0 && <div className="dropdown-divider" role="separator" />}
                {section.map((id) => (
-                  <button
-                     role="menuitem"
-                     tabIndex={-1}
-                     data-press-ignore
-                     key={id}
-                     disabled={!commands[id].enabled()}
-                     onClick={() => {
-                        close();
-                        commands[id].run();
-                     }}
-                  >
-                     <span>{commandDefinitions[id].label}</span>
-                     <kbd>{displayBindings(bindingsFor(id, shortcuts), mac)}</kbd>
-                  </button>
+                  <Fragment key={id}>
+                     <button
+                        role="menuitem"
+                        tabIndex={-1}
+                        data-press-ignore
+                        disabled={!commands[id].enabled()}
+                        onClick={() => {
+                           close();
+                           commands[id].run();
+                        }}
+                     >
+                        <span>{commandDefinitions[id].label}</span>
+                        <kbd>{displayBindings(bindingsFor(id, shortcuts), mac)}</kbd>
+                     </button>
+                     {id === "open" && recent && <RecentSubmenu recent={recent} close={close} />}
+                  </Fragment>
                ))}
             </Fragment>
          ))}
+      </div>
+   );
+}
+
+function RecentSubmenu({ recent, close }: { recent: RecentMenu; close: () => void }) {
+   const [open, setOpen] = useState(false);
+   const trigger = useRef<HTMLButtonElement>(null);
+   const flyout = useRef<HTMLDivElement>(null);
+   const items = () => [...(flyout.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+   // Opening from the keyboard lands on the first entry, like any nested menu.
+   const openWithFocus = () => {
+      setOpen(true);
+      requestAnimationFrame(() => items()[0]?.focus());
+   };
+   return (
+      <div className="dropdown-submenu" onPointerEnter={() => setOpen(true)} onPointerLeave={() => setOpen(false)}>
+         <button
+            ref={trigger}
+            role="menuitem"
+            tabIndex={-1}
+            data-press-ignore
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={openWithFocus}
+            onKeyDown={(event) => {
+               if (event.key !== "ArrowRight") return;
+               event.preventDefault();
+               event.stopPropagation();
+               openWithFocus();
+            }}
+         >
+            <span>Open recent</span>
+            <FontAwesomeIcon icon={faChevronRight} />
+         </button>
+         {open && (
+            <div
+               ref={flyout}
+               className="dropdown dropdown-flyout"
+               role="menu"
+               aria-label="Open recent"
+               onKeyDown={(event) => {
+                  const list = items();
+                  const index = list.indexOf(document.activeElement as HTMLButtonElement);
+                  const next =
+                     event.key === "ArrowDown"
+                        ? list[(index + 1) % list.length]
+                        : event.key === "ArrowUp"
+                          ? list[(index - 1 + list.length) % list.length]
+                          : null;
+                  if (next) next.focus();
+                  if (event.key === "ArrowLeft" || event.key === "Escape") {
+                     setOpen(false);
+                     trigger.current?.focus();
+                  }
+                  if (next || ["ArrowLeft", "Escape", "Home", "End"].includes(event.key)) {
+                     event.preventDefault();
+                     event.stopPropagation();
+                  }
+               }}
+            >
+               {recent.files.length ? (
+                  <>
+                     {recent.files.map((file) => (
+                        <button
+                           key={file.path}
+                           role="menuitem"
+                           tabIndex={-1}
+                           data-press-ignore
+                           disabled={file.missing}
+                           title={file.missing ? `Not found: ${file.path}` : file.path}
+                           onClick={() => {
+                              close();
+                              recent.open(file.path);
+                           }}
+                        >
+                           <span className="recent-menu-name">{file.name}</span>
+                           <kbd>{file.missing ? "Not found" : file.directory.split(/[\\/]/).filter(Boolean).pop()}</kbd>
+                        </button>
+                     ))}
+                     <div className="dropdown-divider" role="separator" />
+                     <button
+                        role="menuitem"
+                        tabIndex={-1}
+                        data-press-ignore
+                        onClick={() => {
+                           close();
+                           recent.clear();
+                        }}
+                     >
+                        <span>Clear recent</span>
+                     </button>
+                  </>
+               ) : (
+                  <button role="menuitem" tabIndex={-1} disabled>
+                     <span>No recent files</span>
+                  </button>
+               )}
+            </div>
+         )}
       </div>
    );
 }

@@ -23,12 +23,15 @@ import { fetchAvailableUpdate, UpdateManager } from "./updates.ts";
 import type { SourceSession } from "./source-session.ts";
 import type { ExportService } from "./exports.ts";
 import type { Storage } from "./storage.ts";
+import type { RecentFiles } from "./recent.ts";
+import type { MediaSource } from "../shared/media.ts";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 
 export function registerIpc({
    window,
    storage,
+   recent,
    sourceSession,
    exportsService,
    takeInitialFile,
@@ -38,6 +41,7 @@ export function registerIpc({
 }: {
    window: BrowserWindow;
    storage: Storage;
+   recent: RecentFiles;
    sourceSession: SourceSession;
    exportsService: ExportService;
    takeInitialFile: () => string | null;
@@ -88,6 +92,10 @@ export function registerIpc({
          path = result.filePath;
       }
       return writeProject(path, session);
+   };
+   /** History is a convenience: a failed write must never fail the open that caused it. */
+   const remember = (path: string, source: MediaSource, kind: "video" | "project") => {
+      void recent.add({ path: resolve(path), name: basename(path), directory: dirname(resolve(path)), duration: source.duration, kind }).catch(() => undefined);
    };
    if (testing) Object.defineProperty(globalThis, "attacutTestIpc", { value: testing });
    function handle<K extends keyof IpcCalls>(channel: K, action: (value: IpcRequest<K>) => IpcCalls[K]["response"] | Promise<IpcCalls[K]["response"]>): void {
@@ -150,6 +158,7 @@ export function registerIpc({
    handle("source:open", async (value) => {
       const source = await sourceSession.open(value);
       forgetSourceWork();
+      remember(source.path, source, "video");
       return source;
    });
    handle("project:open", async (path) => {
@@ -203,9 +212,18 @@ export function registerIpc({
          await updateProjectSource(path, project, media.path);
       });
       forgetSourceWork();
+      remember(path, source, "project");
       return { source, session: { ...saved, path: source.path, project: { path: resolve(path), savedClips: saved.clips } } };
    });
-   handle("project:save", ({ session, saveAs }) => saveProject(session, saveAs));
+   handle("project:save", async ({ session, saveAs }) => {
+      const saved = await saveProject(session, saveAs);
+      const source = sourceSession.current;
+      if (saved?.project && source) remember(saved.project.path, source, "project");
+      return saved;
+   });
+   handle("recent:list", () => recent.entries());
+   handle("recent:remove", (path) => recent.remove(path));
+   handle("recent:clear", () => recent.clear());
    handle("project:confirm", confirmProject);
    handle("source:close", () => {
       sourceSession.close();
@@ -304,7 +322,10 @@ export function registerIpc({
       storage.session = value;
       await storage.save();
    });
-   handle("app:factory-reset", () => storage.reset());
+   handle("app:factory-reset", async () => {
+      await storage.reset();
+      await recent.clear();
+   });
    handle("window:title", (title) => window.setTitle(title));
    handle("preview:prepare", (request) => {
       const source = sourceWithAudio(request.sourceId, request.audioIndices);

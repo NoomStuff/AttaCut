@@ -3,6 +3,7 @@ import type { Preferences } from "./preferences";
 import type { SavedSession } from "./editing";
 import type { SessionInput } from "./session-codec";
 import type { MediaSource, ScrubAudio } from "./media";
+import type { RecentEntry } from "./recent";
 import type { PlanRequest, AnalyzeRequest, ExportApproval, ExportPlan, ExportDestinations, CutReport, ExportJob } from "./export";
 export interface Bootstrap {
    warning: string | null;
@@ -34,6 +35,11 @@ export interface DesktopApi {
    chooseSource(): Promise<string | null>;
    openSource(path: string): Promise<MediaSource>;
    openProject(path: string): Promise<{ source: MediaSource; session: SavedSession } | null>;
+   /** Recently opened videos and projects, newest first, with files that have since moved flagged. */
+   recentFiles(): Promise<RecentEntry[]>;
+   removeRecentFile(path: string): Promise<void>;
+   clearRecentFiles(): Promise<void>;
+   onRecentFilesChanged(listener: () => void): () => void;
    saveProject(session: SessionInput, saveAs?: boolean): Promise<SavedSession | null>;
    confirmProject(session: SessionInput): Promise<"save" | "discard" | "cancel">;
    closeSource(): Promise<void>;

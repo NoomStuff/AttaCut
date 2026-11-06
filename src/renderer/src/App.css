@@ -377,3 +377,35 @@
    overflow-wrap: anywhere;
    text-align: right;
 }
+.dropdown-submenu {
+   position: relative;
+}
+.dropdown-submenu > button > svg {
+   font-size: 10px;
+   color: var(--faint);
+}
+.dropdown-submenu > button[aria-expanded="true"] {
+   background: var(--surface-hover);
+}
+/* The flyout overlaps the parent's padding so the pointer never crosses a gap. */
+.dropdown.dropdown-flyout {
+   top: -6px;
+   left: calc(100% + 2px);
+   min-width: 300px;
+   max-width: 380px;
+   transform-origin: left 12px;
+}
+.dropdown-flyout button > .recent-menu-name {
+   flex-shrink: 1;
+   min-width: 0;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+.dropdown-flyout button > kbd {
+   flex-shrink: 0;
+   max-width: 140px;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}

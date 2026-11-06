@@ -10,6 +10,9 @@ interface IpcResponses {
    "source:choose": string | null;
    "source:open": Result<"openSource">;
    "project:open": Result<"openProject">;
+   "recent:list": Result<"recentFiles">;
+   "recent:remove": void;
+   "recent:clear": void;
    "project:save": Result<"saveProject">;
    "project:confirm": Result<"confirmProject">;
    "source:close": void;
@@ -57,6 +60,7 @@ export const IpcEvents = {
    flushStarted: "app:flush-started",
    openFile: "app:open-file",
    command: "app:command",
+   recentChanged: "recent:changed",
    windowAction: "window:action",
    windowFullscreen: "window:fullscreen",
    rendererReady: "app:renderer-ready",
