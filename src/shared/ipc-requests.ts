@@ -20,6 +20,8 @@ export const ipcRequestSchemas = {
    "update:check": z.void(),
    "update:download": z.string(),
    "update:restart": z.void(),
+   "update:cancel-restart": z.void(),
+   "update:outcome": z.void(),
    "source:choose": z.void(),
    "source:open": z.string().min(1),
    "project:open": z.string().min(1),

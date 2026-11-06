@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { BrowserWindow } from "electron";
 import { app, net } from "electron";
 import type * as NodeFs from "node:fs";
-import { UpdateManager, fetchAvailableUpdate } from "./updates";
+import { UpdateManager, fetchAvailableUpdate, skipInstallerCrc, updateEndpoints } from "./updates";
 
 vi.mock("electron", () => ({ app: { getVersion: () => "0.14.1", getPath: vi.fn() }, net: { fetch: vi.fn() } }));
 vi.mock("./identity", () => ({ isPackagedApp: () => true }));
@@ -226,4 +226,37 @@ it.skipIf(process.platform === "darwin")("reports an outdated automatic feed ins
    await updates.offer(release);
    await vi.waitFor(() => expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ version: release.version, phase: "error" })));
    expect(updates.isReady).toBe(false);
+});
+
+it("skips only the redundant NSIS CRC pass for updater-run installers", async () => {
+   const calls: unknown[][] = [];
+   const updater = {
+      spawnLog(this: unknown, ...args: unknown[]) {
+         calls.push([this, ...args]);
+         return Promise.resolve(true);
+      },
+   };
+   skipInstallerCrc(updater);
+   await updater.spawnLog("setup.exe", ["--updated", "/S", "--force-run", "/D=C:/Apps/AttaCut"]);
+   await updater.spawnLog("elevate.exe", ["setup.exe", "--updated", "/S"]);
+   await updater.spawnLog("other.exe", ["/S"]);
+   expect(calls).toEqual([
+      [updater, "setup.exe", ["--updated", "/NCRC", "/S", "--force-run", "/D=C:/Apps/AttaCut"]],
+      [updater, "elevate.exe", ["setup.exe", "--updated", "/NCRC", "/S"]],
+      [updater, "other.exe", ["/S"]],
+   ]);
+});
+
+it("redirects updates only for test launches on loopback", () => {
+   const github = {
+      releases: "https://api.github.com/repos/NoomStuff/AttaCut/releases/latest",
+      feed: "https://raw.githubusercontent.com/NoomStuff/AttaCut/updates/",
+   };
+   expect(updateEndpoints({})).toEqual(github);
+   expect(updateEndpoints({ ATTACUT_TEST_UPDATE_SERVER: "http://127.0.0.1:4000/" })).toEqual(github);
+   expect(updateEndpoints({ ATTACUT_TESTING: "1", ATTACUT_TEST_UPDATE_SERVER: "https://example.com/" })).toEqual(github);
+   expect(updateEndpoints({ ATTACUT_TESTING: "1", ATTACUT_TEST_UPDATE_SERVER: "http://127.0.0.1:4000/" })).toEqual({
+      releases: "http://127.0.0.1:4000/releases/latest",
+      feed: "http://127.0.0.1:4000/feed/",
+   });
 });

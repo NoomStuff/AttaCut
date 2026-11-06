@@ -3,30 +3,89 @@ on:
    pull_request:
 permissions:
    contents: read
+   pull-requests: read
 concurrency:
    group: checks-${{ github.event.pull_request.number }}
    cancel-in-progress: true
 jobs:
+   changes:
+      name: Detect release changes
+      runs-on: ubuntu-latest
+      timeout-minutes: 5
+      outputs:
+         release: ${{ steps.detect.outputs.release }}
+      steps:
+         - uses: actions/github-script@v9
+           id: detect
+           with:
+              script: |
+                 // Packaging, installers and the updater only run in release jobs. A pull
+                 // request that can change them runs those jobs before it can merge.
+                 const files = await github.paginate(github.rest.pulls.listFiles, {
+                   ...context.repo,
+                   pull_number: context.payload.pull_request.number,
+                   per_page: 100,
+                 });
+                 const paths = files.flatMap((file) => [file.filename, file.previous_filename].filter(Boolean));
+                 const release = paths.some((path) =>
+                   /^(scripts|build|\.github)\//.test(path) ||
+                   ['package.json', 'bun.lock', 'electron.vite.config.ts'].includes(path) ||
+                   /^src\/main\/update/.test(path)
+                 );
+                 core.setOutput('release', String(release));
+                 await core.summary.addRaw(release ? 'Release-only packaging and verification will run.' : 'No release inputs changed.').write();
    checks:
       uses: ./.github/workflows/verify.yml
       with:
          candidate_sha: ${{ github.sha }}
    app-checks:
-      needs: checks
       uses: ./.github/workflows/app-checks.yml
       with:
          candidate_sha: ${{ github.sha }}
+   win-x64:
+      needs: changes
+      if: needs.changes.outputs.release == 'true'
+      uses: ./.github/workflows/candidate.yml
+      with: { candidate_sha: "${{ github.sha }}", target: win-x64, os: windows-2025 }
+   mac-x64:
+      needs: changes
+      if: needs.changes.outputs.release == 'true'
+      uses: ./.github/workflows/candidate.yml
+      with: { candidate_sha: "${{ github.sha }}", target: mac-x64, os: macos-15-intel }
+   mac-arm64:
+      needs: changes
+      if: needs.changes.outputs.release == 'true'
+      uses: ./.github/workflows/candidate.yml
+      with: { candidate_sha: "${{ github.sha }}", target: mac-arm64, os: macos-15 }
+   linux-x64:
+      needs: changes
+      if: needs.changes.outputs.release == 'true'
+      uses: ./.github/workflows/candidate.yml
+      with: { candidate_sha: "${{ github.sha }}", target: linux-x64, os: ubuntu-24.04 }
+   linux-arm64:
+      needs: changes
+      if: needs.changes.outputs.release == 'true'
+      uses: ./.github/workflows/candidate.yml
+      with: { candidate_sha: "${{ github.sha }}", target: linux-arm64, os: ubuntu-24.04-arm }
    check:
       name: Check
       if: always()
-      needs: [checks, app-checks]
+      needs: [changes, checks, app-checks, win-x64, mac-x64, mac-arm64, linux-x64, linux-arm64]
       runs-on: ubuntu-latest
+      timeout-minutes: 5
       steps:
          - uses: actions/github-script@v9
            env:
               RESULTS: ${{ toJSON(needs) }}
            with:
               script: |
-                 for (const [name, job] of Object.entries(JSON.parse(process.env.RESULTS))) {
-                   if (job.result !== 'success') throw new Error(`${name}: ${job.result}`);
-                 }
+                 // The one required check. Every job must succeed, or be skipped because
+                 // change detection found nothing for it to verify. Cancelled never passes.
+                 const jobs = JSON.parse(process.env.RESULTS);
+                 const release = jobs.changes.outputs?.release === 'true';
+                 const optional = new Set(['win-x64', 'mac-x64', 'mac-arm64', 'linux-x64', 'linux-arm64']);
+                 const failed = Object.entries(jobs).filter(([name, job]) =>
+                   !(job.result === 'success' || (job.result === 'skipped' && optional.has(name) && jobs.changes.result === 'success' && !release))
+                 );
+                 for (const [name, job] of Object.entries(jobs)) core.info(`${name}: ${job.result}`);
+                 if (failed.length) throw new Error(failed.map(([name, job]) => `${name}: ${job.result}`).join(', '));
