@@ -374,7 +374,9 @@ async function start(): Promise<void> {
          confirmedClose = true;
          quittingForUpdate = true;
          handedOver = true;
-         window.hide();
+         // The editor state is saved. Closing ends the renderer, so teardown has no live page
+         // starting new preview or waveform work; window-all-closed leaves the quit to us.
+         window.close();
          await teardown(5_000);
          await writeInstallRecord(userData, { fromVersion: app.getVersion(), targetVersion: target.version });
          updateLog.info(`Handing over to the installer ${Date.now() - clicked}ms after Restart to update`);

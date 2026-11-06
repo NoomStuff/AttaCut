@@ -89,7 +89,7 @@ jobs:
            uses: actions/upload-artifact@v7
            with:
               name: update-e2e-${{ inputs.target }}
-              path: test-results/update-e2e/
+              path: work/update-e2e/
               if-no-files-found: ignore
               retention-days: 14
               overwrite: true
