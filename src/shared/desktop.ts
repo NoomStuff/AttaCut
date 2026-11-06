@@ -18,6 +18,8 @@ export interface AvailableUpdate {
    name: string;
    url: string;
    mode: "automatic" | "download" | "releases";
+   /** A previous restart did not install this version; the app offers the manual route. */
+   notApplied?: boolean;
 }
 export interface UpdateStatus {
    /** "installing" follows an explicit restart: it can wait for an export, then hands over to the installer. */
