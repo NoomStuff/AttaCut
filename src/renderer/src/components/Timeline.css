@@ -15,9 +15,9 @@
    clip list from competing with video playback for hundreds of canvas textures. */
 .clip-waveform {
    position: absolute;
-   bottom: 5px;
+   bottom: 2px;
    left: 0;
-   height: 28px;
+   height: 34px;
    z-index: 1;
    pointer-events: none;
 }
