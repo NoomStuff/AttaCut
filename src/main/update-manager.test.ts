@@ -138,14 +138,27 @@ it.skipIf(process.platform !== "win32").each(["headers", "release body", "downlo
            });
    if (stage === "headers") vi.mocked(net.fetch).mockImplementationOnce(() => new Promise(() => {}));
    else vi.mocked(net.fetch).mockResolvedValueOnce(response);
-   vi.mocked(net.fetch).mockResolvedValueOnce(new Response(new ReadableStream()));
+   // A zero high-water mark pulls only when the download reads, so the test knows the
+   // body watchdog is armed. The read never resolves: that is the stall.
+   let reading = false;
+   const stalledBody = new ReadableStream(
+      {
+         pull: () => {
+            reading = true;
+            return new Promise<void>(() => {});
+         },
+      },
+      { highWaterMark: 0 }
+   );
+   vi.mocked(net.fetch).mockResolvedValueOnce(new Response(stalledBody));
    const { manager: updates } = manager();
    await updates.offer(release);
    vi.useFakeTimers();
    const pending = updates.downloadPortable(release.version);
    const rejected = expect(pending).rejects.toThrow("stalled");
-   // File creation uses real I/O before the body watchdog starts.
-   if (stage === "download body") await vi.waitFor(() => expect(net.fetch).toHaveBeenCalledTimes(2));
+   // File creation uses real I/O before the body watchdog starts, and a slow disk can finish
+   // it after the clock jump below. Wait for the first body read, which arms the watchdog.
+   if (stage === "download body") await vi.waitFor(() => expect(reading).toBe(true), { timeout: 4000 });
    await vi.advanceTimersByTimeAsync(31_000);
    await rejected;
    expect(vi.mocked(net.fetch).mock.calls[0]![1]!.signal!.aborted).toBe(true);
