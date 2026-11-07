@@ -14,8 +14,8 @@ test("frame export waits for a pending end seek and saves the last included fram
    await end.fill("5");
    await end.press("Tab");
    await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.waiting("frame-resolution"))).toBe(true);
-   await page.getByRole("button", { name: "Export frame", exact: true }).click();
-   const save = page.getByRole("button", { name: "Export frame", exact: true });
+   await page.locator('.toolbar [data-command="frame"]').click();
+   const save = page.getByRole("dialog").getByRole("button", { name: "Export frame", exact: true });
    await expect(save).toBeDisabled();
    await expect(page.locator(".frame-thumbnail")).toBeHidden();
    await app.evaluate(() => globalThis.attacutTestIpc.release("frame-resolution"));
@@ -87,13 +87,13 @@ test("export workflow", async ({ launchApp, profile }) => {
          if (!video.seeking && video.readyState >= 2 && video.currentTime === time) return time;
       }
    });
-   await page.getByRole("button", { name: "Export frame", exact: true }).click();
+   await page.locator('.toolbar [data-command="frame"]').click();
    await page.getByRole("dialog", { name: "Export frame", exact: true }).waitFor();
    await expect(page.locator(".frame-thumbnail")).toBeVisible();
    expect(await page.getByRole("button", { name: "Close panel" }).evaluate((button) => button === document.activeElement)).toBe(false);
    await page.getByRole("textbox", { name: "Save frame to", exact: true }).fill(output);
    await page.getByRole("textbox", { name: "Frame filename", exact: true }).fill("test-frame");
-   await page.getByRole("button", { name: "Export frame", exact: true }).click();
+   await page.getByRole("dialog").getByRole("button", { name: "Export frame", exact: true }).click();
    await expect(page.getByRole("dialog", { name: "Export frame", exact: true })).toHaveCount(0);
    expect(await readdir(output)).toContain("test-frame.png");
    await expectFrameMatches(resolve("work/fixture.mp4"), frameTime, join(output, "test-frame.png"));
