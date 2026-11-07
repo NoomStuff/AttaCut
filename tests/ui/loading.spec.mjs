@@ -20,8 +20,8 @@ test("opening frame export cancels pending playback while a preview is preparing
    await page.keyboard.press("Escape");
    await waitForNativeFullscreen(app, false);
    await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
-   await page.getByRole("button", { name: "Export current frame", exact: true }).click();
-   await expect(page.getByRole("dialog", { name: "Export current frame", exact: true })).toBeVisible();
+   await page.getByRole("button", { name: "Export frame", exact: true }).click();
+   await expect(page.getByRole("dialog", { name: "Export frame", exact: true })).toBeVisible();
    await app.evaluate(() => globalThis.attacutTestIpc.release("preview"));
    await expect(page.locator("video")).toHaveAttribute("src", /prepared=1/);
    await waitForVideo(page);

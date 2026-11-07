@@ -368,8 +368,23 @@
       padding-right: 14px;
    }
 }
-.dropdown button > span {
+.dropdown button > .menu-label {
    flex-shrink: 0;
+   display: flex;
+   align-items: center;
+   gap: 10px;
+}
+/* Menu icons sit in a fixed column so labels align, and stay still: menus are for reading. */
+.dropdown .menu-icon {
+   width: 14px;
+   flex-shrink: 0;
+   display: flex;
+   justify-content: center;
+   font-size: 12px;
+   color: var(--muted);
+}
+.dropdown button:disabled .menu-icon {
+   color: var(--faint);
 }
 .dropdown button > kbd {
    max-width: 180px;
@@ -380,9 +395,18 @@
 .dropdown-submenu {
    position: relative;
 }
-.dropdown-submenu > button > svg {
+/* The chevron springs right while its flyout is open and springs back when it closes; the
+   overshooting curve gives the bounce both ways. */
+.dropdown-submenu .submenu-chevron {
    font-size: 10px;
    color: var(--faint);
+   transition:
+      transform 300ms cubic-bezier(0.34, 2.2, 0.5, 1),
+      color 150ms ease-out;
+}
+.dropdown-submenu > button[aria-expanded="true"] .submenu-chevron {
+   transform: translateX(3px);
+   color: var(--muted);
 }
 .dropdown-submenu > button[aria-expanded="true"] {
    background: var(--surface-hover);
@@ -395,8 +419,11 @@
    max-width: 380px;
    transform-origin: left 12px;
 }
-.dropdown-flyout button > .recent-menu-name {
+.dropdown-flyout button > .menu-label {
    flex-shrink: 1;
+   min-width: 0;
+}
+.dropdown-flyout .recent-menu-name {
    min-width: 0;
    overflow: hidden;
    text-overflow: ellipsis;
