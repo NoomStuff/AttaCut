@@ -28,7 +28,7 @@ export function LoadingEditor({ label }: { label?: string }) {
          <div className="editor-dock loading-editor-dock" aria-hidden="true">
             <div className="loading-editor-timeline">
                <div className="loading-editor-ruler">
-                  <span>00:00</span>
+                  <span>0:00</span>
                   <span>--:--</span>
                </div>
                <div className="loading-editor-track skeleton" />

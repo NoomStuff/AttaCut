@@ -8,7 +8,8 @@ export function formatTime(seconds: number, precision = 2): string {
    const hours = Math.floor(ticks / (3600 * factor));
    const minutes = Math.floor(ticks / (60 * factor)) % 60;
    const secs = (ticks % (60 * factor)) / factor;
-   return `${hours ? `${hours}:` : ""}${String(minutes).padStart(2, "0")}:${secs.toFixed(precision).padStart(precision ? 3 + precision : 2, "0")}`;
+   // Hours pad the minutes; under an hour the leading zero is noise.
+   return `${hours ? `${hours}:` : ""}${hours ? String(minutes).padStart(2, "0") : minutes}:${secs.toFixed(precision).padStart(precision ? 3 + precision : 2, "0")}`;
 }
 export function parseTime(text: string): number | null {
    const parts = text.trim().split(":");

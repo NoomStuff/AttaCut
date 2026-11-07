@@ -31,7 +31,7 @@ test("edit, export and restore the selected ranges", async ({ launchApp, profile
    await expect.poll(async () => Number(await second.getAttribute("aria-valuenow"))).toBeCloseTo(10.2, 6);
    await start.fill("00:12.00");
    await start.press("Escape");
-   await expect(start).toHaveValue("00:10.20");
+   await expect(start).toHaveValue("0:10.20");
    await expect.poll(async () => Number(await second.getAttribute("aria-valuenow"))).toBeCloseTo(10.2, 6);
    const box = await second.boundingBox();
    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

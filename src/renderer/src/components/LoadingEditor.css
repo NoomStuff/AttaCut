@@ -2,7 +2,7 @@
    width: 100%;
 }
 .loading-editor-timeline {
-   height: 68px;
+   height: 79px;
    padding: 10px 8px 0;
 }
 .loading-editor-ruler {
@@ -13,7 +13,7 @@
    font-variant-numeric: tabular-nums;
 }
 .loading-editor-track {
-   height: 27px;
+   height: 38px;
    margin-top: 9px;
    border-radius: 4px;
 }

@@ -428,6 +428,10 @@ export function Timeline({
    const minorStep = rulerStep / 2;
    const minorSpacing = minorStep * pxPerSecond;
    const minorOpacity = clamp((minorSpacing - 50) / 50, 0, 1);
+   // Minor ticks stay unlabeled so the ruler reads as one row of times. Steps double, so a
+   // minor tick turns major when its spacing reaches 100px: its label fades in over the last
+   // stretch before that and arrives fully shown, without a pop at the switch.
+   const minorLabelOpacity = clamp((minorSpacing - 70) / 30, 0, 1);
    // Labels yield to the centered time chip by fading out across its edge instead of
    // vanishing, so panning never pops a label in or out mid-view.
    const chipHalf = chipWidth / 2;
@@ -479,12 +483,12 @@ export function Timeline({
                   className={`ruler-tick minor${tickAlign(point)}`}
                   style={{ left: `${Math.round((point - drawn.start) * pxPerSecond)}px`, opacity: minorOpacity }}
                >
-                  <em style={{ opacity: labelFade(point) }}>{formatTime(point, minorStep < 1 ? 2 : 0)}</em>
+                  {minorLabelOpacity > 0 && <em style={{ opacity: labelFade(point) * minorLabelOpacity }}>{formatTime(point, minorStep < 1 ? 2 : 0)}</em>}
                </span>
             ))}
          </div>
       );
-   }, [pxPerSecond, rulerStep, minorStep, minorOpacity, drawn.start, drawn.length, chipHalf, leftStop, rightStop]);
+   }, [pxPerSecond, rulerStep, minorStep, minorOpacity, minorLabelOpacity, drawn.start, drawn.length, chipHalf, leftStop, rightStop]);
    const track = useMemo(
       () => (
          <div className="timeline-track">
@@ -868,7 +872,7 @@ function TimelineWaveform({
    const px = (width * ratio) / (to - from);
    const view = {
       width: Math.round(width * ratio),
-      height: Math.round(23 * ratio),
+      height: Math.round(28 * ratio),
       reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       bands: clips.flatMap((clip) => {
          const start = Math.max(from, dragging?.id === clip.id && dragging.side === "start" ? drawEdge : clip.start);

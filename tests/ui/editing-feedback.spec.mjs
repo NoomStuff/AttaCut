@@ -51,12 +51,12 @@ test("invalid times restore the accepted cut and picker keys do not seek or edit
    const start = page.getByRole("textbox", { name: "Clip start", exact: true });
    await start.fill("4.25");
    await start.press("Enter");
-   await expect(start).toHaveValue("00:04.23");
+   await expect(start).toHaveValue("0:04.23");
    await expect(page.locator(".time-feedback")).toHaveCount(0);
    const accepted = await page.getByRole("slider", { name: "Clip 1 start", exact: true }).getAttribute("aria-valuenow");
    await start.fill("abc");
    await start.press("Enter");
-   await expect(start).toHaveValue("00:04.23");
+   await expect(start).toHaveValue("0:04.23");
    await expect(page.getByRole("status").filter({ hasText: "Start unchanged" })).toBeVisible();
    await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", accepted);
    const time = await page.locator(".timeline-time time").first().textContent();

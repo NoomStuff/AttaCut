@@ -13,13 +13,13 @@ test("time fields keep readable precision and align to source frames without ano
    const handle = page.getByRole("slider", { name: "Clip 1 start", exact: true });
    await expect.poll(async () => Number(await handle.getAttribute("aria-valuenow"))).toBeCloseTo(1.233333333, 5);
    await expect(page.locator(".time-feedback")).toHaveCount(0);
-   await expect(page.locator(".timeline-time time").first()).toHaveText("00:01.23");
+   await expect(page.locator(".timeline-time time").first()).toHaveText("0:01.23");
    const before = await handle.getAttribute("aria-valuenow");
    await expect(page.locator(".player-excluded")).toHaveClass(/hidden/);
    await expect(page.getByRole("button", { name: "Add clip in gap", exact: true })).toBeEnabled();
    await field.click();
-   await expect(field).toHaveValue("00:01.23");
-   await expect(field).toHaveAttribute("title", "00:01.233333");
+   await expect(field).toHaveValue("0:01.23");
+   await expect(field).toHaveAttribute("title", "0:01.233333");
    await field.press("Tab");
    expect(await handle.getAttribute("aria-valuenow")).toBe(before);
    await page.locator(".title-filename").click();
@@ -359,8 +359,8 @@ test("frame-level zoom quantizes the playhead to source frames", async ({ launch
    // The drawn view chases the zoom target; let it settle so the pick maps predictably.
    await page.waitForTimeout(400);
    await page.mouse.click(bar.x + bar.width * 0.41, bar.y + 36);
-   // 41% of the 1.2s view lands near 0.492s, which rounds to frame 15 at 00:00.50.
-   await expect(page.locator(".timeline-time time").first()).toHaveText("00:00.50");
+   // 41% of the 1.2s view lands near 0.492s, which rounds to frame 15 at 0:00.50.
+   await expect(page.locator(".timeline-time time").first()).toHaveText("0:00.50");
 });
 
 test("excluded-end feedback and default edit pause", async ({ launchApp, profile }) => {
@@ -387,7 +387,7 @@ test("excluded-end feedback and default edit pause", async ({ launchApp, profile
    await expect(page.locator(".player-excluded")).toHaveClass(/hidden/);
    await end.fill("00:17.00");
    await end.press("Tab");
-   await expect(end).toHaveValue("00:17.00");
+   await expect(end).toHaveValue("0:17.00");
    await expect(page.getByRole("slider", { name: "Clip 2 end", exact: true })).toHaveAttribute("aria-valuenow", "17");
    // The moving handle crosses 17.5 during the trim animation and would intercept this click.
    await expect(page.locator(".editor-dock")).not.toHaveClass(/trim-animating/);

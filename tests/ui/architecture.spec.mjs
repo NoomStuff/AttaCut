@@ -268,7 +268,7 @@ test("handle drafts update the transport without rendering the root and Escape r
    await page.mouse.move(handle.x + handle.width / 2, y);
    await page.mouse.down();
    await page.mouse.move(viewport.x + viewport.width / 18, y);
-   await expect(start).toHaveValue("00:01.00");
+   await expect(start).toHaveValue("0:01.00");
    await page.evaluate(() => {
       globalThis.dragRootRenders = 0;
       const observer = new globalThis.PerformanceObserver((list) => {
@@ -277,14 +277,14 @@ test("handle drafts update the transport without rendering the root and Escape r
       observer.observe({ type: "mark" });
    });
    await page.mouse.move(viewport.x + (viewport.width * 3) / 18, y, { steps: 20 });
-   await expect(start).toHaveValue("00:03.00");
+   await expect(start).toHaveValue("0:03.00");
    const renders = await page.evaluate(() => globalThis.dragRootRenders);
    expect(renders).toBeLessThanOrEqual(2);
    console.log(`Editor commits during handle drag: ${renders}`);
    await page.keyboard.press("Escape");
    await page.mouse.up();
    await expect(slider).toHaveAttribute("aria-valuenow", "0");
-   await expect(start).toHaveValue("00:00.00");
+   await expect(start).toHaveValue("0:00.00");
 });
 
 test("the clip limit explains rejected edits and allows editing again after a deletion", async ({ launchApp, profile }) => {
