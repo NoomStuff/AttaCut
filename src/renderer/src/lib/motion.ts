@@ -205,3 +205,53 @@ export function usePressFeedback(): void {
       };
    }, []);
 }
+
+const iconHover = "icon-hover";
+
+/**
+ * Hover icon animations always play to completion. Hovering a button marks it, and the mark
+ * outlasts the pointer until the icon's one-shot animation has finished, so leaving early never
+ * snaps the icon back mid-move. While the mark stays, re-entering does not restart the
+ * animation. Menu items are excluded: their icons stay still.
+ */
+export function useIconHover(): void {
+   useEffect(() => {
+      const buttonOf = (target: EventTarget | null): HTMLButtonElement | null => (target instanceof Element ? target.closest("button") : null);
+      const remaining = (button: HTMLButtonElement): number =>
+         Math.max(
+            0,
+            ...button
+               .getAnimations({ subtree: true })
+               .filter((animation) => animation instanceof CSSAnimation && animation.animationName.startsWith("icon-") && animation.playState === "running")
+               .map((animation) => {
+                  const timing = animation.effect?.getComputedTiming();
+                  return Number(timing?.endTime ?? 0) - Number(timing?.localTime ?? 0);
+               })
+         );
+      const release = (button: HTMLButtonElement) => {
+         if (!button.matches(":hover")) button.classList.remove(iconHover);
+      };
+      const over = (event: PointerEvent) => {
+         const button = buttonOf(event.target);
+         if (!button || button.getAttribute("role") === "menuitem") return;
+         button.classList.add(iconHover);
+      };
+      const out = (event: PointerEvent) => {
+         const button = buttonOf(event.target);
+         if (!button?.classList.contains(iconHover)) return;
+         if (event.relatedTarget instanceof Node && button.contains(event.relatedTarget)) return;
+         const left = remaining(button);
+         if (left <= 0) button.classList.remove(iconHover);
+         // A timer rather than animationend: an icon swapped or unmounted mid-animation never
+         // reports its end, and a stale mark would animate the next icon unprompted.
+         else window.setTimeout(() => release(button), left + 20);
+      };
+      document.addEventListener("pointerover", over, true);
+      document.addEventListener("pointerout", out, true);
+      return () => {
+         document.removeEventListener("pointerover", over, true);
+         document.removeEventListener("pointerout", out, true);
+         document.querySelectorAll(`.${iconHover}`).forEach((button) => button.classList.remove(iconHover));
+      };
+   }, []);
+}

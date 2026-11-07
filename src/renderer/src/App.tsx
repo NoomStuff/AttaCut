@@ -27,7 +27,7 @@ import { useWaveform } from "./lib/waveform";
 import { useTemporarySnapping } from "./lib/temporarySnapping";
 import { useFullscreen } from "./lib/fullscreen";
 import { useUpdates } from "./lib/updates";
-import { usePressFeedback } from "./lib/motion";
+import { useIconHover, usePressFeedback } from "./lib/motion";
 import { useRecentFiles } from "./lib/recent";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFolderOpen } from "@fortawesome/free-solid-svg-icons";
@@ -51,6 +51,7 @@ export default function App() {
       performance.clearMarks("attacut:editor-commit");
    });
    usePressFeedback();
+   useIconHover();
    const [exportDraft, setExportDraft] = useState<ExportDraft | null>(null);
    const [panel, setPanel] = useState<EditorPanel>(null);
    const [helpTab, setHelpTab] = useState<HelpTab>("intro");

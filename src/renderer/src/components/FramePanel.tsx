@@ -97,7 +97,7 @@ export function FramePanel({
    };
    return (
       <Modal
-         title="Export current frame"
+         title="Export frame"
          closeDisabled={busy}
          description={capturedTime === null ? "Loading frame..." : formatTime(capturedTime)}
          onClose={() => {

@@ -21,7 +21,7 @@ export function installMenu(window: BrowserWindow, recent: RecentFile[], onClear
             { label: "Open recent", submenu: recentMenu },
             { type: "separator" },
             item("Export…", "export"),
-            item("Export current frame…", "frame"),
+            item("Export frame…", "frame"),
             { type: "separator" },
             item("Save project", "saveProject"),
             item("Save project as…", "saveProjectAs"),

@@ -22,7 +22,7 @@ export function TopActions({ commands, clock }: { commands: Commands; clock: Pla
          <IconButton icon={faRotateLeft} label="Undo" command="undo" />
          <IconButton icon={faRotateRight} label="Redo" command="redo" />
          <span className="control-divider" />
-         <IconButton command="frame" icon={faCamera} label="Export current frame" />
+         <IconButton command="frame" icon={faCamera} label="Export frame" />
          <Button variant="primary" icon={faArrowUpFromBracket} command="export" shortcut="">
             Export
          </Button>
