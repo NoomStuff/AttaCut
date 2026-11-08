@@ -20,6 +20,8 @@ interface Fixture {
    silent?: boolean;
    /** Rewrite the finished file with an attached cover picture stream. */
    cover?: boolean;
+   /** Muxer name when the extension alone does not choose it. */
+   format?: string;
 }
 const fixtures: Fixture[] = [
    { name: "h264", extension: ".mp4", video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0", "-crf", "18"] },
@@ -233,6 +235,21 @@ const fixtures: Fixture[] = [
       video: ["-c:v", "mpeg2video", "-flags", "+ilme+ildct", "-g", "12", "-bf", "2", "-q:v", "3"],
       audio: ["-c:a", "mp2"],
    },
+   {
+      name: "quicktime",
+      extension: ".qt",
+      format: "mov",
+      video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0", "-crf", "18"],
+      audio: ["-c:a", "pcm_s16le"],
+   },
+   {
+      name: "vp9-ivf",
+      extension: ".ivf",
+      silent: true,
+      video: ["-c:v", "libvpx-vp9", "-g", "48", "-crf", "30", "-b:v", "0", "-deadline", "realtime", "-cpu-used", "8"],
+   },
+   { name: "nut", extension: ".nut", video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0", "-crf", "18"], audio: ["-c:a", "flac"] },
+   { name: "transport-tp", extension: ".tp", format: "mpegts", video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0"], audio: ["-c:a", "mp2"] },
    { name: "cover", extension: ".mp4", video: ["-c:v", "libx264", "-g", "48", "-sc_threshold", "0", "-crf", "18"], cover: true },
 ];
 const selected = process.env["ATTACUT_FORMATS"]?.split(",");
@@ -307,6 +324,7 @@ for (const fixture of fixtures.filter((item) => !selected || selected.includes(i
             ...(fixture.filter ? ["-vf", fixture.filter] : []),
             ...fixture.video,
             ...(fixture.audio ?? ["-c:a", "aac"]),
+            ...(fixture.format ? ["-f", fixture.format] : []),
             path,
          ]);
          if (fixture.cover) {

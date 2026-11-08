@@ -41,6 +41,12 @@ export const videoExtensions = [
    "h265",
    "265",
    "hevc",
+   // QuickTime's older extension, transport stream recorder variants, raw VP8/VP9/AV1 and NUT.
+   "qt",
+   "tp",
+   "trp",
+   "ivf",
+   "nut",
 ];
 const intraCodecs = new Set([
    "prores",

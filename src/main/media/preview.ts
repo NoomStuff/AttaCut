@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, rename, rm, stat, readFile, writeFile, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProbedSource } from "./probe.ts";
+import type { MediaStream } from "../../shared/types.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
 import type { RunOptions } from "./process.ts";
 import { probeSource } from "./probe.ts";
@@ -25,6 +26,16 @@ function previewToolVersion(): Promise<string> {
    return toolVersion;
 }
 
+/** Viewing-only video conversion shared by preview files and streams: HDR is tone mapped and
+    interlaced pictures are deinterlaced. The source and every export stay untouched. */
+export function previewVideoFilter(video: MediaStream, width: number): string {
+   const primaries = ["", "unknown", "unspecified"].includes(video.colorPrimaries) ? "bt2020" : video.colorPrimaries;
+   const space = ["", "unknown", "unspecified"].includes(video.colorSpace) ? "bt2020nc" : video.colorSpace;
+   const toneMap = isHdrTransfer(video.colorTransfer) ? `${tonemapToBt709("yuv420p", `zscale=pin=${primaries}:tin=${video.colorTransfer}:min=${space}`)},` : "";
+   const deinterlace = video.fieldOrder && !["unknown", "progressive"].includes(video.fieldOrder) ? "yadif=2:-1:0," : "";
+   return `${toneMap}${deinterlace}scale=w='trunc(min(${width},iw)/2)*2':h=-2`;
+}
+
 export function leasePreview(path: string): void {
    leases.add(path);
 }
@@ -40,7 +51,7 @@ export function releasePreview(path: string): void {
  */
 function previewId(source: ProbedSource, audioKey: string, transcode: boolean, tool: string): string {
    return createHash("sha256")
-      .update(JSON.stringify([4, pathKey(source.path), source.size, source.modified, source.fileIdentity, audioKey, transcode, tool]))
+      .update(JSON.stringify([5, pathKey(source.path), source.size, source.modified, source.fileIdentity, audioKey, transcode, tool]))
       .digest("hex");
 }
 
@@ -126,25 +137,20 @@ async function preparePreviewFile(
    const partial = join(temporary, "preview.mp4");
    const video = primaryVideo(source)!;
    const hdr = isHdrTransfer(video.colorTransfer);
-   const primaries = ["", "unknown", "unspecified"].includes(video.colorPrimaries) ? "bt2020" : video.colorPrimaries;
-   const space = ["", "unknown", "unspecified"].includes(video.colorSpace) ? "bt2020nc" : video.colorSpace;
-   const toneMap = hdr ? `${tonemapToBt709("yuv420p", `zscale=pin=${primaries}:tin=${video.colorTransfer}:min=${space}`)},` : "";
-   // Interlaced previews are deinterlaced for viewing only; the source and every export stay untouched.
-   const deinterlace = video.fieldOrder && !["unknown", "progressive"].includes(video.fieldOrder) ? "yadif=2:-1:0," : "";
    const long = source.duration > longRecordingSeconds;
    const selectedAudio = source.streams.filter((stream) => audioIndices.includes(stream.index));
    const audioRate = Math.max(48000, ...selectedAudio.map((stream) => stream.sampleRate ?? 0));
    const audioLayout = [...selectedAudio].sort((a, b) => (b.channels ?? 0) - (a.channels ?? 0))[0]?.channelLayout;
-   const audioBitrate = audioIndices.length
-      ? Math.max(128000, ...source.streams.filter((stream) => audioIndices.includes(stream.index)).map((stream) => (stream.channels || 2) * 64000))
-      : 0;
+   // Preview audio is FLAC: it encodes several times faster than AAC and has no encoder
+   // delay. Budget its lossless bitrate generously so the video share stays safe.
+   const audioBitrate = audioIndices.length ? Math.max(1_200_000, ...selectedAudio.map((stream) => (stream.channels || 2) * 600_000)) : 0;
    // Reserve container overhead and encoder bursts. CRF remains the quality target;
    // VBV prevents a long recording from exhausting the budget at the end of encoding.
    const videoBitrate = Math.floor(Math.min(8_000_000, (available * 8 * 0.85) / source.duration - audioBitrate));
    const previewWidth = videoBitrate < 500000 ? 640 : long ? 960 : 1280;
    const encode = [
       "-vf",
-      `${toneMap}${deinterlace}scale=w='trunc(min(${previewWidth},iw)/2)*2':h=-2`,
+      previewVideoFilter(video, previewWidth),
       "-c:v",
       "libx264",
       "-preset",
@@ -182,7 +188,7 @@ async function preparePreviewFile(
                     source.duration
                  )),
             ...(convertVideo ? encode : ["-c:v", "copy"]),
-            ...(audioIndices.length ? ["-c:a", "aac", "-b:a", String(audioBitrate)] : []),
+            ...(audioIndices.length ? ["-c:a", "flac", "-compression_level", "0"] : []),
             "-movflags",
             "+faststart",
             "-fs",

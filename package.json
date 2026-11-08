@@ -1,7 +1,7 @@
 {
    "name": "attacut",
    "desktopName": "attacut.desktop",
-   "version": "0.33.0",
+   "version": "0.34.0",
    "description": "Cut your clips, move on.",
    "license": "MIT",
    "private": false,
@@ -107,7 +107,12 @@
                "264",
                "h265",
                "265",
-               "hevc"
+               "hevc",
+               "qt",
+               "tp",
+               "trp",
+               "ivf",
+               "nut"
             ],
             "name": "AttaCut.Video",
             "description": "Video",

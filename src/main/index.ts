@@ -8,7 +8,7 @@ import { SourceProbe } from "./source-probe";
 import { pruneWaveforms } from "./media/waveform-cache";
 import { ExportService } from "./exports.ts";
 import { Storage } from "./storage.ts";
-import { serveMedia } from "./media/serve.ts";
+import { serveMedia, streamResponse } from "./media/serve.ts";
 import { isProjectPath } from "../shared/project";
 import { prunePreviews } from "./media/preview.ts";
 import { IpcEvents } from "../shared/ipc.ts";
@@ -65,7 +65,7 @@ if (process.platform === "win32") {
    app.commandLine.appendSwitch("disable_direct_composition_sw_video_overlays", "1");
 }
 protocol.registerSchemesAsPrivileged([
-   { scheme: "media", privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
+   { scheme: "media", privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } },
    { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 async function start(): Promise<void> {
@@ -185,7 +185,9 @@ async function start(): Promise<void> {
    window.on("enter-full-screen", () => notifyFullscreen(true));
    window.on("leave-full-screen", () => notifyFullscreen(false));
    protocol.handle("media", async (request) => {
-      const id = new URL(request.url).pathname.slice(1);
+      const url = new URL(request.url);
+      if (url.host === "stream") return streamResponse(sourceSession, url, request.signal);
+      const id = url.pathname.slice(1);
       const path = sourceSession.mediaPaths.get(id);
       return path ? serveMedia(path, request) : new Response("Not found", { status: 404 });
    });

@@ -13,7 +13,7 @@ import { useDesktopLifecycle } from "../lib/desktopLifecycle";
 import { errorText } from "../lib/errors";
 import { usePlayback } from "../playback/usePlayback";
 import { resolveAudioSelection } from "../playback/audioSelection";
-import { nativeAudioCodecs } from "../playback/codecs";
+import { nativeAudioCodecs, needsConvertedVideo } from "../playback/codecs";
 
 export type EditorNotice = { text: string; tone: "error" | "warning" | "info" };
 
@@ -156,6 +156,10 @@ export function useEditorSession({
             return window.desktop.frameTime(media.id, time, direction ?? (ending && !starting ? -1 : 0));
          });
          playback.source(media);
+         // A source Chromium cannot open never gets a native attempt: some stall instead of
+         // failing, and a late error would race the converted preview started below.
+         const converted = needsConvertedVideo(media);
+         if (converted) playback.suspend();
          onDocumentReset();
          clock.set(0);
          setPlaying(false);
@@ -169,7 +173,8 @@ export function useEditorSession({
          // Such recordings get their waveform from the prepared preview (compact and
          // indexed) rather than a slow walk over the huge source; the preparation holds
          // the waveform until it lands.
-         if (needsAudioPreview) void preparePreview(media, selectedAudio);
+         if (converted) void preparePreview(media, selectedAudio, true);
+         else if (needsAudioPreview) void preparePreview(media, selectedAudio);
          dispatch({
             type: "load",
             document: validSaved ? { clips: validSaved.clips, selectedId: validSaved.selectedId } : newDocument(media.duration),

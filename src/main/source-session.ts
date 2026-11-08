@@ -5,6 +5,7 @@ import { SourceProbe } from "./source-probe";
 import { frameTimesAround } from "./media/frame-times";
 import type { ProbedSource } from "./media/probe.ts";
 import { preparePreview, leasePreview, releasePreview } from "./media/preview.ts";
+import { streamPreview } from "./media/stream.ts";
 import { extractScrubPcm, scrubChunkSeconds } from "./media/scrub-audio.ts";
 import { extractWaveform } from "./media/waveform.ts";
 import type { WaveformChunk, WaveformResult, WaveformRange } from "./media/waveform-decode.ts";
@@ -141,6 +142,14 @@ export class SourceSession {
          releasePreview(old);
       }
       return `media://source/${result.id}`;
+   }
+   /** A playable stream from `from` onward. It ends with the request or the source. */
+   stream(id: string, tracks: number[], from: number, request: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+      const source = this.get(id);
+      if (!Number.isFinite(from) || from < 0 || from > source.duration) throw new Error("Choose a time inside the video.");
+      if (tracks.some((track) => !source.streams.some((stream) => stream.type === "audio" && stream.index === track)))
+         throw new Error("Audio track not found.");
+      return streamPreview(source, tracks, from, AbortSignal.any([request, this.signal]));
    }
    cancelScrub(): void {
       this.scrub.abort();

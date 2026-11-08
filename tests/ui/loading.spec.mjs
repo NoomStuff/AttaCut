@@ -37,8 +37,12 @@ test("opening shows a skeleton, then permits editing while preview loads", async
    // Hold the real probe result so the transient opening state can be inspected reliably.
    await configureIpc(app, "source:open", { after: "opening", patch: { url: "media://source/delayed-preview" } });
    await configureIpc(app, "preview:prepare", { before: "preview" });
-   // Hold playback rather than simulating a successful decoded frame.
+   // Hold playback rather than simulating a successful decoded frame. The held preview
+   // preparation keeps the load pending, so streamed previews are turned off for this page.
    await page.route("media://source/delayed-preview", () => {});
+   await page.evaluate(() => {
+      globalThis.MediaSource.isTypeSupported = () => false;
+   });
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
    await expect(page.getByRole("status", { name: "Opening video", exact: true })).toBeVisible();
    await expect(page.locator(".loading-editor-transport .play-button")).toBeVisible();

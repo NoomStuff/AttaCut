@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { statOrNull } from "../files";
 import { extname } from "node:path";
 import { Readable } from "node:stream";
+import type { SourceSession } from "../source-session.ts";
 
 /** Video seeking needs explicit byte ranges; a plain file fetch can expose an empty seekable range. */
 export async function serveMedia(path: string, request: Request): Promise<Response> {
@@ -44,4 +45,18 @@ export async function serveMedia(path: string, request: Request): Promise<Respon
    stream.once("close", () => request.signal.removeEventListener("abort", abort));
    if (request.signal.aborted) abort();
    return new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>, { status: range ? 206 : 200, headers });
+}
+
+/** `media://stream/<source id>?from=<seconds>&tracks=<indices>`, fetched by the renderer's MediaSource feeder. */
+export async function streamResponse(session: Pick<SourceSession, "stream">, url: URL, signal: AbortSignal): Promise<Response> {
+   const headers = { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" };
+   const tracks = (url.searchParams.get("tracks") ?? "").split(",").filter(Boolean).map(Number);
+   const from = Number(url.searchParams.get("from") ?? 0);
+   if (tracks.some((track) => !Number.isSafeInteger(track) || track < 0)) return new Response("Invalid tracks", { status: 400, headers });
+   try {
+      const body = await session.stream(decodeURIComponent(url.pathname.slice(1)), tracks, from, signal);
+      return new Response(body, { status: 200, headers: { ...headers, "Content-Type": "video/mp4" } });
+   } catch (error) {
+      return new Response(error instanceof Error ? error.message : String(error), { status: signal.aborted ? 499 : 500, headers });
+   }
 }

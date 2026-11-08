@@ -302,6 +302,7 @@ export default function App() {
                            const requested = playback.get().intent !== "paused";
                            if (requested) playback.request(true);
                            if (playback.get().transcode) {
+                              if (session.player.abandonStream(source, audioIndices)) return;
                               playback.fail();
                               showError("This video could not be played, but it can still be exported.");
                               return;

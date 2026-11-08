@@ -11,6 +11,7 @@ import { PlaybackController } from "./controller";
 import { PlaybackClock } from "./clock";
 import { errorText, isCancellation } from "../lib/errors";
 import { afterIdle } from "../lib/prefetch";
+import { PreviewStream, streamingSupported } from "./stream";
 
 export function usePlayback({
    source,
@@ -93,19 +94,66 @@ export function usePlayback({
          scrubber.dispose();
       };
    }, [scrubber]);
+   // A converted preview streams by default: only the watched region is decoded and the
+   // first frame shows without waiting for a whole-file conversion. A source whose stream
+   // fails falls back to a prepared preview file.
+   const stream = useRef<PreviewStream | null>(null);
+   const streamFailures = useRef(new Set<string>());
+   // Retire a stream once the player moves away from it. A stream created during this
+   // render has not been shown yet and must survive the url it is replacing.
+   const shownUrl = useRef("");
+   useEffect(() => {
+      const previous = shownUrl.current;
+      shownUrl.current = url;
+      const current = stream.current;
+      if (current && previous === current.url && url !== current.url) {
+         current.dispose();
+         stream.current = null;
+      }
+   }, [url]);
+   useEffect(
+      () => () => {
+         stream.current?.dispose();
+         stream.current = null;
+      },
+      []
+   );
+   /** Stop streaming this source and switch to a prepared file. False when it was not streaming. */
+   const abandonStream = (target: MediaSource, tracks: number[]): boolean => {
+      if (!stream.current || playback.get().url !== stream.current.url) return false;
+      streamFailures.current.add(target.id);
+      const video = videoRef.current;
+      void preparePreview(target, tracks, true, playback.get().intent !== "paused" || (video ? !video.paused : false));
+      return true;
+   };
    const preparePreview = async (target: MediaSource, tracks: number[], transcode = false, resume = false) => {
       if (tracks.length) audibleSelection.current = { sourceId: target.id, tracks };
       const video = videoRef.current;
       if (resume || (video && !video.paused)) playback.request(false);
       video?.pause();
       setError(null);
+      const streamed = transcode && !streamFailures.current.has(target.id) && streamingSupported();
+      const load = streamed
+         ? async () => {
+              void window.desktop.cancelPreview();
+              // A stream replaced before it was shown never gets a url change to retire it.
+              stream.current?.dispose();
+              const next = new PreviewStream({
+                 sourceId: target.id,
+                 duration: target.duration,
+                 tracks,
+                 video: () => videoRef.current,
+                 start: clock.get(),
+                 onError: () => {
+                    if (stream.current === next) abandonStream(target, tracks);
+                 },
+              });
+              stream.current = next;
+              return next.url;
+           }
+         : () => window.desktop.preparePreview(target.id, tracks, transcode);
       try {
-         await playback.prepare(
-            target.id,
-            transcode,
-            () => window.desktop.preparePreview(target.id, tracks, transcode),
-            () => playback.holdPreviewFrame()
-         );
+         await playback.prepare(target.id, transcode, load, () => playback.holdPreviewFrame());
       } catch (value) {
          const message = errorText(value);
          if (!isCancellation(message)) setError(message);
@@ -157,6 +205,7 @@ export function usePlayback({
       seeker,
       scrubber,
       preparePreview,
+      abandonStream,
       changeAudio,
    };
 }

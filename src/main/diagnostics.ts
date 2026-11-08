@@ -17,7 +17,8 @@ interface DiagnosticEvent {
       | "waveform:priority"
       | "waveform:encode"
       | "waveform:delivery"
-      | "waveform:read-decode";
+      | "waveform:read-decode"
+      | "preview:stream-first";
    stage?: ExportStage;
    elapsedMs: number;
    outcome: "ok" | FailureCode;
