@@ -149,9 +149,13 @@
 }
 .filename-field {
    display: flex;
-   gap: 8px;
-   align-items: center;
+   align-items: stretch;
    margin-top: 7px;
+}
+.export-row-name {
+   display: flex;
+   flex: 1;
+   min-width: 0;
 }
 .export-name-input,
 .export-row-name-input {
@@ -164,19 +168,78 @@
    width: 100%;
    padding-right: 32px;
 }
-.filename-field .filename-extension {
+/* The format reads as the end of the filename: the picker shares the field's right edge. */
+.filename-field .export-name-input input,
+.export-row-name .export-row-name-input input {
+   border-top-right-radius: 0;
+   border-bottom-right-radius: 0;
+}
+.format-picker {
+   display: flex;
+   flex: none;
+   margin-left: -1px;
+}
+.format-picker .select-trigger {
+   min-height: 0;
+   gap: 8px;
+   padding: 0 10px;
+   border-radius: 0 var(--radius-control) var(--radius-control) 0;
    color: var(--muted);
+   font-size: 12px;
+}
+.format-picker .select-trigger:hover:not(:disabled),
+.format-picker .select-trigger[aria-expanded="true"] {
+   position: relative;
+   z-index: 1;
+   color: var(--text);
+}
+/* Equal widths keep the extensions in one column down the list. */
+.export-row-name .format-picker .select-trigger {
+   min-width: 70px;
+}
+.format-picker.static {
+   align-items: center;
+   padding: 0 10px;
+   border: 1px solid var(--field-border);
+   border-radius: 0 var(--radius-control) var(--radius-control) 0;
+   color: var(--muted);
+   font-size: 12px;
+}
+.export-list-heading .format-picker {
+   margin-left: 0;
+}
+/* In the list header the picker sets every clip, so it sits lighter than the per-clip ones. */
+.export-list-heading .format-picker .select-trigger {
+   padding: 3px 8px;
+   border-color: transparent;
+   border-radius: var(--radius-control);
+   background: transparent;
+   font-size: 11px;
+}
+.export-list-heading .format-picker .select-trigger:hover:not(:disabled),
+.export-list-heading .format-picker .select-trigger[aria-expanded="true"] {
+   border-color: transparent;
+   background: var(--surface-hover);
 }
 .export-list {
    margin-top: 23px;
 }
 .export-list-heading {
    display: flex;
-   justify-content: space-between;
+   gap: 10px;
+   align-items: center;
    color: var(--muted);
    font-size: 11px;
-   padding: 0 0 10px;
+   min-height: 32px;
+   padding: 0 0 6px;
    border-bottom: 1px solid var(--line);
+}
+.export-list-heading > span:first-child {
+   flex: 1;
+}
+.export-list-heading > span:last-child {
+   min-width: 65px;
+   text-align: right;
 }
 .export-clip-entry {
    border-bottom: 1px solid var(--line);
@@ -218,10 +281,11 @@
    min-width: 65px;
    text-align: right;
    font-size: 12px;
+   transition: color 160ms ease-out;
 }
-.extension {
-   font-size: 11px;
-   color: var(--muted);
+/* Force lossless widened this clip; the duration is what exports. */
+.export-row time[data-widened="true"] {
+   color: var(--warning);
 }
 .color-dot {
    width: 7px;

@@ -3,7 +3,13 @@ import { clipSchema } from "./editing";
 import { clipLimit } from "./defaults";
 import type { Clip } from "./editing";
 import type { AppFailure } from "./failure";
-export const exportItemSchema = z.object({ clip: clipSchema, name: z.string().min(1).max(255) });
+const containerSchema = z.enum(["auto", ".mp4", ".mov", ".mkv", ".webm"]);
+export const exportItemSchema = z.object({
+   clip: clipSchema,
+   name: z.string().min(1).max(255),
+   /** A separate clip's own format. Omitted follows the request's container. */
+   container: containerSchema.optional(),
+});
 export const planRequestSchema = z.object({
    sourceId: z.string(),
    directory: z.string().min(1),
@@ -12,7 +18,7 @@ export const planRequestSchema = z.object({
    audioTracks: z.array(z.number().int().nonnegative()).max(100).nullable().default(null),
    name: z.string().max(255).default("combined"),
    /** "auto" keeps the source container where it is reliable. */
-   container: z.enum(["auto", ".mp4", ".mov", ".mkv", ".webm"]).default("auto"),
+   container: containerSchema.default("auto"),
    /** Subtitle, telemetry, attachment and cover streams the user turned off. Audio uses audioTracks. */
    excludedStreams: z.array(z.number().int().nonnegative()).max(200).default([]),
    /** Combined exports get one chapter per selected clip instead of the source chapters. */

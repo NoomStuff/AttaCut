@@ -16,7 +16,7 @@ export interface ExportDraft {
    excludedStreams: number[];
    name: string;
    nameAltered: boolean;
-   rows: { clipId: string; included: boolean; name: string; altered: boolean }[];
+   rows: { clipId: string; included: boolean; name: string; altered: boolean; container?: ContainerChoice }[];
 }
 
 export interface ExportOptions {
@@ -43,6 +43,8 @@ interface RowState {
    included: boolean;
    /** Null follows the name template. A string, even empty while typing, is the user's own name. */
    name: string | null;
+   /** A format picked for this clip alone. Omitted follows the format for all clips. */
+   container?: ContainerChoice;
 }
 
 export function useExport({
@@ -70,11 +72,14 @@ export function useExport({
       () => saved?.excludedStreams.filter((index) => otherStreams.some((stream) => stream.index === index)) ?? []
    );
    // The automatic container is already the first choice, so it is not listed twice.
-   const choices = containerChoices(source).filter((value) => value !== source.exportExtension);
+   const choices = useMemo(() => containerChoices(source).filter((value) => value !== source.exportExtension), [source]);
    // A remembered container this video cannot use falls back to automatic, without changing the preference.
    const container: ContainerChoice =
       preferences.exportContainer !== "auto" && choices.includes(preferences.exportContainer) ? preferences.exportContainer : "auto";
-   const setContainer = (value: ContainerChoice) => onPreferences((current) => ({ ...current, exportContainer: value }));
+   const usable = useCallback(
+      (value: ContainerChoice | undefined): value is ContainerChoice => value === "auto" || (!!value && choices.includes(value)),
+      [choices]
+   );
    const lossless = preferences.exportLossless;
    const setLossless = (value: boolean) => onPreferences((current) => ({ ...current, exportLossless: value }));
    const clipChapters = preferences.exportClipChapters;
@@ -103,7 +108,12 @@ export function useExport({
    const name = combinedName ?? generatedCombined();
    const nameAltered = combinedName !== null && combinedName.trim() !== "";
    const [rowStates, setRowStates] = useState<Record<string, RowState>>(() =>
-      Object.fromEntries((saved?.rows ?? []).map((row) => [row.clipId, { included: row.included, name: row.altered && row.name ? row.name : null }]))
+      Object.fromEntries(
+         (saved?.rows ?? []).map((row) => [
+            row.clipId,
+            { included: row.included, name: row.altered && row.name ? row.name : null, ...(row.container ? { container: row.container } : {}) },
+         ])
+      )
    );
    const rows = useMemo(
       () =>
@@ -112,6 +122,8 @@ export function useExport({
             return {
                clip,
                included: state?.included ?? true,
+               container: usable(state?.container) ? state.container : container,
+               ownContainer: usable(state?.container),
                altered: state?.name !== null && state?.name !== undefined && state.name.trim() !== "",
                name:
                   state?.name ??
@@ -126,10 +138,26 @@ export function useExport({
                   }),
             };
          }),
-      [clips, rowStates, preferences.clipNamePattern, sourceStem, source.duration, openedAt]
+      [clips, rowStates, usable, container, preferences.clipNamePattern, sourceStem, source.duration, openedAt]
    );
    const updateRow = (id: string, change: Partial<RowState>) =>
-      setRowStates((current) => ({ ...current, [id]: { included: current[id]?.included ?? true, name: current[id]?.name ?? null, ...change } }));
+      setRowStates((current) => ({
+         ...current,
+         [id]: { ...current[id], included: current[id]?.included ?? true, name: current[id]?.name ?? null, ...change },
+      }));
+   // The format for all clips also resets any clip that had its own.
+   const setContainer = (value: ContainerChoice) => {
+      onPreferences((current) => ({ ...current, exportContainer: value }));
+      setRowStates((current) => Object.fromEntries(Object.entries(current).map(([id, state]) => [id, { included: state.included, name: state.name }])));
+   };
+   // Picking the shared format for one clip hands it back to the format for all clips.
+   const setRowContainer = (index: number, value: ContainerChoice) => {
+      const id = rows[index]!.clip.id;
+      setRowStates((current) => {
+         const state = { included: current[id]?.included ?? true, name: current[id]?.name ?? null };
+         return { ...current, [id]: value === container ? state : { ...state, container: value } };
+      });
+   };
    const setIncluded = (index: number, included: boolean) => updateRow(rows[index]!.clip.id, { included });
    // An emptied field stays empty while typing (clearing to retype must not snap back);
    // leaving the field empty is what hands the name to the template, on blur.
@@ -144,7 +172,13 @@ export function useExport({
          excludedStreams,
          name,
          nameAltered,
-         rows: rows.map(({ clip, included, name, altered }) => ({ clipId: clip.id, included, name, altered })),
+         rows: rows.map(({ clip, included, name, altered, container: format, ownContainer }) => ({
+            clipId: clip.id,
+            included,
+            name,
+            altered,
+            ...(ownContainer ? { container: format } : {}),
+         })),
       });
    }, [source.id, directory, mode, clips.length, preferences.exportMode, audioTracks, excludedStreams, name, nameAltered, rows, onDraft]);
    // A single clip requires combined mode but must not overwrite the multi-clip preference.
@@ -189,10 +223,9 @@ export function useExport({
          mode: effectiveMode,
          name,
          ...output,
-         items: includedRows.map((row, index) => ({
-            clip: row.clip,
-            name: effectiveMode === "combined" ? `Clip ${index + 1}` : row.name,
-         })),
+         items: includedRows.map((row, index) =>
+            effectiveMode === "combined" ? { clip: row.clip, name: `Clip ${index + 1}` } : { clip: row.clip, name: row.name, container: row.container }
+         ),
       }),
       [source.id, directory, effectiveMode, name, output, includedRows]
    );
@@ -201,23 +234,25 @@ export function useExport({
    const [analysis, setAnalysis] = useState<CutReport[] | null>(null);
    const selectedCount = request.items.length;
    const extensionFor = useCallback(
-      (clip: Clip, separate: boolean) => exportExtensionFor(source, clip, { separate, unchanged, container }),
-      [source, unchanged, container]
+      (clip: Clip, format: ContainerChoice) => exportExtensionFor(source, clip, { separate: true, unchanged, container: format }),
+      [source, unchanged]
    );
    const combinedExtension = container === "auto" ? source.exportExtension : container;
+   // The format for all clips reads as mixed once a clip has its own.
+   const sharedContainer = rows.every((row) => row.container === container) ? container : null;
    const nameErrors = new Map<string, string>();
    if (effectiveMode === "combined") {
       const message = filenameError(name, combinedExtension);
       if (message) nameErrors.set("combined", message);
    } else {
       for (const row of includedRows) {
-         const message = filenameError(row.name, extensionFor(row.clip, true));
+         const message = filenameError(row.name, extensionFor(row.clip, row.container));
          if (message) nameErrors.set(row.clip.id, message);
       }
    }
-   const selectedKey = JSON.stringify(includedRows.map((row) => row.clip));
+   const selectedKey = JSON.stringify(includedRows.map((row) => ({ clip: row.clip, container: row.container })));
    // Typing a filename must not restart media analysis, so the ranges are compared by value.
-   const selectedClips = useMemo(() => JSON.parse(selectedKey) as Clip[], [selectedKey]);
+   const selectedClips = useMemo(() => JSON.parse(selectedKey) as { clip: Clip; container: ContainerChoice }[], [selectedKey]);
    // Media analysis is independent of filenames and destination checks, and reused at export.
    useEffect(() => {
       let cancelled = false;
@@ -228,7 +263,9 @@ export function useExport({
             sourceId: source.id,
             mode: effectiveMode,
             ...output,
-            items: selectedClips.map((clip) => ({ clip, name: "clip" })),
+            items: selectedClips.map(({ clip, container: format }) =>
+               effectiveMode === "combined" ? { clip, name: "clip" } : { clip, name: "clip", container: format }
+            ),
          })
          .then((items) => {
             if (!cancelled) setAnalysis(items);
@@ -335,6 +372,8 @@ export function useExport({
       setExcludedStreams,
       container,
       setContainer,
+      setRowContainer,
+      sharedContainer,
       choices,
       combinedExtension,
       extensionFor,

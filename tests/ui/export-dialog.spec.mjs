@@ -243,8 +243,7 @@ test("inverted clips export losslessly, and advanced options stay named while co
    await advanced.click();
    await lossless.check();
    const note = page.locator(".export-note");
-   await expect(note).toContainText("Exporting losslessly.");
-   await expect(note.locator(".export-note-change")).toContainText("Cuts move to keyframes");
+   await expect(note.locator(".export-note-change")).toContainText("Staying lossless adds");
    await expect(note).not.toContainText("re-encoded");
    await advanced.click();
    await expect(lossless).toBeHidden();

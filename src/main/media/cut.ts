@@ -63,16 +63,33 @@ export interface CutIntent {
    combined?: boolean;
    /** Non-audio streams turned off for this export. */
    excludedStreams?: number[];
-   /** Never encode anything. Cuts move to the nearest points that copy cleanly. */
+   /** Never encode anything. Cuts widen to the nearest points that copy cleanly. */
    lossless?: boolean;
+   /** Earliest start a lossless cut may widen to, so a combined export never repeats footage. */
+   notBefore?: number;
 }
 /** Whether an export keeps this stream. Audio follows the audio selection; other streams the exclusions. */
 export function keepsStream(stream: Pick<MediaStream, "index" | "type">, intent: Pick<CutIntent, "audioTracks" | "excludedStreams">): boolean {
    if (intent.excludedStreams?.includes(stream.index)) return false;
    return stream.type !== "audio" || intent.audioTracks === undefined || intent.audioTracks.includes(stream.index);
 }
-function nearest(values: number[], time: number): number | undefined {
-   return values.reduce<number | undefined>((best, value) => (best === undefined || Math.abs(value - time) < Math.abs(best - time) ? value : best), undefined);
+/**
+ * Display times where a copy can stop: every frame shown before the point is also decoded
+ * before every frame shown after it, so nothing kept depends on a dropped frame. These fall
+ * after each reference frame, a few frames apart, and on every frame without reordering.
+ */
+export function cleanEnds(packets: readonly Pick<PacketPoint, "time" | "dts">[]): number[] {
+   // FFprobe cannot place the first packets of a read in decode order; they sit far before any cut.
+   const sorted = packets.filter((packet) => Number.isFinite(packet.dts)).sort((a, b) => a.time - b.time);
+   const laterDts = new Array<number>(sorted.length + 1).fill(Number.POSITIVE_INFINITY);
+   for (let index = sorted.length - 1; index >= 0; index--) laterDts[index] = Math.min(laterDts[index + 1]!, sorted[index]!.dts);
+   const ends: number[] = [];
+   let earlierDts = Number.NEGATIVE_INFINITY;
+   for (const [index, packet] of sorted.entries()) {
+      if (index > 0 && earlierDts < laterDts[index]!) ends.push(packet.time);
+      earlierDts = Math.max(earlierDts, packet.dts);
+   }
+   return ends;
 }
 export async function analyzeCut(source: ProbedSource, clip: Clip, signal?: AbortSignal, intent: CutIntent = {}): Promise<CutAnalysis> {
    const analysis = await analyzeRange(source, clip, signal, intent);
@@ -185,18 +202,22 @@ async function analyzeRange(source: ProbedSource, clip: Clip, signal?: AbortSign
    if (snapped.end - snapped.start < 0.001) return unsupported("This selection is shorter than one video frame.");
    const allIntra = isIntraCodec(video.codec) || [...startPackets, ...endPackets].every((packet) => packet.key);
    if (intent.lossless && !allIntra) {
-      // Copying starts on a keyframe and ends where no kept frame depends on a later one:
-      // the keyframe itself, or for open GOPs the first leading frame decoded after it.
-      const start = nearest(
-         startPackets.filter((packet) => packet.key).map((packet) => packet.time),
-         snapped.start
-      );
-      const ends = endPackets
-         .filter((packet) => packet.key)
-         .map((key) => Math.min(key.time, ...endPackets.filter((packet) => packet.time < key.time && packet.dts >= key.dts).map((packet) => packet.time)));
-      const end = nearest([...ends, source.duration], snapped.end);
-      if (start === undefined || end === undefined || end - start < 0.001)
-         return unsupported("No keyframe falls inside this clip, so it cannot be cut without re-encoding. Make it longer or turn off Force lossless export.");
+      // Force lossless is a safety net, so it keeps every selected frame: the start widens to
+      // the keyframe before it and the end to the next point the copy can stop cleanly. Only a
+      // neighbour in a combined export can push the start forward instead.
+      const floor = intent.notBefore ?? Number.NEGATIVE_INFINITY;
+      const keys = startPackets
+         .filter((packet) => packet.key && packet.time >= floor - epsilon)
+         .map((packet) => packet.time)
+         .sort((a, b) => a - b);
+      const start = keys.filter((time) => time <= snapped.start + epsilon).at(-1) ?? keys.find((time) => time > snapped.start);
+      const end = [...cleanEnds(endPackets), source.duration].sort((a, b) => a - b).find((time) => time >= snapped.end - epsilon) ?? source.duration;
+      if (start === undefined || end - start < 0.001)
+         return unsupported(
+            startPackets.some((packet) => packet.key && packet.time <= snapped.start + epsilon && packet.time < floor - epsilon)
+               ? "This clip starts too close to the clip before it to cut without re-encoding. Leave more space between them or turn off Force lossless export."
+               : "No keyframe falls inside this clip, so it cannot be cut without re-encoding. Make it longer or turn off Force lossless export."
+         );
       snapped = { ...snapped, start, end };
    }
    const nextKey = startPackets.find((packet) => packet.key && packet.time >= snapped.start - epsilon)?.time;

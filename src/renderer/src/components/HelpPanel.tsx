@@ -139,9 +139,10 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
             </p>
             <p>You will get a heads up when exporting showing how much time needs to be re-encoded to do that export so you know what you lose.</p>
             <p>
-               <strong>Force lossless export</strong>, under Advanced in the export dialog, does this for you at export time. Each cut moves to the nearest
-               point that copies cleanly, the dialog says how much that adds or drops, and the finished file is checked packet by packet against the original.
-               If anything would need encoding, the export stops instead.
+               <strong>Force lossless export</strong>, under Advanced in the export dialog, does this for you at export time, without moving your clips. Each
+               export starts at the keyframe before the clip and ends at the next point that copies cleanly, so nothing you selected is lost. The dialog says
+               how much that adds, and the finished file is checked packet by packet against the original. If anything would need encoding, the export stops
+               instead.
             </p>
          </>
       ),
@@ -157,8 +158,8 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
                joins them into one file in their original order, leaving out the gaps.
             </p>
             <p>
-               Choose which audio tracks to keep in the export dialog. <strong>Format</strong> picks the file type, for example MP4 for a recording made as MKV.
-               Changing it copies the video and sound as they are.
+               Choose which audio tracks to keep in the export dialog. The file type picker at the end of each filename changes the format, for example to MP4
+               for a recording made as MKV. Changing it copies the video and sound as they are. With several clips, the picker above the list sets them all.
             </p>
             <h3>Advanced options</h3>
             <p>

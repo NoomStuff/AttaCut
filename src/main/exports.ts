@@ -83,11 +83,24 @@ export class ExportService {
       output: OutputSettings,
       extension: string,
       mode: "separate" | "combined",
-      signal: AbortSignal
+      signal: AbortSignal,
+      notBefore?: number
    ): Promise<CutAnalysis> {
       signal.throwIfAborted();
       const { audioTracks, excludedStreams, lossless } = output;
-      const key = JSON.stringify([source.id, source.size, source.modified, clip.start, clip.end, audioTracks, excludedStreams, lossless, extension, mode]);
+      const key = JSON.stringify([
+         source.id,
+         source.size,
+         source.modified,
+         clip.start,
+         clip.end,
+         audioTracks,
+         excludedStreams,
+         lossless,
+         extension,
+         mode,
+         notBefore ?? null,
+      ]);
       let pending = this.analyses.get(key);
       if (!pending) {
          pending = analyzeCut(source, clip, signal, {
@@ -96,6 +109,7 @@ export class ExportService {
             lossless,
             extension,
             combined: mode === "combined",
+            ...(notBefore === undefined ? {} : { notBefore }),
          }).catch((error: unknown) => {
             if (this.analyses.get(key) === pending) this.analyses.delete(key);
             throw error;
@@ -109,26 +123,34 @@ export class ExportService {
    private async analyze(source: ProbedSource, request: AnalyzeRequest, signal = this.analysisController.signal): Promise<CutAnalysis[]> {
       const settings = analyzeRequestSchema.parse(request);
       const output = outputSettings(source, settings);
-      const sorted = settings.items.map((item) => ({ ...item.clip })).sort((a, b) => a.start - b.start);
-      const clips: Clip[] = [];
-      for (const clip of sorted) {
-         const previous = clips.at(-1);
+      const sorted = settings.items.map((item) => ({ clip: { ...item.clip }, container: item.container })).sort((a, b) => a.clip.start - b.clip.start);
+      const parts: typeof sorted = [];
+      for (const part of sorted) {
+         const previous = parts.at(-1);
          // Only remove shared boundaries. Even a small gap is selected content to omit.
-         if (settings.mode === "combined" && previous?.end === clip.start) previous.end = clip.end;
-         else clips.push(clip);
+         if (settings.mode === "combined" && previous?.clip.end === part.clip.start) previous.clip.end = part.clip.end;
+         else parts.push(part);
       }
-      const results = await mapConcurrent(
-         clips,
-         (clip) => {
-            const extension = exportExtensionFor(source, clip, {
-               separate: settings.mode === "separate",
-               unchanged: unchangedOutput(source, output),
-               container: output.container,
-            });
-            return this.cut(source, clip, output, extension, settings.mode, signal);
-         },
-         2
-      );
+      const extensionFor = (part: (typeof parts)[number]) =>
+         settings.mode === "combined"
+            ? exportExtensionFor(source, part.clip, { separate: false, unchanged: false, container: output.container })
+            : exportExtensionFor(source, part.clip, {
+                 separate: true,
+                 unchanged: unchangedOutput(source, output),
+                 container: part.container ?? output.container,
+              });
+      // Lossless cuts widen, so in one video each cut starts no earlier than the previous one ends.
+      if (settings.mode === "combined" && output.lossless) {
+         const results: CutAnalysis[] = [];
+         for (const part of parts) {
+            const previous = results.at(-1);
+            const notBefore = previous && previous.method !== "unsupported" ? previous.clip.end : undefined;
+            results.push(await this.cut(source, part.clip, output, extensionFor(part), settings.mode, signal, notBefore));
+         }
+         signal.throwIfAborted();
+         return results;
+      }
+      const results = await mapConcurrent(parts, (part) => this.cut(source, part.clip, output, extensionFor(part), settings.mode, signal), 2);
       signal.throwIfAborted();
       return results;
    }
@@ -424,7 +446,7 @@ function outputNames(source: ProbedSource, request: ReturnType<typeof planReques
    return [...request.items]
       .sort((a, b) => a.clip.start - b.clip.start)
       .map((item) => {
-         const extension = exportExtensionFor(source, item.clip, { separate: true, unchanged, container: request.container });
+         const extension = exportExtensionFor(source, item.clip, { separate: true, unchanged, container: item.container ?? request.container });
          return outputName(item.name, extension);
       });
 }

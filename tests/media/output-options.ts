@@ -46,6 +46,19 @@ for (const [start, end] of [
 }
 console.log("PASS another container converts subtitles, refuses attachments and leaves out turned off tracks");
 
+const mixed = await exported(tracks, {
+   items: [
+      { ...clip("own-mp4", 1.25, 4), container: ".mp4" },
+      { ...clip("shared-mkv", 5, 8.75), container: ".mkv" },
+   ],
+   excludedStreams: [attachment],
+});
+assert.deepEqual(
+   mixed.map((path) => path.slice(path.lastIndexOf("."))),
+   [".mp4", ".mkv"]
+);
+console.log("PASS separate clips can each export to their own format");
+
 const [withoutSubtitles] = await exported(tracks, { items: [clip("no-subtitles", 1.25, 8.75)], excludedStreams: [subtitle, attachment] });
 assert.deepEqual(
    (await probeSource(withoutSubtitles!)).streams.map((stream) => stream.type),
@@ -83,6 +96,17 @@ assert.ok(
    keyframes.some((time) => Math.abs(time - report!.clip.start) < 0.0005),
    "A lossless cut starts on a keyframe"
 );
+assert.ok(report!.clip.start <= 1.3 && report!.clip.end >= 7.7 - 0.0005, "A lossless cut keeps every selected frame");
+// The second clip's keyframe before it falls inside the first clip, so it starts at the next one instead of repeating footage.
+const neighbours = await service.inspect(fixture, {
+   sourceId: fixture.id,
+   mode: "combined",
+   items: [clip("a", 1.3, 4.2), clip("b", 4.6, 9)],
+   lossless: true,
+});
+assert.ok(neighbours.every((part) => part.method === "copy"));
+assert.ok(neighbours[1]!.clip.start >= neighbours[0]!.clip.end - 0.0005, "Joined lossless cuts never overlap");
+await exported(fixture, { mode: "combined", name: "lossless-neighbours", items: [clip("a", 1.3, 4.2), clip("b", 4.6, 9)], lossless: true });
 await exported(fixture, { items: [clip("lossless-separate", 1.3, 7.7)], lossless: true });
 await exported(fixture, { mode: "combined", name: "lossless-combined", items: [clip("a", 1.3, 4.2), clip("b", 9.4, 15.1)], lossless: true });
 for (const [input, container] of [
