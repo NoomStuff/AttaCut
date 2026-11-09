@@ -43,7 +43,7 @@ test("help", async ({ launchApp, profile }) => {
    await page.getByRole("button", { name: "Export", exact: true }).click();
    const exportDialog = page.getByRole("dialog", { name: "Export video" });
    await exportDialog.waitFor();
-   await expect(exportDialog.getByText(/re-encod|losslessly|unchanged/)).toBeVisible({ timeout: 20000 });
+   await expect(exportDialog.locator(".export-note").getByText(/re-encod|losslessly|unchanged/)).toBeVisible({ timeout: 20000 });
    await exportDialog.getByRole("textbox", { name: "Combined filename", exact: true }).fill("help-return");
    await exportDialog.getByRole("button", { name: "Learn More" }).click();
    await help.waitFor();
