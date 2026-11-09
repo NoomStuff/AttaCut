@@ -105,6 +105,9 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
                   <strong>Merge:</strong> <Shortcut command="merge" /> joins two adjacent clips back together. Put the playhead on their shared cut first.
                </li>
                <li>
+                  <strong>Invert:</strong> Invert clips in the Edit menu turns every gap into a clip and every clip into a gap.
+               </li>
+               <li>
                   <strong>Toggle:</strong> <Shortcut command="toggleClip" /> removes a clip, or adds one if the playhead is in a gap.
                </li>
             </ul>
@@ -159,9 +162,8 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
             </p>
             <h3>Advanced options</h3>
             <p>
-               Advanced can export the gaps instead of the clips, add a chapter for each clip to a single video, rotate the picture, and turn off subtitles or
-               other extra tracks. Rotation only changes how players turn the picture, so the image is never encoded again. When Advanced is closed, its header
-               still lists the options that are on.
+               Advanced can force a lossless export, add a chapter for each clip to a single video, and turn off subtitles or other extra tracks. When Advanced
+               is closed, its header still lists the options that are on.
             </p>
             <h3>When encoding needs your approval</h3>
             <p>Small sections near a cut may need encoding again for an accurate cut.</p>

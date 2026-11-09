@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { containerChoices, containerFamily, containerRejects, exportExtensionFor, subtitleCodecFor, turnedRotation } from "./export-format";
+import { containerChoices, containerFamily, containerRejects, exportExtensionFor, subtitleCodecFor } from "./export-format";
 import type { MediaStream } from "./media";
 
 const stream = (type: string, codec: string, extra: Partial<MediaStream> = {}): MediaStream =>
@@ -39,12 +39,5 @@ describe("export containers", () => {
       expect(exportExtensionFor(source, full, { separate: true, unchanged: false })).toBe(".mkv");
       expect(exportExtensionFor(source, full, { separate: true, unchanged: true, container: ".mp4" })).toBe(".mp4");
       expect(exportExtensionFor(source, { start: 1, end: 4 }, { separate: false, unchanged: true, container: "auto" })).toBe(".mkv");
-   });
-   it("turns the display rotation clockwise in ffmpeg's counterclockwise degrees", () => {
-      expect(turnedRotation(0, 90)).toBe(-90);
-      expect(turnedRotation(-90, 90)).toBe(180);
-      expect(turnedRotation(90, 90)).toBe(0);
-      expect(turnedRotation(0, 270)).toBe(90);
-      expect(turnedRotation(180, 180)).toBe(0);
    });
 });

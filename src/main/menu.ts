@@ -44,6 +44,7 @@ export function installMenu(window: BrowserWindow, recent: RecentFile[], onClear
             item("Trim right", "setEnd"),
             item("Add clip in gap", "add"),
             item("Delete clip", "delete"),
+            item("Invert clips", "invert"),
             { type: "separator" },
             item("Settings…", "settings"),
          ],

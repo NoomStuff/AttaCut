@@ -1,5 +1,4 @@
-import { audioStreams, primaryVideo } from "../shared/media";
-import { turnedRotation } from "../shared/export-format";
+import { audioStreams } from "../shared/media";
 import type { ContainerChoice } from "../shared/export-format";
 import type { ChapterMark } from "./media/mux.ts";
 import { randomUUID } from "node:crypto";
@@ -34,8 +33,6 @@ import { recordDiagnostic } from "./diagnostics";
 interface OutputSettings {
    audioTracks: number[];
    excludedStreams: number[];
-   /** Output display rotation, or undefined to keep the source's. */
-   rotation: number | undefined;
    lossless: boolean;
    container: ContainerChoice;
 }
@@ -89,20 +86,8 @@ export class ExportService {
       signal: AbortSignal
    ): Promise<CutAnalysis> {
       signal.throwIfAborted();
-      const { audioTracks, excludedStreams, rotation, lossless } = output;
-      const key = JSON.stringify([
-         source.id,
-         source.size,
-         source.modified,
-         clip.start,
-         clip.end,
-         audioTracks,
-         excludedStreams,
-         rotation,
-         lossless,
-         extension,
-         mode,
-      ]);
+      const { audioTracks, excludedStreams, lossless } = output;
+      const key = JSON.stringify([source.id, source.size, source.modified, clip.start, clip.end, audioTracks, excludedStreams, lossless, extension, mode]);
       let pending = this.analyses.get(key);
       if (!pending) {
          pending = analyzeCut(source, clip, signal, {
@@ -111,7 +96,6 @@ export class ExportService {
             lossless,
             extension,
             combined: mode === "combined",
-            ...(rotation === undefined ? {} : { rotation }),
          }).catch((error: unknown) => {
             if (this.analyses.get(key) === pending) this.analyses.delete(key);
             throw error;
@@ -352,7 +336,6 @@ export class ExportService {
                audioTracks: stored.output.audioTracks,
                excludedStreams: stored.output.excludedStreams,
                lossless: stored.output.lossless,
-               ...(stored.output.rotation === undefined ? {} : { rotation: stored.output.rotation }),
                ...(stored.chapters ? { chapters: stored.chapters } : {}),
                overwrite: !!stored.approval?.overwrite && stored.plan.existingPaths.includes(item.outputPath),
                replaceSource: !!stored.approval?.replaceSource && item.outputPath === stored.plan.sourcePath,
@@ -383,17 +366,15 @@ function outputSettings(source: ProbedSource, settings: ReturnType<typeof analyz
    const excludedStreams = [...new Set(settings.excludedStreams)].sort((a, b) => a - b);
    if (excludedStreams.some((index) => !source.streams.some((stream) => stream.index === index && optional(stream))))
       throw new Error("One or more turned off tracks were not found.");
-   const video = primaryVideo(source);
    return {
       audioTracks: exportAudioTracks(source, settings.audioTracks),
       excludedStreams,
-      rotation: settings.rotation && video ? turnedRotation(video.rotation, settings.rotation) : undefined,
       lossless: settings.lossless,
       container: settings.container,
    };
 }
 function unchangedOutput(source: ProbedSource, output: OutputSettings): boolean {
-   return output.audioTracks.length === audioStreams(source).length && !output.excludedStreams.length && output.rotation === undefined;
+   return output.audioTracks.length === audioStreams(source).length && !output.excludedStreams.length;
 }
 /**
  * One chapter per selected clip on the joined timeline. Adjacent clips join into one cut, so

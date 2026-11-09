@@ -1,32 +1,3 @@
-import { clipColorCount } from "../../../shared/defaults";
-import type { Clip } from "../../../shared/types";
-
-/**
- * The parts between and around the clips, for exporting everything except the clips.
- * Gaps shorter than `minimum` (about one frame) are slivers between touching clips, not content.
- */
-export function gapsBetween(clips: readonly Clip[], duration: number, minimum: number): Clip[] {
-   const sorted = [...clips].sort((a, b) => a.start - b.start);
-   const gaps: Clip[] = [];
-   let cursor = 0;
-   let previous: Clip | null = null;
-   for (const clip of [...sorted, null]) {
-      const end = clip ? clip.start : duration;
-      if (end - cursor >= minimum)
-         gaps.push({
-            id: `gap:${previous?.id ?? "start"}:${clip?.id ?? "end"}`,
-            start: cursor,
-            end,
-            color: gaps.length % clipColorCount,
-         });
-      if (clip) {
-         cursor = Math.max(cursor, clip.end);
-         previous = clip;
-      }
-   }
-   return gaps;
-}
-
 function merged(ranges: readonly { start: number; end: number }[]): { start: number; end: number }[] {
    const result: { start: number; end: number }[] = [];
    for (const range of [...ranges].sort((a, b) => a.start - b.start)) {

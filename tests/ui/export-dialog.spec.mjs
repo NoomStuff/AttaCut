@@ -217,7 +217,7 @@ test("duplicate clip names block the export instead of being rewritten", async (
    await expect(dialog.getByRole("button", { name: "Export video", exact: true })).toBeEnabled();
 });
 
-test("advanced export options say what they change, even while collapsed", async ({ launchApp, profile }) => {
+test("inverted clips export losslessly, and advanced options stay named while collapsed", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
@@ -230,19 +230,25 @@ test("advanced export options say what they change, even while collapsed", async
    await page.mouse.click(bar.x + (bar.width * 10) / 18.021, bar.y + 36);
    await waitForPlaybackTime(page, 10);
    await page.keyboard.press("a");
+   await page.getByRole("button", { name: "Edit", exact: true }).click();
+   await page.getByRole("menuitem", { name: /^Invert clips/ }).click();
+   await expect(page.locator(".clip-range")).toHaveCount(1);
+   expect(Number(await page.getByRole("slider", { name: "Clip 1 start", exact: true }).getAttribute("aria-valuenow"))).toBeCloseTo(7.4, 1);
    await page.getByRole("button", { name: "Export", exact: true }).click();
    await page.getByLabel("Save to", { exact: true }).fill(profile + "/advanced");
    const advanced = page.locator(".export-advanced-toggle");
+   const lossless = page.getByRole("switch", { name: "Force lossless export", exact: true });
    await expect(advanced).toHaveAttribute("aria-expanded", "false");
+   await expect(lossless).toBeHidden();
    await advanced.click();
-   await page.getByRole("switch", { name: "Export the gaps instead", exact: true }).check();
-   await page.getByRole("switch", { name: "Force lossless export", exact: true }).check();
+   await lossless.check();
    const note = page.locator(".export-note");
    await expect(note).toContainText("Exporting losslessly.");
    await expect(note.locator(".export-note-change")).toContainText("Cuts move to keyframes");
    await expect(note).not.toContainText("re-encoded");
    await advanced.click();
-   await expect(page.locator(".export-advanced-summary")).toHaveText("Force lossless, Gaps between clips");
+   await expect(lossless).toBeHidden();
+   await expect(page.locator(".export-advanced-summary")).toHaveText("Force lossless");
    await page.getByRole("button", { name: "Export format", exact: true }).click();
    await page.getByRole("option", { name: "MKV (.mkv)", exact: true }).click();
    await expect(page.locator(".filename-extension")).toHaveText(".mkv");

@@ -24,7 +24,7 @@ export async function verifyOutputStructure(
    ignoreTypes: readonly string[] = [],
    videoFrameDuration?: number,
    expectedFrameCount?: number,
-   expectation: { excludedStreams?: number[]; rotation?: number; copiedAudio?: boolean } = {}
+   expectation: { excludedStreams?: number[]; copiedAudio?: boolean } = {}
 ): Promise<ProbedSource> {
    const actual = await probeSource(output, signal);
    const expected = source.streams.filter(
@@ -34,7 +34,6 @@ export async function verifyOutputStructure(
          !expectation.excludedStreams?.includes(stream.index) &&
          !stream.chapterTrack
    );
-   const primary = primaryVideo(source)?.index;
    for (const type of new Set([...expected, ...actual.streams].map((stream) => stream.type))) {
       const before = expected.filter((stream) => stream.type === type);
       const after = actual.streams.filter((stream) => stream.type === type && !stream.chapterTrack);
@@ -58,7 +57,7 @@ export async function verifyOutputStructure(
             (stream.width !== result.width ||
                stream.height !== result.height ||
                stream.pixelFormat !== result.pixelFormat ||
-               (stream.index === primary && expectation.rotation !== undefined ? expectation.rotation : stream.rotation) !== result.rotation)
+               stream.rotation !== result.rotation)
          )
             throw new Error("The export changed the video format. No output was published.");
          if (

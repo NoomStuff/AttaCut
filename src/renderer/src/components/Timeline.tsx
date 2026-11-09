@@ -872,7 +872,7 @@ function TimelineWaveform({
    const px = (width * ratio) / (to - from);
    const view = {
       width: Math.round(width * ratio),
-      height: Math.round(34 * ratio),
+      height: Math.round(32 * ratio),
       reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       bands: clips.flatMap((clip) => {
          const start = Math.max(from, dragging?.id === clip.id && dragging.side === "start" ? drawEdge : clip.start);

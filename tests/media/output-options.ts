@@ -54,15 +54,6 @@ assert.deepEqual(
 console.log("PASS turned off subtitle and attachment tracks are left out and verified as absent");
 
 const fixture = await probeSource(resolve("work/fixture.mp4"));
-for (const [start, end] of [
-   [1.3, 7.7],
-   [0, fixture.duration],
-] as const) {
-   const [path] = await exported(fixture, { items: [clip(`rotated-${start}`, start, end)], rotation: 90 });
-   assert.equal((await probeSource(path!)).streams.find((stream) => stream.type === "video")!.rotation, -90);
-}
-console.log("PASS rotation changes only the display metadata on trimmed and full exports");
-
 const chapterTitles = async (path: string) =>
    (JSON.parse(await runMedia("ffprobe", ["-v", "error", "-show_chapters", "-of", "json", path])) as { chapters: { tags: { title: string } }[] }).chapters.map(
       (chapter) => chapter.tags.title

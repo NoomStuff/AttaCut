@@ -167,7 +167,6 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
          cuts.every((cut) => cut.frameCount !== undefined) ? cuts.reduce((sum, cut) => sum + cut.frameCount!, 0) : undefined,
          {
             excludedStreams: options.excludedStreams ?? [],
-            ...(options.rotation === undefined ? {} : { rotation: options.rotation }),
             copiedAudio: !!options.lossless,
          }
       );

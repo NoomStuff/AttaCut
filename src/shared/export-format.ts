@@ -7,10 +7,6 @@ export type ExportContainer = (typeof exportContainers)[number];
 export type ContainerChoice = "auto" | ExportContainer;
 export const containerNames: Record<ExportContainer, string> = { ".mp4": "MP4", ".mov": "MOV", ".mkv": "MKV", ".webm": "WebM" };
 
-/** Clockwise quarter turns applied to the display rotation. Metadata only, pixels are never touched. */
-export const exportRotations = [0, 90, 180, 270] as const;
-export type ExportRotation = (typeof exportRotations)[number];
-
 /**
  * Codecs each container stores in a form common players read. Matroska stores everything
  * FFmpeg can copy. The lists stay conservative: a muxer that accepts a codec is not enough
@@ -87,10 +83,4 @@ export function exportExtensionFor(
    if (options.container && options.container !== "auto") return options.container;
    const fullRange = clip.start === 0 && Math.abs(clip.end - source.duration) < 0.0001;
    return options.unchanged && options.separate && fullRange ? source.extension : source.exportExtension;
-}
-
-/** Display rotation after turning the picture clockwise; ffmpeg stores counterclockwise degrees. */
-export function turnedRotation(rotation: number, turn: ExportRotation): number {
-   const value = (((rotation - turn) % 360) + 360) % 360;
-   return value > 180 ? value - 360 : value;
 }

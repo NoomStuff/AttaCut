@@ -2,8 +2,8 @@ import { useExport, type ExportOptions } from "../export/useExport";
 import { substantialEncoding } from "../../../shared/export-policy";
 import type { HelpTab } from "./HelpPanel";
 import { useEffect, useState } from "react";
-import { containerNames, exportRotations } from "../../../shared/export-format";
-import type { ContainerChoice, ExportRotation } from "../../../shared/export-format";
+import { containerNames } from "../../../shared/export-format";
+import type { ContainerChoice } from "../../../shared/export-format";
 import type { MediaStream } from "../../../shared/types";
 import { formatTime } from "../../../shared/time";
 import { sanitizeName } from "../../../shared/filename";
@@ -51,10 +51,6 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
       setAudioTracks,
       excludedStreams,
       setExcludedStreams,
-      rotation,
-      setRotation,
-      gaps,
-      setGaps,
       container,
       setContainer,
       choices,
@@ -230,14 +226,11 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
          : `${containerNames[value]} (${value})`;
    const advancedSummary = [
       lossless ? "Force lossless" : "",
-      rotation ? `Rotate ${rotation}°` : "",
-      gaps ? "Gaps between clips" : "",
       excludedStreams.length ? `${excludedStreams.length} ${excludedStreams.length === 1 ? "track" : "tracks"} off` : "",
       mode === "combined" && clipChapters && !singleTarget ? "Clip chapters" : "",
    ]
       .filter(Boolean)
       .join(", ");
-   const itemLabel = gaps ? "Part" : "Clip";
    return (
       <>
          <Modal
@@ -304,64 +297,68 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                      onChange={(checked) => setAudioTracks(checked ? [sourceAudio[0]!.index] : [])}
                   />
                )}
-               {sourceAudio.length > 1 && (
-                  <div className="audio-export-field">
-                     <span className="field-label">Audio tracks</span>
-                     <DropdownSelect
-                        label="Audio tracks to export"
-                        options={sourceAudio.map((track, index) => ({ value: String(track.index), label: audioTrackLabel(track, index) }))}
-                        value={audioTracks.map(String)}
-                        multiple
-                        disabled={starting}
-                        onChange={(values) => setAudioTracks(values.map(Number))}
-                        trigger={
-                           audioTracks.length === sourceAudio.length
-                              ? "All audio tracks"
-                              : audioTracks.length === 1
-                                ? audioTrackLabel(
-                                     sourceAudio.find((track) => track.index === audioTracks[0])!,
-                                     sourceAudio.findIndex((track) => track.index === audioTracks[0])
-                                  )
-                                : `${audioTracks.length} audio tracks`
-                        }
-                     />
-                  </div>
-               )}
-               {choices.length > 0 && (
-                  <div className="export-format-field">
-                     <span className="field-label">Format</span>
-                     <DropdownSelect
-                        label="Export format"
-                        options={(["auto", ...choices] as const).map((value) => ({ value, label: formatLabel(value) }))}
-                        value={[container]}
-                        required
-                        disabled={starting}
-                        onChange={(values) => setContainer((values[0] as ContainerChoice | undefined) ?? "auto")}
-                        trigger={formatLabel(container)}
-                     />
+               {(sourceAudio.length > 1 || choices.length > 0) && (
+                  <div className="export-fields">
+                     {sourceAudio.length > 1 && (
+                        <div className="audio-export-field">
+                           <span className="field-label">Audio tracks</span>
+                           <DropdownSelect
+                              label="Audio tracks to export"
+                              options={sourceAudio.map((track, index) => ({ value: String(track.index), label: audioTrackLabel(track, index) }))}
+                              value={audioTracks.map(String)}
+                              multiple
+                              disabled={starting}
+                              onChange={(values) => setAudioTracks(values.map(Number))}
+                              trigger={
+                                 audioTracks.length === sourceAudio.length
+                                    ? "All audio tracks"
+                                    : audioTracks.length === 1
+                                      ? audioTrackLabel(
+                                           sourceAudio.find((track) => track.index === audioTracks[0])!,
+                                           sourceAudio.findIndex((track) => track.index === audioTracks[0])
+                                        )
+                                      : `${audioTracks.length} audio tracks`
+                              }
+                           />
+                        </div>
+                     )}
+                     {choices.length > 0 && (
+                        <div className="export-format-field">
+                           <span className="field-label">Format</span>
+                           <DropdownSelect
+                              label="Export format"
+                              options={(["auto", ...choices] as const).map((value) => ({ value, label: formatLabel(value) }))}
+                              value={[container]}
+                              required
+                              disabled={starting}
+                              onChange={(values) => setContainer((values[0] as ContainerChoice | undefined) ?? "auto")}
+                              trigger={formatLabel(container)}
+                           />
+                        </div>
+                     )}
                   </div>
                )}
                <div className="export-advanced" data-open={advanced}>
-                  <button type="button" className="export-advanced-toggle" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>
-                     <FontAwesomeIcon className="export-advanced-chevron" icon={faChevronDown} />
+                  <button
+                     type="button"
+                     className="export-advanced-toggle"
+                     aria-expanded={advanced}
+                     aria-controls="export-advanced-options"
+                     onClick={() => setAdvanced(!advanced)}
+                  >
                      <span>Advanced</span>
-                     {advancedSummary && <span className="export-advanced-summary">{advancedSummary}</span>}
+                     {/* Hidden options still change the output, so the closed header names the ones that are on. */}
+                     {advancedSummary && !advanced && <span className="export-advanced-summary">{advancedSummary}</span>}
+                     <FontAwesomeIcon className="export-advanced-chevron" icon={faChevronDown} />
                   </button>
-                  {advanced && (
-                     <div className="export-advanced-body">
+                  <div className="export-advanced-panel">
+                     <div className="export-advanced-body" id="export-advanced-options" inert={!advanced}>
                         <Toggle
                            label="Force lossless export"
                            description="Never re-encode. Cuts move to the nearest keyframes and the result is checked against the source."
                            checked={lossless}
                            disabled={starting}
                            onChange={setLossless}
-                        />
-                        <Toggle
-                           label="Export the gaps instead"
-                           description="Keep everything outside your clips."
-                           checked={gaps}
-                           disabled={starting}
-                           onChange={setGaps}
                         />
                         {mode === "combined" && !singleTarget && (
                            <Toggle
@@ -372,16 +369,6 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                               onChange={setClipChapters}
                            />
                         )}
-                        <div className="export-advanced-field">
-                           <span className="field-label">Rotate clockwise</span>
-                           <SegmentedControl
-                              label="Rotate clockwise"
-                              value={String(rotation)}
-                              disabled={starting}
-                              onChange={(value) => setRotation(Number(value) as ExportRotation)}
-                              options={exportRotations.map((value) => ({ value: String(value), label: value ? `${value}°` : "None" }))}
-                           />
-                        </div>
                         {otherStreams.length > 0 && (
                            <div className="export-advanced-field">
                               <span className="field-label">Other tracks</span>
@@ -405,12 +392,12 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                            </div>
                         )}
                      </div>
-                  )}
+                  </div>
                </div>
                {rows.length > 1 && (
                   <div className="export-list">
                      <div className="export-list-heading">
-                        <span>{gaps ? "Gaps" : "Clips"}</span>
+                        <span>Clips</span>
                         <span>Duration</span>
                      </div>
                      {rows.map((row, index) => {
@@ -427,20 +414,18 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                               <div className="export-row">
                                  <input
                                     type="checkbox"
-                                    aria-label={`Export ${itemLabel.toLowerCase()} ${index + 1}`}
+                                    aria-label={`Export clip ${index + 1}`}
                                     checked={row.included}
                                     disabled={starting}
                                     onChange={(event) => setIncluded(index, event.target.checked)}
                                  />
                                  <span className="color-dot" style={{ background: clipColor(row.clip.color) }} />
                                  {mode === "combined" ? (
-                                    <span className="export-clip-name">
-                                       {itemLabel} {index + 1}
-                                    </span>
+                                    <span className="export-clip-name">Clip {index + 1}</span>
                                  ) : (
                                     <span className="export-row-name-input">
                                        <input
-                                          aria-label={`${itemLabel} ${index + 1} filename`}
+                                          aria-label={`Clip ${index + 1} filename`}
                                           aria-invalid={nameErrors.has(row.clip.id)}
                                           value={row.name}
                                           onBlur={() => normalizeName(index)}

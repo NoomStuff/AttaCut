@@ -190,6 +190,28 @@ export function addGap(document: EditDocument, time: number, duration: number): 
    clips.splice(insertion, 0, clip);
    return { clips, selectedId: clip.id };
 }
+/**
+ * The ranges the clips leave out. Gaps under `minimum` are slivers between touching clips
+ * that container rounding left behind, not footage anyone chose to drop.
+ */
+export function clipGaps(clips: readonly Clip[], duration: number, minimum: number): { start: number; end: number }[] {
+   const gaps: { start: number; end: number }[] = [];
+   let cursor = 0;
+   for (const clip of [...clips].sort((a, b) => a.start - b.start)) {
+      if (clip.start - cursor >= minimum) gaps.push({ start: cursor, end: clip.start });
+      cursor = Math.max(cursor, clip.end);
+   }
+   if (duration - cursor >= minimum) gaps.push({ start: cursor, end: duration });
+   return gaps;
+}
+/** Swap kept and removed footage: every gap becomes a clip and every clip a gap. */
+export function invertClips(document: EditDocument, duration: number, minimum: number): EditDocument {
+   const gaps = clipGaps(document.clips, duration, minimum);
+   if (!gaps.length || gaps.length > clipLimit) return document;
+   const clips: Clip[] = [];
+   for (const gap of gaps) clips.push({ ...gap, id: crypto.randomUUID(), color: nextClipColor(clips, clips.at(-1)) });
+   return { clips, selectedId: clips[0]!.id };
+}
 
 /** Find the nearest join, allowing at most one source frame between clips. */
 export function mergePair(document: EditDocument, time: number, frameStep: number, handleTolerance: number): number {

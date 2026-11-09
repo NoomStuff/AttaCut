@@ -63,8 +63,6 @@ export interface CutIntent {
    combined?: boolean;
    /** Non-audio streams turned off for this export. */
    excludedStreams?: number[];
-   /** Output display rotation in ffmpeg's counterclockwise degrees. Omitted keeps the source rotation. */
-   rotation?: number;
    /** Never encode anything. Cuts move to the nearest points that copy cleanly. */
    lossless?: boolean;
 }
@@ -154,7 +152,7 @@ async function analyzeRange(source: ProbedSource, clip: Clip, signal?: AbortSign
          : "";
    if (clip.start === 0 && Math.abs(clip.end - source.duration) < epsilon) {
       const identical = !intent.combined && (intent.extension ?? source.extension).toLowerCase() === source.extension.toLowerCase();
-      const fullCopy = identical && kept.length === source.streams.length && intent.rotation === undefined;
+      const fullCopy = identical && kept.length === source.streams.length;
       return {
          execution: fullCopy ? "file-copy" : "remux",
          clip,
@@ -276,8 +274,6 @@ async function analyzeRange(source: ProbedSource, clip: Clip, signal?: AbortSign
 export interface CutOptions extends RunOptions {
    audioTracks?: number[];
    excludedStreams?: number[];
-   /** Output display rotation, counterclockwise degrees. Omitted keeps the source rotation. */
-   rotation?: number;
    lossless?: boolean;
    /** Chapters in output time that replace the source chapters. */
    chapters?: ChapterMark[];
@@ -298,7 +294,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
       const sourceAudio = audioStreams(source);
       const selectedAudio = options.audioTracks === undefined ? sourceAudio : sourceAudio.filter((stream) => options.audioTracks!.includes(stream.index));
       const kept = (stream: MediaStream) => keepsStream(stream, options);
-      const unchanged = source.streams.every(kept) && options.rotation === undefined;
+      const unchanged = source.streams.every(kept);
       const extension = extname(destination).toLowerCase();
       // Matroska-family muxers silently drop data streams, so their absence is expected by verification.
       const keepsData = containerKeepsData(extension);
@@ -322,7 +318,6 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             "ffmpeg",
             [
                ...ffmpegBase,
-               ...(options.rotation === undefined ? [] : [`-display_rotation:${video.index}`, String(options.rotation)]),
                "-i",
                source.path,
                ...(options.chapters?.length ? ["-f", "ffmetadata", "-i", chapterPath] : []),
@@ -459,7 +454,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             "-safe",
             "0",
             "-display_rotation:v:0",
-            String(options.rotation ?? video.rotation),
+            String(video.rotation),
             "-i",
             listPath,
             ...(audioPreroll > 0 ? ["-ss", String(audioPreroll)] : []),
@@ -528,7 +523,6 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                analysis.frameCount,
                {
                   excludedStreams: options.excludedStreams ?? [],
-                  ...(options.rotation === undefined ? {} : { rotation: options.rotation }),
                   copiedAudio: !!options.lossless,
                }
             );

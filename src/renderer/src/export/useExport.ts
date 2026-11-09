@@ -1,13 +1,12 @@
-import { audioStreams, primaryVideo } from "../../../shared/media";
+import { audioStreams } from "../../../shared/media";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { substantialEncoding } from "../../../shared/export-policy";
 import { applyNamePattern, duplicateNames, filenameError } from "../../../shared/filename";
 import { containerChoices, exportExtensionFor } from "../../../shared/export-format";
-import type { ContainerChoice, ExportRotation } from "../../../shared/export-format";
+import type { ContainerChoice } from "../../../shared/export-format";
 import type { Clip, ExportJob, ExportPlan, CutReport, MediaSource, MediaStream, Preferences } from "../../../shared/types";
 import { errorText, isCancellation } from "../lib/errors";
 import { rememberAudioSelection, resolveAudioSelection } from "../playback/audioSelection";
-import { gapsBetween } from "./exportClips";
 
 export interface ExportDraft {
    sourceId: string;
@@ -15,8 +14,6 @@ export interface ExportDraft {
    mode: Preferences["exportMode"];
    audioTracks: number[];
    excludedStreams: number[];
-   rotation: ExportRotation;
-   gaps: boolean;
    name: string;
    nameAltered: boolean;
    rows: { clipId: string; included: boolean; name: string; altered: boolean }[];
@@ -72,8 +69,6 @@ export function useExport({
    const [excludedStreams, setExcludedStreams] = useState<number[]>(
       () => saved?.excludedStreams.filter((index) => otherStreams.some((stream) => stream.index === index)) ?? []
    );
-   const [rotation, setRotation] = useState<ExportRotation>(saved?.rotation ?? 0);
-   const [gaps, setGaps] = useState(saved?.gaps ?? false);
    // The automatic container is already the first choice, so it is not listed twice.
    const choices = containerChoices(source).filter((value) => value !== source.exportExtension);
    // A remembered container this video cannot use falls back to automatic, without changing the preference.
@@ -86,16 +81,10 @@ export function useExport({
    const setClipChapters = (value: boolean) => onPreferences((current) => ({ ...current, exportClipChapters: value }));
    const advanced = preferences.exportAdvanced;
    const setAdvanced = (value: boolean) => onPreferences((current) => ({ ...current, exportAdvanced: value }));
-   const frameRate = primaryVideo(source)?.frameRate ?? 0;
-   // "Export the gaps" swaps the list for everything outside the clips.
-   const targets = useMemo(
-      () => (gaps ? gapsBetween(clips, source.duration, frameRate > 0 ? 1 / frameRate : 0.01) : clips),
-      [gaps, clips, source.duration, frameRate]
-   );
    const [mode, setMode] = useState<Preferences["exportMode"]>(clips.length === 1 ? "combined" : (saved?.mode ?? preferences.exportMode));
-   const singleTarget = targets.length <= 1;
+   const singleTarget = clips.length <= 1;
    const effectiveMode = singleTarget ? "combined" : mode;
-   const unchanged = audioTracks.length === sourceAudio.length && !excludedStreams.length && !rotation;
+   const unchanged = audioTracks.length === sourceAudio.length && !excludedStreams.length;
    const sourceStem = source.name.slice(0, -source.extension.length);
    // The patterns from settings are defaults: every output name follows its template until
    // it is edited by hand, and clearing a field hands the name back to the template. So a
@@ -107,8 +96,8 @@ export function useExport({
          ...patternDefaults,
          index: 0,
          count: 1,
-         start: Math.min(...targets.map((clip) => clip.start)),
-         end: Math.max(...targets.map((clip) => clip.end)),
+         start: Math.min(...clips.map((clip) => clip.start)),
+         end: Math.max(...clips.map((clip) => clip.end)),
       });
    const [combinedName, setCombinedNameState] = useState<string | null>(saved?.nameAltered && saved.name ? saved.name : null);
    const name = combinedName ?? generatedCombined();
@@ -118,7 +107,7 @@ export function useExport({
    );
    const rows = useMemo(
       () =>
-         targets.map((clip, index) => {
+         clips.map((clip, index) => {
             const state = rowStates[clip.id];
             return {
                clip,
@@ -131,13 +120,13 @@ export function useExport({
                      total: source.duration,
                      date: openedAt,
                      index,
-                     count: targets.length,
+                     count: clips.length,
                      start: clip.start,
                      end: clip.end,
                   }),
             };
          }),
-      [targets, rowStates, preferences.clipNamePattern, sourceStem, source.duration, openedAt]
+      [clips, rowStates, preferences.clipNamePattern, sourceStem, source.duration, openedAt]
    );
    const updateRow = (id: string, change: Partial<RowState>) =>
       setRowStates((current) => ({ ...current, [id]: { included: current[id]?.included ?? true, name: current[id]?.name ?? null, ...change } }));
@@ -153,13 +142,11 @@ export function useExport({
          mode: clips.length === 1 ? preferences.exportMode : mode,
          audioTracks,
          excludedStreams,
-         rotation,
-         gaps,
          name,
          nameAltered,
          rows: rows.map(({ clip, included, name, altered }) => ({ clipId: clip.id, included, name, altered })),
       });
-   }, [source.id, directory, mode, clips.length, preferences.exportMode, audioTracks, excludedStreams, rotation, gaps, name, nameAltered, rows, onDraft]);
+   }, [source.id, directory, mode, clips.length, preferences.exportMode, audioTracks, excludedStreams, name, nameAltered, rows, onDraft]);
    // A single clip requires combined mode but must not overwrite the multi-clip preference.
    useEffect(() => {
       if (!singleTarget) onPreferences((current) => (current.exportMode === mode ? current : { ...current, exportMode: mode }));
@@ -189,12 +176,11 @@ export function useExport({
       () => ({
          audioTracks,
          excludedStreams,
-         rotation,
          container,
          lossless,
          clipChapters: effectiveMode === "combined" && clipChapters,
       }),
-      [audioTracks, excludedStreams, rotation, container, lossless, effectiveMode, clipChapters]
+      [audioTracks, excludedStreams, container, lossless, effectiveMode, clipChapters]
    );
    const request = useMemo(
       () => ({
@@ -205,10 +191,10 @@ export function useExport({
          ...output,
          items: includedRows.map((row, index) => ({
             clip: row.clip,
-            name: effectiveMode === "combined" ? `${gaps ? "Part" : "Clip"} ${index + 1}` : row.name,
+            name: effectiveMode === "combined" ? `Clip ${index + 1}` : row.name,
          })),
       }),
-      [source.id, directory, effectiveMode, name, output, includedRows, gaps]
+      [source.id, directory, effectiveMode, name, output, includedRows]
    );
    const [error, setError] = useState<string | null>(null);
    const [starting, setStarting] = useState(false);
@@ -347,10 +333,6 @@ export function useExport({
       setAudioTracks,
       excludedStreams,
       setExcludedStreams,
-      rotation,
-      setRotation,
-      gaps,
-      setGaps,
       container,
       setContainer,
       choices,

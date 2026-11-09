@@ -15,8 +15,6 @@ export const planRequestSchema = z.object({
    container: z.enum(["auto", ".mp4", ".mov", ".mkv", ".webm"]).default("auto"),
    /** Subtitle, telemetry, attachment and cover streams the user turned off. Audio uses audioTracks. */
    excludedStreams: z.array(z.number().int().nonnegative()).max(200).default([]),
-   /** Clockwise display rotation change. Metadata only. */
-   rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),
    /** Combined exports get one chapter per selected clip instead of the source chapters. */
    clipChapters: z.boolean().default(false),
    /** Never encode: cuts move to keyframes and the output is checked packet for packet. */

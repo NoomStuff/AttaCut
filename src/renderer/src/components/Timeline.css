@@ -4,7 +4,7 @@
 }
 .timeline-viewport {
    position: relative;
-   height: 69px;
+   height: 67px;
    margin: 4px 0 0;
    cursor: crosshair;
    touch-action: none;
@@ -17,7 +17,7 @@
    position: absolute;
    bottom: 2px;
    left: 0;
-   height: 34px;
+   height: 32px;
    z-index: 1;
    pointer-events: none;
 }
@@ -81,13 +81,13 @@
    left: 0;
    right: 0;
    top: 24px;
-   height: 38px;
+   height: 36px;
 }
 .excluded-track {
    position: absolute;
    left: 0;
    right: 0;
-   top: 17px;
+   top: 16px;
    height: 5px;
    background: var(--line);
    border-radius: 3px;
@@ -95,7 +95,7 @@
 .clip-range {
    position: absolute;
    top: 2px;
-   height: 34px;
+   height: 32px;
    min-width: 1px;
    --clip-fill: 20%;
    background: color-mix(in srgb, var(--clip-color) var(--clip-fill), var(--surface));
@@ -122,7 +122,7 @@
 .merging-seam {
    position: absolute;
    top: 2px;
-   height: 34px;
+   height: 32px;
    width: 12px;
    margin-left: -6px;
    border-radius: 3px;
@@ -225,7 +225,7 @@
 .trim-handle {
    position: absolute;
    top: -5px;
-   height: 42px;
+   height: 40px;
    width: 8px;
    padding: 0;
    background: var(--clip-color);
@@ -244,7 +244,7 @@
 }
 .trim-handle span {
    position: absolute;
-   top: 14px;
+   top: 13px;
    left: 50%;
    width: 2px;
    max-width: 30%;
@@ -319,7 +319,7 @@
 }
 .handle-direction {
    position: absolute;
-   top: 43px;
+   top: 42px;
 }
 .handle-direction > svg {
    position: absolute;
@@ -347,7 +347,7 @@
 .playhead {
    position: absolute;
    top: 16px;
-   height: 49px;
+   height: 47px;
    z-index: 7;
    pointer-events: none;
    transform: translateX(-50%);
@@ -451,7 +451,7 @@
 }
 .timeline-pan-arrow {
    position: absolute;
-   top: 41px;
+   top: 40px;
    z-index: 9;
    transition: opacity 160ms ease-out;
 }
