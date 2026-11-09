@@ -39,6 +39,10 @@ export const preferencesSchema = z.object({
    combinedNamePattern: z.string().default("{source} (Trim)"),
    playbackAudio: audioSelectionPreferenceSchema.default({ mode: "default", sourceTrackCount: 0, tracks: [] }),
    exportAudio: audioSelectionPreferenceSchema.default({ mode: "default", sourceTrackCount: 0, tracks: [] }),
+   exportContainer: z.enum(["auto", ".mp4", ".mov", ".mkv", ".webm"]).default("auto"),
+   exportLossless: z.boolean().default(false),
+   exportClipChapters: z.boolean().default(false),
+   exportAdvanced: z.boolean().default(false),
    frameFormat: z.enum(["png", "jpg"]).default("png"),
    frameQuality: z.number().min(1).max(100).default(95),
 });

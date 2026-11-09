@@ -5,6 +5,8 @@ import {
    mergePair,
    mergeClips,
    addGap,
+   clipGaps,
+   invertClips,
    canSplit,
    deleteClip,
    editorReducer,
@@ -276,5 +278,33 @@ describe("clip interaction priority", () => {
       expect(gapAt(document, 20, 30)).toEqual({ start: 20, end: 30 });
       expect(gapAt(document, 10, 30)).toBeNull();
       expect(gapAt(document, 15, 30)).toBeNull();
+   });
+});
+
+describe("inverting clips", () => {
+   const clip = (id: string, start: number, end: number, color = 0) => ({ id, start, end, color });
+   it("turns every gap into a clip, skipping slivers between touching clips", () => {
+      const document: EditDocument = { clips: [clip("a", 1, 3.99), clip("b", 4, 6, 1), clip("c", 8, 10, 2)], selectedId: "b" };
+      const inverted = invertClips(document, 10, 0.02);
+      expect(inverted.clips.map(({ start, end }) => [start, end])).toEqual([
+         [0, 1],
+         [6, 8],
+      ]);
+      expect(new Set(inverted.clips.map((item) => item.color)).size).toBe(2);
+      expect(inverted.selectedId).toBe(inverted.clips[0]!.id);
+      expect(invertClips(inverted, 10, 0.02).clips.map(({ start, end }) => [start, end])).toEqual([
+         [1, 6],
+         [8, 10],
+      ]);
+   });
+   it("leaves a timeline with nothing removed unchanged", () => {
+      const document: EditDocument = { clips: [clip("a", 0, 5)], selectedId: "a" };
+      expect(invertClips(document, 5, 0.02)).toBe(document);
+      expect(clipGaps([], 5, 0.02)).toEqual([{ start: 0, end: 5 }]);
+   });
+   it("refuses a result over the clip limit", () => {
+      const clips = Array.from({ length: clipLimit }, (_, index) => clip(String(index), index * 2 + 1, index * 2 + 2));
+      const document: EditDocument = { clips, selectedId: null };
+      expect(invertClips(document, clipLimit * 2 + 1, 0.02)).toBe(document);
    });
 });

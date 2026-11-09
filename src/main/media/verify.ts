@@ -1,12 +1,13 @@
-import { primaryVideo } from "../../shared/types";
+import { audioStreams, primaryVideo } from "../../shared/types";
 import type { ProbedSource } from "./probe.ts";
 import { runMedia } from "./process.ts";
 import { probeSource, sourceFrames, ratio } from "./probe.ts";
 import { isLosslessAudio } from "./mux";
 import type { MediaStream } from "../../shared/types";
 
-function audioPacketDuration(stream: MediaStream): number {
-   if (isLosslessAudio(stream.codec)) return 1 / (stream.sampleRate || 48000);
+function audioPacketDuration(stream: MediaStream, copied = false): number {
+   // Copied lossless packets end on their own block boundaries, up to about a tenth of a second.
+   if (isLosslessAudio(stream.codec)) return copied ? 0.1 : 1 / (stream.sampleRate || 48000);
    const samples =
       stream.codec === "aac" ? 1024 : stream.codec === "mp3" ? 1152 : ["ac3", "eac3"].includes(stream.codec) ? 1536 : stream.codec === "opus" ? 960 : 2048;
    return samples / (stream.sampleRate || 48000);
@@ -22,13 +23,20 @@ export async function verifyOutputStructure(
    start = 0,
    ignoreTypes: readonly string[] = [],
    videoFrameDuration?: number,
-   expectedFrameCount?: number
+   expectedFrameCount?: number,
+   expectation: { excludedStreams?: number[]; copiedAudio?: boolean } = {}
 ): Promise<ProbedSource> {
    const actual = await probeSource(output, signal);
-   const expected = source.streams.filter((stream) => (stream.type !== "audio" || audioTracks.includes(stream.index)) && !ignoreTypes.includes(stream.type));
+   const expected = source.streams.filter(
+      (stream) =>
+         (stream.type !== "audio" || audioTracks.includes(stream.index)) &&
+         !ignoreTypes.includes(stream.type) &&
+         !expectation.excludedStreams?.includes(stream.index) &&
+         !stream.chapterTrack
+   );
    for (const type of new Set([...expected, ...actual.streams].map((stream) => stream.type))) {
       const before = expected.filter((stream) => stream.type === type);
-      const after = actual.streams.filter((stream) => stream.type === type);
+      const after = actual.streams.filter((stream) => stream.type === type && !stream.chapterTrack);
       if (before.length !== after.length) throw new Error(`The export did not preserve the expected ${type} tracks. No output was published.`);
       for (const [index, stream] of before.entries()) {
          const result = after[index]!;
@@ -73,7 +81,8 @@ export async function verifyOutputStructure(
             const actualStart = Math.max(0, result.startTime - actual.startOffset);
             if (
                expectedStart < duration &&
-               Math.abs(expectedStart - actualStart) > Math.max(audioPacketDuration(stream), ratio(stream.timeBase), ratio(result.timeBase)) * 2 + 0.0001
+               Math.abs(expectedStart - actualStart) >
+                  Math.max(audioPacketDuration(stream, expectation.copiedAudio), ratio(stream.timeBase), ratio(result.timeBase)) * 2 + 0.0001
             )
                throw new Error("The export changed audio timing. No output was published.");
          }
@@ -88,7 +97,10 @@ export async function verifyOutputStructure(
    }
    const video = primaryVideo(source);
    const frameDuration = videoFrameDuration ?? (video?.frameRate ? 1 / video.frameRate : 0);
-   const packetDuration = Math.max(0, ...expected.filter((stream) => stream.type === "audio").map(audioPacketDuration));
+   const packetDuration = Math.max(
+      0,
+      ...expected.filter((stream) => stream.type === "audio").map((stream) => audioPacketDuration(stream, expectation.copiedAudio))
+   );
    const tolerance = Math.max(frameDuration * 2, packetDuration * 2) + 0.002;
    if (Math.abs(actual.duration - duration) > tolerance) throw new Error("The exported duration does not match the selected clips. No output was published.");
    if (expectedFrameCount !== undefined) {
@@ -239,4 +251,107 @@ async function verifyFrameGroup(source: ProbedSource, output: ProbedSource, star
       if (references.size > 128) references.delete(references.keys().next().value!);
    }
    if (encoded.some((index) => !hashes.has(index))) throw new Error("An encoded boundary did not match the selected source frame. No output was published.");
+}
+
+/**
+ * Bitstream filters that bring both sides to one packet layout before hashing. Containers
+ * store H.264 and HEVC as length-prefixed or start-code NAL units and may add parameter sets,
+ * and MPEG-TS wraps AAC in ADTS headers. None of that is picture or sound data.
+ */
+function packetNormalizer(stream: MediaStream, side: "source" | "output"): string | null {
+   if (stream.codec === "h264") return "h264_mp4toannexb,filter_units=pass_types=1-5";
+   if (stream.codec === "hevc") return "hevc_mp4toannexb,filter_units=pass_types=0-31";
+   if (stream.codec === "av1") return "filter_units=remove_types=2";
+   if (stream.codec === "aac") return "aac_adtstoasc";
+   // Copied MPEG-4 Part 2 segments repeat their headers on keyframes; do the same to the source.
+   if (stream.codec === "mpeg4" && side === "source") return "dump_extra=freq=keyframe";
+   return null;
+}
+async function packetHashes(
+   path: string,
+   streams: MediaStream[],
+   side: "source" | "output",
+   range: { start: number; end: number } | null,
+   signal?: AbortSignal
+): Promise<string[][]> {
+   const hashes = streams.map(() => [] as string[]);
+   const args = ["-v", "error", "-nostdin"];
+   if (range) args.push(...(range.start > 3 ? ["-ss", String(range.start - 3)] : []), "-t", String(range.end - Math.max(0, range.start - 3) + 3));
+   args.push("-i", path);
+   for (const [index, stream] of streams.entries()) {
+      args.push("-map", `0:${stream.index}`);
+      const filter = packetNormalizer(stream, side);
+      if (filter) args.push(`-bsf:${index}`, filter);
+   }
+   args.push("-c", "copy", "-f", "framemd5", "-");
+   await runMedia("ffmpeg", args, {
+      signal,
+      priority: "export",
+      onLines: (line) => {
+         if (line.startsWith("#")) return;
+         const fields = line.split(",").map((field) => field.trim());
+         const stream = hashes[Number(fields[0])];
+         if (stream && fields[5]) stream.push(fields[5]);
+      },
+   });
+   return hashes;
+}
+/** Whether `part` appears in order inside `whole`, allowing skipped packets in between. */
+export function isPacketSubsequence(part: readonly string[], whole: readonly string[]): boolean {
+   let position = 0;
+   for (const hash of part) {
+      while (position < whole.length && whole[position] !== hash) position++;
+      if (position === whole.length) return false;
+      position++;
+   }
+   return true;
+}
+
+/**
+ * Force lossless promises that every picture and sound packet in the output is an untouched
+ * source packet. Hash each one and require the output to be the source's packets, in order,
+ * with only the parts outside the cuts left out. PCM is skipped: containers regroup raw
+ * samples into different packet sizes, and copying uncompressed audio cannot change it.
+ */
+export async function verifyLosslessPackets(
+   source: ProbedSource,
+   output: ProbedSource,
+   ranges: { start: number; end: number }[],
+   audioTracks: number[],
+   signal?: AbortSignal
+): Promise<void> {
+   const video = primaryVideo(source);
+   const outputVideo = primaryVideo(output);
+   const pairs: { source: MediaStream; output: MediaStream }[] = [];
+   if (video && outputVideo) pairs.push({ source: video, output: outputVideo });
+   const outputAudio = audioStreams(output);
+   source.streams
+      .filter((stream) => stream.type === "audio" && audioTracks.includes(stream.index))
+      .forEach((stream, index) => {
+         if (outputAudio[index] && !stream.codec.startsWith("pcm_")) pairs.push({ source: stream, output: outputAudio[index] });
+      });
+   if (!pairs.length) return;
+   const exported = await packetHashes(
+      output.path,
+      pairs.map((pair) => pair.output),
+      "output",
+      null,
+      signal
+   );
+   const original = pairs.map(() => [] as string[]);
+   for (const range of ranges) {
+      const hashes = await packetHashes(
+         source.path,
+         pairs.map((pair) => pair.source),
+         "source",
+         range,
+         signal
+      );
+      hashes.forEach((list, index) => original[index]!.push(...list));
+   }
+   signal?.throwIfAborted();
+   for (const [index, pair] of pairs.entries()) {
+      if (!exported[index]!.length || !isPacketSubsequence(exported[index]!, original[index]!))
+         throw new Error(`The exported ${pair.source.type} is not an exact copy of the source, so the export is not fully lossless. No output was published.`);
+   }
 }

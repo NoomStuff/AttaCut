@@ -2,10 +2,12 @@ import { useExport, type ExportOptions } from "../export/useExport";
 import { substantialEncoding } from "../../../shared/export-policy";
 import type { HelpTab } from "./HelpPanel";
 import { useEffect, useState } from "react";
-import { exportExtensionFor } from "../../../shared/export-format";
+import { containerNames } from "../../../shared/export-format";
+import type { ContainerChoice } from "../../../shared/export-format";
+import type { MediaStream } from "../../../shared/types";
 import { formatTime } from "../../../shared/time";
 import { sanitizeName } from "../../../shared/filename";
-import { faArrowUpFromBracket, faCircleExclamation, faCircleInfo, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
+import { faArrowUpFromBracket, faChevronDown, faCircleExclamation, faCircleInfo, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
 import { OutputDirectoryField } from "./OutputDirectoryField";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { Button, Modal, Toggle } from "./Controls";
@@ -14,23 +16,60 @@ import { SegmentedControl } from "./SegmentedControl";
 import { errorText } from "../lib/errors";
 import { clipColor } from "../editor/colors";
 import { audioTrackLabel } from "../playback/audioSelection";
+import { coverageChange } from "../export/exportClips";
+import { primaryVideo } from "../../../shared/media";
+
+function streamLabel(stream: MediaStream, index: number): string {
+   const detail = [stream.title, stream.language && stream.language !== "und" ? stream.language : ""].filter(Boolean).join(", ");
+   const kind =
+      stream.type === "subtitle"
+         ? "Subtitles"
+         : stream.type === "data"
+           ? "Telemetry"
+           : stream.type === "attachment"
+             ? "Attachment"
+             : stream.attachedPicture
+               ? "Cover picture"
+               : `Track ${index + 1}`;
+   return `${kind}${detail ? ` · ${detail}` : ""} (${stream.codec})`;
+}
+function seconds(value: number): string {
+   return value < 0.1 ? "less than 0.1 s" : `${value.toFixed(1)} s`;
+}
 
 export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) => void }) {
-   const { source, clips, onClose, onHelp } = props;
+   const { source, onClose, onHelp } = props;
    const {
       sourceAudio,
+      otherStreams,
       directory,
       setDirectory,
       mode,
       setMode,
+      singleTarget,
       audioTracks,
       setAudioTracks,
+      excludedStreams,
+      setExcludedStreams,
+      container,
+      setContainer,
+      setRowContainer,
+      sharedContainer,
+      choices,
+      combinedExtension,
+      extensionFor,
+      lossless,
+      setLossless,
+      clipChapters,
+      setClipChapters,
+      advanced,
+      setAdvanced,
       name,
       setName,
       setRowName,
+      setIncluded,
       normalizeName,
       rows,
-      setRows,
       confirmation,
       setConfirmation,
       replaceSourceChecked,
@@ -150,15 +189,64 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
       Math.abs(checked[0].clip.start) < 0.001 &&
       Math.abs(checked[0].clip.end - source.duration) < 0.001 &&
       sourceAudio.every((stream) => audioTracks.includes(stream.index));
+   // Force lossless widens cuts to points that copy cleanly. Say how much that adds or drops,
+   // ignoring the sub-frame rounding every export does.
+   const frameRate = primaryVideo(source)?.frameRate ?? 0;
+   const shift =
+      lossless && !problem && checked.length
+         ? coverageChange(
+              rows.filter((row) => row.included).map((row) => row.clip),
+              checked.map((item) => item.clip)
+           )
+         : null;
+   const visibleShift = (value: number) => value > Math.max(0.005, frameRate > 0 ? 0.5 / frameRate : 0);
+   const shiftParts = shift
+      ? [visibleShift(shift.added) ? `adds ${seconds(shift.added)}` : "", visibleShift(shift.dropped) ? `drops ${seconds(shift.dropped)}` : ""].filter(Boolean)
+      : [];
+   // With Force lossless nothing is re-encoded, so the add and drop take that sentence's place.
+   const shiftNote = shiftParts.length ? `Staying lossless ${shiftParts.join(" and ")} at your cuts.` : null;
    const baseNote = problem
       ? problem.message
       : unchangedVideo
         ? "Exporting the video unchanged."
-        : encoded > 0
-          ? `${encoded < 0.1 ? "Less than 0.1 seconds" : `~${encodedLabel(encoded)}`} near your cuts may be re-encoded.`
-          : "Exporting losslessly.";
+        : shiftNote
+          ? null
+          : encoded > 0
+            ? `${encoded < 0.1 ? "Less than 0.1 seconds" : `~${encodedLabel(encoded)}`} near your cuts may be re-encoded.`
+            : "Exporting losslessly.";
    const changes = [...new Set(checked.flatMap((item) => item.changes ?? []))];
-   const note = [baseNote, ...changes].join(" ");
+   // What the export adds, drops or converts reads in yellow.
+   const noteChanges = problem ? "" : [shiftNote ?? "", ...changes].filter(Boolean).join(" ");
+   const exported = new Map(checked.map((item) => [item.clip.id, item.clip]));
+   const keptOther = otherStreams.filter((stream) => !excludedStreams.includes(stream.index));
+   const formatLabel = (value: ContainerChoice) =>
+      value === "auto"
+         ? source.exportExtension === source.extension.toLowerCase()
+            ? `Source (${source.exportExtension})`
+            : `Automatic (${source.exportExtension})`
+         : `${containerNames[value]} (${value})`;
+   const formatPicker = (props: { label: string; value: ContainerChoice | null; trigger: string; onChange: (value: ContainerChoice) => void }) =>
+      choices.length ? (
+         <DropdownSelect
+            className="format-picker"
+            label={props.label}
+            options={(["auto", ...choices] as const).map((value) => ({ value, label: formatLabel(value) }))}
+            value={props.value ? [props.value] : []}
+            required
+            disabled={starting}
+            onChange={(values) => props.onChange((values[0] as ContainerChoice | undefined) ?? "auto")}
+            trigger={<span className="filename-extension">{props.trigger}</span>}
+         />
+      ) : (
+         <span className="format-picker static filename-extension">{props.trigger}</span>
+      );
+   const advancedSummary = [
+      lossless ? "Force lossless" : "",
+      excludedStreams.length ? `${excludedStreams.length} ${excludedStreams.length === 1 ? "track" : "tracks"} off` : "",
+      mode === "combined" && clipChapters && !singleTarget ? "Clip chapters" : "",
+   ]
+      .filter(Boolean)
+      .join(", ");
    return (
       <>
          <Modal
@@ -176,7 +264,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                   label="Export mode"
                   value={mode}
                   onChange={setMode}
-                  disabled={starting || clips.length === 1}
+                  disabled={starting || singleTarget}
                   options={[
                      { value: "combined", label: "Single Video" },
                      { value: "separate", label: "Separate Clips" },
@@ -212,7 +300,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                                  tone={nameErrors.has("combined") || dangers.get("combined") ? "danger" : "warning"}
                               />
                            </span>
-                           <span className="filename-extension">{source.exportExtension}</span>
+                           {formatPicker({ label: "Export format", value: container, trigger: combinedExtension, onChange: setContainer })}
                         </div>
                      </label>
                   )}
@@ -226,39 +314,48 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                   />
                )}
                {sourceAudio.length > 1 && (
-                  <div className="audio-export-field">
-                     <span className="field-label">Audio tracks</span>
-                     <DropdownSelect
-                        label="Audio tracks to export"
-                        options={sourceAudio.map((track, index) => ({ value: String(track.index), label: audioTrackLabel(track, index) }))}
-                        value={audioTracks.map(String)}
-                        multiple
-                        disabled={starting}
-                        onChange={(values) => setAudioTracks(values.map(Number))}
-                        trigger={
-                           audioTracks.length === sourceAudio.length
-                              ? "All audio tracks"
-                              : audioTracks.length === 1
-                                ? audioTrackLabel(
-                                     sourceAudio.find((track) => track.index === audioTracks[0])!,
-                                     sourceAudio.findIndex((track) => track.index === audioTracks[0])
-                                  )
-                                : `${audioTracks.length} audio tracks`
-                        }
-                     />
+                  <div className="export-fields">
+                     <div className="audio-export-field">
+                        <span className="field-label">Audio tracks</span>
+                        <DropdownSelect
+                           label="Audio tracks to export"
+                           options={sourceAudio.map((track, index) => ({ value: String(track.index), label: audioTrackLabel(track, index) }))}
+                           value={audioTracks.map(String)}
+                           multiple
+                           disabled={starting}
+                           onChange={(values) => setAudioTracks(values.map(Number))}
+                           trigger={
+                              audioTracks.length === sourceAudio.length
+                                 ? "All audio tracks"
+                                 : audioTracks.length === 1
+                                   ? audioTrackLabel(
+                                        sourceAudio.find((track) => track.index === audioTracks[0])!,
+                                        sourceAudio.findIndex((track) => track.index === audioTracks[0])
+                                     )
+                                   : `${audioTracks.length} audio tracks`
+                           }
+                        />
+                     </div>
                   </div>
                )}
-               {clips.length > 1 && (
+               {rows.length > 1 && (
                   <div className="export-list">
                      <div className="export-list-heading">
                         <span>Clips</span>
+                        {mode === "separate" &&
+                           choices.length > 0 &&
+                           formatPicker({
+                              label: "Format for all clips",
+                              value: sharedContainer,
+                              trigger: sharedContainer ? `All ${sharedContainer === "auto" ? source.exportExtension : sharedContainer}` : "Mixed",
+                              onChange: setContainer,
+                           })}
                         <span>Duration</span>
                      </div>
                      {rows.map((row, index) => {
-                        const extension = exportExtensionFor(source, row.clip, {
-                           separate: mode === "separate",
-                           allAudio: audioTracks.length === sourceAudio.length,
-                        });
+                        // With Force lossless the exported range can be wider than the clip; show what exports.
+                        const range = mode === "separate" && lossless ? (exported.get(row.clip.id) ?? row.clip) : row.clip;
+                        const widened = Math.abs(range.end - range.start - (row.clip.end - row.clip.start)) > 0.0005;
                         // A batch collision outranks a disk conflict: it must be fixed before
                         // Export unlocks, while a replace can still be confirmed.
                         const collides = mode === "separate" && row.included && collisions.has(sanitizeName(row.name).toLowerCase());
@@ -274,32 +371,95 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                                     aria-label={`Export clip ${index + 1}`}
                                     checked={row.included}
                                     disabled={starting}
-                                    onChange={(event) => setRows(rows.map((value, i) => (i === index ? { ...value, included: event.target.checked } : value)))}
+                                    onChange={(event) => setIncluded(index, event.target.checked)}
                                  />
                                  <span className="color-dot" style={{ background: clipColor(row.clip.color) }} />
                                  {mode === "combined" ? (
                                     <span className="export-clip-name">Clip {index + 1}</span>
                                  ) : (
-                                    <span className="export-row-name-input">
-                                       <input
-                                          aria-label={`Clip ${index + 1} filename`}
-                                          aria-invalid={nameErrors.has(row.clip.id)}
-                                          value={row.name}
-                                          onBlur={() => normalizeName(index)}
-                                          disabled={starting}
-                                          onChange={(event) => setRowName(index, event.target.value)}
-                                       />
-                                       <ConflictIndicator message={conflict} tone={tone} />
+                                    <span className="export-row-name">
+                                       <span className="export-row-name-input">
+                                          <input
+                                             aria-label={`Clip ${index + 1} filename`}
+                                             aria-invalid={nameErrors.has(row.clip.id)}
+                                             value={row.name}
+                                             onBlur={() => normalizeName(index)}
+                                             disabled={starting}
+                                             onChange={(event) => setRowName(index, event.target.value)}
+                                          />
+                                          <ConflictIndicator message={conflict} tone={tone} />
+                                       </span>
+                                       {formatPicker({
+                                          label: `Clip ${index + 1} format`,
+                                          value: row.container,
+                                          trigger: extensionFor(row.clip, row.container),
+                                          onChange: (value) => setRowContainer(index, value),
+                                       })}
                                     </span>
                                  )}
-                                 <span className="extension">{mode === "separate" ? extension : ""}</span>
-                                 <time>{formatTime(row.clip.end - row.clip.start)}</time>
+                                 <time data-widened={widened}>{formatTime(range.end - range.start)}</time>
                               </div>
                            </div>
                         );
                      })}
                   </div>
                )}
+               <div className="export-advanced" data-open={advanced}>
+                  <button
+                     type="button"
+                     className="export-advanced-toggle"
+                     aria-expanded={advanced}
+                     aria-controls="export-advanced-options"
+                     onClick={() => setAdvanced(!advanced)}
+                  >
+                     <span>Advanced</span>
+                     {/* Hidden options still change the output, so the closed header names the ones that are on. */}
+                     {advancedSummary && !advanced && <span className="export-advanced-summary">{advancedSummary}</span>}
+                     <FontAwesomeIcon className="export-advanced-chevron" icon={faChevronDown} />
+                  </button>
+                  <div className="export-advanced-panel">
+                     <div className="export-advanced-body" id="export-advanced-options" inert={!advanced}>
+                        <Toggle
+                           label="Force lossless export"
+                           description="Never re-encode. Clips widen to the keyframes around them, and the result is checked against the source."
+                           checked={lossless}
+                           disabled={starting}
+                           onChange={setLossless}
+                        />
+                        {mode === "combined" && !singleTarget && (
+                           <Toggle
+                              label="Chapter for each clip"
+                              description="Replaces the source chapters."
+                              checked={clipChapters}
+                              disabled={starting}
+                              onChange={setClipChapters}
+                           />
+                        )}
+                        {otherStreams.length > 0 && (
+                           <div className="export-advanced-field">
+                              <span className="field-label">Other tracks</span>
+                              <DropdownSelect
+                                 label="Other tracks to export"
+                                 options={otherStreams.map((stream, index) => ({ value: String(stream.index), label: streamLabel(stream, index) }))}
+                                 value={keptOther.map((stream) => String(stream.index))}
+                                 multiple
+                                 disabled={starting}
+                                 onChange={(values) =>
+                                    setExcludedStreams(otherStreams.filter((stream) => !values.includes(String(stream.index))).map((stream) => stream.index))
+                                 }
+                                 trigger={
+                                    keptOther.length === otherStreams.length
+                                       ? "All kept"
+                                       : keptOther.length === 0
+                                         ? "None"
+                                         : `${keptOther.length} of ${otherStreams.length} kept`
+                                 }
+                              />
+                           </div>
+                        )}
+                     </div>
+                  </div>
+               </div>
                {error && (
                   <div className="inline-error" role="alert">
                      {error}
@@ -315,10 +475,10 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                      </p>
                   )}
                   {analysis && request.items.length > 0 && (
-                     <p className={`export-note${problem ? " problem" : checked.some(substantialEncoding) || changes.length ? " warning" : ""}`}>
+                     <p className={`export-note${problem ? " problem" : checked.some(substantialEncoding) ? " warning" : ""}`}>
                         <FontAwesomeIcon icon={problem ? faCircleExclamation : faCircleInfo} />
                         <span>
-                           {note}{" "}
+                           {baseNote} {noteChanges && <span className="export-note-change">{noteChanges} </span>}
                            <button
                               className="export-note-link"
                               onClick={() => {

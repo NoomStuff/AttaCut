@@ -5,7 +5,7 @@ import { adjacentBoundary, neighboringKeyframe, splitTargetAt } from "./navigati
 import { frameLevelActive } from "./timelineView";
 import { playbackSpeeds } from "../playback/speed";
 import { nextKeptTime } from "../playback/ranges";
-import { mergePair, mergeClips, addGap, canSplit, deleteClip, gapAt, minClipLength, selectedClip, splitClip } from "./model";
+import { mergePair, mergeClips, addGap, canSplit, clipGaps, deleteClip, gapAt, invertClips, minClipLength, selectedClip, splitClip } from "./model";
 import type { EditDocument } from "./model";
 import { guardCommands, resolvedCommand } from "./commands";
 import type { Commands } from "./commands";
@@ -268,6 +268,14 @@ export function useEditorCommands({
          if (!gap || gap.end - gap.start < minimumClipLength() / 2) return;
          if (editor.document.clips.length >= clipLimit) return warnClipLimit;
          return () => commit(addGap(editor.document, time, source!.duration));
+      }),
+      invert: resolvedCommand(() => {
+         if (!available()) return;
+         const minimum = minimumClipLength() / 2;
+         const gaps = clipGaps(editor.document.clips, source!.duration, minimum);
+         if (!gaps.length) return;
+         if (gaps.length > clipLimit) return warnClipLimit;
+         return () => commit(invertClips(editor.document, source!.duration, minimum));
       }),
       undo: {
          enabled: () => available() && !!editor.past.length,

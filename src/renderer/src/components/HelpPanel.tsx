@@ -105,6 +105,9 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
                   <strong>Merge:</strong> <Shortcut command="merge" /> joins two adjacent clips back together. Put the playhead on their shared cut first.
                </li>
                <li>
+                  <strong>Invert:</strong> Invert clips in the Edit menu turns every gap into a clip and every clip into a gap.
+               </li>
+               <li>
                   <strong>Toggle:</strong> <Shortcut command="toggleClip" /> removes a clip, or adds one if the playhead is in a gap.
                </li>
             </ul>
@@ -135,6 +138,12 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
                original quality if that is what you're looking for.
             </p>
             <p>You will get a heads up when exporting showing how much time needs to be re-encoded to do that export so you know what you lose.</p>
+            <p>
+               <strong>Force lossless export</strong>, under Advanced in the export dialog, does this for you at export time, without moving your clips. Each
+               export starts at the keyframe before the clip and ends at the next point that copies cleanly, so nothing you selected is lost. The dialog says
+               how much that adds, and the finished file is checked packet by packet against the original. If anything would need encoding, the export stops
+               instead.
+            </p>
          </>
       ),
    },
@@ -148,7 +157,15 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
                Choose the clips you want to save, their filenames, and an output folder. Separate Clips saves each selected clip as its own file. Single Video
                joins them into one file in their original order, leaving out the gaps.
             </p>
-            <p>Choose which audio tracks to keep in the export dialog.</p>
+            <p>
+               Choose which audio tracks to keep in the export dialog. The file type picker at the end of each filename changes the format, for example to MP4
+               for a recording made as MKV. Changing it copies the video and sound as they are. With several clips, the picker above the list sets them all.
+            </p>
+            <h3>Advanced options</h3>
+            <p>
+               Advanced can force a lossless export, add a chapter for each clip to a single video, and turn off subtitles or other extra tracks. When Advanced
+               is closed, its header still lists the options that are on.
+            </p>
             <h3>When encoding needs your approval</h3>
             <p>Small sections near a cut may need encoding again for an accurate cut.</p>
             <p>

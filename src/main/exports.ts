@@ -1,4 +1,6 @@
 import { audioStreams } from "../shared/media";
+import type { ContainerChoice } from "../shared/export-format";
+import type { ChapterMark } from "./media/mux.ts";
 import { randomUUID } from "node:crypto";
 import { access, constants, mkdir } from "node:fs/promises";
 import { statOrNull } from "./files";
@@ -27,11 +29,19 @@ import { waitForWork } from "./media/shared-work";
 import { appFailure } from "./failure";
 import { recordDiagnostic } from "./diagnostics";
 
+/** Everything about an export's output except its clips and destination. */
+interface OutputSettings {
+   audioTracks: number[];
+   excludedStreams: number[];
+   lossless: boolean;
+   container: ContainerChoice;
+}
 interface StoredPlan {
    plan: ExportPlan;
    source: ProbedSource;
    analyses: Map<string, CutAnalysis[]>;
-   audioTracks: number[];
+   output: OutputSettings;
+   chapters: ChapterMark[] | undefined;
    approval?: ExportApproval;
 }
 export class ExportService {
@@ -70,16 +80,37 @@ export class ExportService {
    private async cut(
       source: ProbedSource,
       clip: Clip,
-      audioTracks: number[],
+      output: OutputSettings,
       extension: string,
       mode: "separate" | "combined",
-      signal: AbortSignal
+      signal: AbortSignal,
+      notBefore?: number
    ): Promise<CutAnalysis> {
       signal.throwIfAborted();
-      const key = JSON.stringify([source.id, source.size, source.modified, clip.start, clip.end, audioTracks, extension, mode]);
+      const { audioTracks, excludedStreams, lossless } = output;
+      const key = JSON.stringify([
+         source.id,
+         source.size,
+         source.modified,
+         clip.start,
+         clip.end,
+         audioTracks,
+         excludedStreams,
+         lossless,
+         extension,
+         mode,
+         notBefore ?? null,
+      ]);
       let pending = this.analyses.get(key);
       if (!pending) {
-         pending = analyzeCut(source, clip, signal, { audioTracks, extension, combined: mode === "combined" }).catch((error: unknown) => {
+         pending = analyzeCut(source, clip, signal, {
+            audioTracks,
+            excludedStreams,
+            lossless,
+            extension,
+            combined: mode === "combined",
+            ...(notBefore === undefined ? {} : { notBefore }),
+         }).catch((error: unknown) => {
             if (this.analyses.get(key) === pending) this.analyses.delete(key);
             throw error;
          });
@@ -91,24 +122,35 @@ export class ExportService {
    }
    private async analyze(source: ProbedSource, request: AnalyzeRequest, signal = this.analysisController.signal): Promise<CutAnalysis[]> {
       const settings = analyzeRequestSchema.parse(request);
-      const audio = audioStreams(source);
-      const tracks = exportAudioTracks(source, settings.audioTracks);
-      const sorted = settings.items.map((item) => ({ ...item.clip })).sort((a, b) => a.start - b.start);
-      const clips: Clip[] = [];
-      for (const clip of sorted) {
-         const previous = clips.at(-1);
+      const output = outputSettings(source, settings);
+      const sorted = settings.items.map((item) => ({ clip: { ...item.clip }, container: item.container })).sort((a, b) => a.clip.start - b.clip.start);
+      const parts: typeof sorted = [];
+      for (const part of sorted) {
+         const previous = parts.at(-1);
          // Only remove shared boundaries. Even a small gap is selected content to omit.
-         if (settings.mode === "combined" && previous?.end === clip.start) previous.end = clip.end;
-         else clips.push(clip);
+         if (settings.mode === "combined" && previous?.clip.end === part.clip.start) previous.clip.end = part.clip.end;
+         else parts.push(part);
       }
-      const results = await mapConcurrent(
-         clips,
-         (clip) => {
-            const extension = exportExtensionFor(source, clip, { separate: settings.mode === "separate", allAudio: tracks.length === audio.length });
-            return this.cut(source, clip, tracks, extension, settings.mode, signal);
-         },
-         2
-      );
+      const extensionFor = (part: (typeof parts)[number]) =>
+         settings.mode === "combined"
+            ? exportExtensionFor(source, part.clip, { separate: false, unchanged: false, container: output.container })
+            : exportExtensionFor(source, part.clip, {
+                 separate: true,
+                 unchanged: unchangedOutput(source, output),
+                 container: part.container ?? output.container,
+              });
+      // Lossless cuts widen, so in one video each cut starts no earlier than the previous one ends.
+      if (settings.mode === "combined" && output.lossless) {
+         const results: CutAnalysis[] = [];
+         for (const part of parts) {
+            const previous = results.at(-1);
+            const notBefore = previous && previous.method !== "unsupported" ? previous.clip.end : undefined;
+            results.push(await this.cut(source, part.clip, output, extensionFor(part), settings.mode, signal, notBefore));
+         }
+         signal.throwIfAborted();
+         return results;
+      }
+      const results = await mapConcurrent(parts, (part) => this.cut(source, part.clip, output, extensionFor(part), settings.mode, signal), 2);
       signal.throwIfAborted();
       return results;
    }
@@ -142,7 +184,7 @@ export class ExportService {
    async plan(source: ProbedSource, request: PlanRequest): Promise<ExportPlan> {
       const settings = planRequestSchema.parse(request);
       const signal = this.analysisController.signal;
-      const audioTracks = exportAudioTracks(source, settings.audioTracks);
+      const output = outputSettings(source, settings);
       const directoryPath = resolve(settings.directory);
       const directory = await statOrNull(directoryPath).catch((error: Error) => {
          throw new Error(`Cannot access the output folder: ${error.message}`);
@@ -154,6 +196,7 @@ export class ExportService {
       // The panel blocks collisions live; planning also rejects stale or direct IPC requests.
       if (settings.mode === "separate" && duplicateNames(names).size) throw new Error("Some clips export to the same file name. Give each clip its own name.");
       const cuts = await this.analyze(source, settings, signal);
+      const chapters = settings.mode === "combined" && settings.clipChapters ? clipChapters(settings.items, cuts) : undefined;
       const analyses = new Map<string, CutAnalysis[]>();
       const items = [];
       for (const [index, analysis] of cuts.entries()) {
@@ -216,7 +259,7 @@ export class ExportService {
       };
       signal.throwIfAborted();
       if (this.plans.size >= 20) this.plans.delete(this.plans.keys().next().value!);
-      this.plans.set(plan.id, { plan, source, analyses, audioTracks });
+      this.plans.set(plan.id, { plan, source, analyses, output, chapters });
       return plan;
    }
    start(planId: string, approval: ExportApproval = {}): ExportJob {
@@ -312,7 +355,10 @@ export class ExportService {
                   this.emit(structuredClone(job));
                },
                signal,
-               audioTracks: stored.audioTracks,
+               audioTracks: stored.output.audioTracks,
+               excludedStreams: stored.output.excludedStreams,
+               lossless: stored.output.lossless,
+               ...(stored.chapters ? { chapters: stored.chapters } : {}),
                overwrite: !!stored.approval?.overwrite && stored.plan.existingPaths.includes(item.outputPath),
                replaceSource: !!stored.approval?.replaceSource && item.outputPath === stored.plan.sourcePath,
                onProgress: (value: number) => {
@@ -336,6 +382,49 @@ export class ExportService {
       this.emit(structuredClone(job));
    }
 }
+function outputSettings(source: ProbedSource, settings: ReturnType<typeof analyzeRequestSchema.parse>): OutputSettings {
+   const optional = (stream: ProbedSource["streams"][number]) =>
+      ["subtitle", "data", "attachment"].includes(stream.type) || (stream.type === "video" && stream.attachedPicture);
+   const excludedStreams = [...new Set(settings.excludedStreams)].sort((a, b) => a - b);
+   if (excludedStreams.some((index) => !source.streams.some((stream) => stream.index === index && optional(stream))))
+      throw new Error("One or more turned off tracks were not found.");
+   return {
+      audioTracks: exportAudioTracks(source, settings.audioTracks),
+      excludedStreams,
+      lossless: settings.lossless,
+      container: settings.container,
+   };
+}
+function unchangedOutput(source: ProbedSource, output: OutputSettings): boolean {
+   return output.audioTracks.length === audioStreams(source).length && !output.excludedStreams.length;
+}
+/**
+ * One chapter per selected clip on the joined timeline. Adjacent clips join into one cut, so
+ * each clip is located inside the cut that contains it and offset by the cuts before it.
+ */
+export function clipChapters(items: { clip: Clip; name: string }[], cuts: Pick<CutAnalysis, "clip">[]): ChapterMark[] {
+   const offsets: number[] = [];
+   const total = cuts.reduce((sum, cut, index) => {
+      offsets[index] = sum;
+      return sum + cut.clip.end - cut.clip.start;
+   }, 0);
+   return [...items]
+      .sort((a, b) => a.clip.start - b.clip.start)
+      .flatMap((item) => {
+         const index = cuts.findIndex((cut) => item.clip.start < cut.clip.end && item.clip.end > cut.clip.start);
+         const cut = cuts[index];
+         if (!cut) return [];
+         const length = cut.clip.end - cut.clip.start;
+         const start = offsets[index]! + Math.min(length, Math.max(0, item.clip.start - cut.clip.start));
+         const end = offsets[index]! + Math.min(length, Math.max(0, item.clip.end - cut.clip.start));
+         return end > start ? [{ start, end, title: item.name }] : [];
+      })
+      .map((chapter, index, all) => {
+         // Snapped boundaries can leave slivers between neighbours; chapters tile the output.
+         const next = all[index + 1];
+         return { ...chapter, start: index === 0 ? 0 : chapter.start, end: next ? next.start : total };
+      });
+}
 function exportAudioTracks(source: ProbedSource, selected: number[] | null): number[] {
    const available = audioStreams(source).map((stream) => stream.index);
    const tracks = selected ?? available;
@@ -350,15 +439,14 @@ function outputNames(source: ProbedSource, request: ReturnType<typeof planReques
       return value.toLowerCase().endsWith(extension.toLowerCase()) ? value : `${value}${extension}`;
    };
    if (request.mode === "combined") {
-      const extension = source.exportExtension;
+      const extension = request.container === "auto" ? source.exportExtension : request.container;
       return [outputName(request.name, extension)];
    }
-   const audio = audioStreams(source);
-   const allAudio = (request.audioTracks ?? audio.map((stream) => stream.index)).length === audio.length;
+   const unchanged = unchangedOutput(source, outputSettings(source, request));
    return [...request.items]
       .sort((a, b) => a.clip.start - b.clip.start)
       .map((item) => {
-         const extension = exportExtensionFor(source, item.clip, { separate: true, allAudio });
+         const extension = exportExtensionFor(source, item.clip, { separate: true, unchanged, container: item.container ?? request.container });
          return outputName(item.name, extension);
       });
 }

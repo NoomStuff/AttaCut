@@ -26,6 +26,10 @@ export const defaultPreferences: Preferences = {
    combinedNamePattern: "{source} (Trim)",
    playbackAudio: { mode: "default", sourceTrackCount: 0, tracks: [] },
    exportAudio: { mode: "default", sourceTrackCount: 0, tracks: [] },
+   exportContainer: "auto",
+   exportLossless: false,
+   exportClipChapters: false,
+   exportAdvanced: false,
    frameFormat: "png",
    frameQuality: 95,
 };

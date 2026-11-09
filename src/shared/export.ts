@@ -3,7 +3,13 @@ import { clipSchema } from "./editing";
 import { clipLimit } from "./defaults";
 import type { Clip } from "./editing";
 import type { AppFailure } from "./failure";
-export const exportItemSchema = z.object({ clip: clipSchema, name: z.string().min(1).max(255) });
+const containerSchema = z.enum(["auto", ".mp4", ".mov", ".mkv", ".webm"]);
+export const exportItemSchema = z.object({
+   clip: clipSchema,
+   name: z.string().min(1).max(255),
+   /** A separate clip's own format. Omitted follows the request's container. */
+   container: containerSchema.optional(),
+});
 export const planRequestSchema = z.object({
    sourceId: z.string(),
    directory: z.string().min(1),
@@ -11,6 +17,14 @@ export const planRequestSchema = z.object({
    mode: z.enum(["separate", "combined"]).default("separate"),
    audioTracks: z.array(z.number().int().nonnegative()).max(100).nullable().default(null),
    name: z.string().max(255).default("combined"),
+   /** "auto" keeps the source container where it is reliable. */
+   container: containerSchema.default("auto"),
+   /** Subtitle, telemetry, attachment and cover streams the user turned off. Audio uses audioTracks. */
+   excludedStreams: z.array(z.number().int().nonnegative()).max(200).default([]),
+   /** Combined exports get one chapter per selected clip instead of the source chapters. */
+   clipChapters: z.boolean().default(false),
+   /** Never encode: cuts move to keyframes and the output is checked packet for packet. */
+   lossless: z.boolean().default(false),
 });
 export type PlanRequest = z.input<typeof planRequestSchema>;
 export const exportApprovalSchema = z.object({

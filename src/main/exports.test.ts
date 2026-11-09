@@ -200,3 +200,23 @@ describe("output filenames", () => {
       expect(sanitizeName("..")).toBe("clip-untitled");
    });
 });
+
+describe("clip chapters", () => {
+   it("places one chapter per clip on the joined timeline, including clips joined into one cut", async () => {
+      const { clipChapters } = await import("./exports.ts");
+      const items = [
+         { name: "Clip 3", clip: { id: "c", color: 0, start: 8, end: 9 } },
+         { name: "Clip 1", clip: { id: "a", color: 0, start: 1, end: 3 } },
+         { name: "Clip 2", clip: { id: "b", color: 0, start: 3, end: 5 } },
+      ];
+      // Adjacent clips a and b joined into one cut; the cuts snapped slightly to frames.
+      const cuts = [{ clip: { id: "a", color: 0, start: 1.01, end: 5 } }, { clip: { id: "c", color: 0, start: 8, end: 9.02 } }];
+      const chapters = clipChapters(items, cuts);
+      expect(chapters.map((chapter) => chapter.title)).toEqual(["Clip 1", "Clip 2", "Clip 3"]);
+      expect(chapters[0]!.start).toBe(0);
+      expect(chapters[1]!.start).toBeCloseTo(1.99);
+      expect(chapters[1]!.end).toBeCloseTo(3.99);
+      expect(chapters[2]!.start).toBeCloseTo(3.99);
+      expect(chapters[2]!.end).toBeCloseTo(5.01);
+   });
+});

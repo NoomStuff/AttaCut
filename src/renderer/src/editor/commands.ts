@@ -33,6 +33,7 @@ export const commandDefinitions = {
    setEnd: { label: "Trim right", bindings: ["D"], group: "Clips" },
    delete: { label: "Delete highlighted clip", bindings: ["Delete"], group: "Clips" },
    add: { label: "Add clip in gap", bindings: [], group: "Clips" },
+   invert: { label: "Invert clips", bindings: [], group: "Clips" },
    undo: { label: "Undo", bindings: ["Mod+Z"], group: "Edit" },
    redo: { label: "Redo", bindings: ["Mod+Shift+Z"], group: "Edit" },
    fit: { label: "Fit timeline", bindings: ["F", "0"], group: "View" },

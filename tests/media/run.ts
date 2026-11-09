@@ -14,3 +14,4 @@ await import("./keyframes.ts");
 await import("./cancellation.ts");
 await import("./exports.ts");
 await import("./joins.ts");
+await import("./output-options.ts");
