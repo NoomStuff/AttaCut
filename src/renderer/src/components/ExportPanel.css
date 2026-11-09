@@ -136,8 +136,11 @@
       animation: none;
    }
 }
-.export-advanced + .export-list {
-   margin-top: 20px;
+.export-fields + .export-list {
+   margin-top: 6px;
+}
+.export-list + .export-advanced {
+   margin-top: 16px;
 }
 .folder-field {
    display: flex;

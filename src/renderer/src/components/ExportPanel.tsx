@@ -222,7 +222,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
    const formatLabel = (value: ContainerChoice) =>
       value === "auto"
          ? source.exportExtension === source.extension.toLowerCase()
-            ? `Same as source (${source.exportExtension})`
+            ? `Source (${source.exportExtension})`
             : `Automatic (${source.exportExtension})`
          : `${containerNames[value]} (${value})`;
    const formatPicker = (props: { label: string; value: ContainerChoice | null; trigger: string; onChange: (value: ContainerChoice) => void }) =>
@@ -338,62 +338,6 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                      </div>
                   </div>
                )}
-               <div className="export-advanced" data-open={advanced}>
-                  <button
-                     type="button"
-                     className="export-advanced-toggle"
-                     aria-expanded={advanced}
-                     aria-controls="export-advanced-options"
-                     onClick={() => setAdvanced(!advanced)}
-                  >
-                     <span>Advanced</span>
-                     {/* Hidden options still change the output, so the closed header names the ones that are on. */}
-                     {advancedSummary && !advanced && <span className="export-advanced-summary">{advancedSummary}</span>}
-                     <FontAwesomeIcon className="export-advanced-chevron" icon={faChevronDown} />
-                  </button>
-                  <div className="export-advanced-panel">
-                     <div className="export-advanced-body" id="export-advanced-options" inert={!advanced}>
-                        <Toggle
-                           label="Force lossless export"
-                           description="Never re-encode. Clips widen to the keyframes around them, and the result is checked against the source."
-                           checked={lossless}
-                           disabled={starting}
-                           onChange={setLossless}
-                        />
-                        {mode === "combined" && !singleTarget && (
-                           <Toggle
-                              label="Chapter for each clip"
-                              description="Replaces the source chapters."
-                              checked={clipChapters}
-                              disabled={starting}
-                              onChange={setClipChapters}
-                           />
-                        )}
-                        {otherStreams.length > 0 && (
-                           <div className="export-advanced-field">
-                              <span className="field-label">Other tracks</span>
-                              <DropdownSelect
-                                 label="Other tracks to export"
-                                 options={otherStreams.map((stream, index) => ({ value: String(stream.index), label: streamLabel(stream, index) }))}
-                                 value={keptOther.map((stream) => String(stream.index))}
-                                 multiple
-                                 disabled={starting}
-                                 onChange={(values) =>
-                                    setExcludedStreams(otherStreams.filter((stream) => !values.includes(String(stream.index))).map((stream) => stream.index))
-                                 }
-                                 trigger={
-                                    keptOther.length === otherStreams.length
-                                       ? "All kept"
-                                       : keptOther.length === 0
-                                         ? "None"
-                                         : `${keptOther.length} of ${otherStreams.length} kept`
-                                 }
-                              />
-                           </div>
-                        )}
-                     </div>
-                  </div>
-               </div>
                {rows.length > 1 && (
                   <div className="export-list">
                      <div className="export-list-heading">
@@ -460,6 +404,62 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                      })}
                   </div>
                )}
+               <div className="export-advanced" data-open={advanced}>
+                  <button
+                     type="button"
+                     className="export-advanced-toggle"
+                     aria-expanded={advanced}
+                     aria-controls="export-advanced-options"
+                     onClick={() => setAdvanced(!advanced)}
+                  >
+                     <span>Advanced</span>
+                     {/* Hidden options still change the output, so the closed header names the ones that are on. */}
+                     {advancedSummary && !advanced && <span className="export-advanced-summary">{advancedSummary}</span>}
+                     <FontAwesomeIcon className="export-advanced-chevron" icon={faChevronDown} />
+                  </button>
+                  <div className="export-advanced-panel">
+                     <div className="export-advanced-body" id="export-advanced-options" inert={!advanced}>
+                        <Toggle
+                           label="Force lossless export"
+                           description="Never re-encode. Clips widen to the keyframes around them, and the result is checked against the source."
+                           checked={lossless}
+                           disabled={starting}
+                           onChange={setLossless}
+                        />
+                        {mode === "combined" && !singleTarget && (
+                           <Toggle
+                              label="Chapter for each clip"
+                              description="Replaces the source chapters."
+                              checked={clipChapters}
+                              disabled={starting}
+                              onChange={setClipChapters}
+                           />
+                        )}
+                        {otherStreams.length > 0 && (
+                           <div className="export-advanced-field">
+                              <span className="field-label">Other tracks</span>
+                              <DropdownSelect
+                                 label="Other tracks to export"
+                                 options={otherStreams.map((stream, index) => ({ value: String(stream.index), label: streamLabel(stream, index) }))}
+                                 value={keptOther.map((stream) => String(stream.index))}
+                                 multiple
+                                 disabled={starting}
+                                 onChange={(values) =>
+                                    setExcludedStreams(otherStreams.filter((stream) => !values.includes(String(stream.index))).map((stream) => stream.index))
+                                 }
+                                 trigger={
+                                    keptOther.length === otherStreams.length
+                                       ? "All kept"
+                                       : keptOther.length === 0
+                                         ? "None"
+                                         : `${keptOther.length} of ${otherStreams.length} kept`
+                                 }
+                              />
+                           </div>
+                        )}
+                     </div>
+                  </div>
+               </div>
                {error && (
                   <div className="inline-error" role="alert">
                      {error}
