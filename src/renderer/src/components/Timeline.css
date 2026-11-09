@@ -414,7 +414,8 @@
 .keyframe-tick {
    z-index: 2;
    position: absolute;
-   width: 1px;
+   width: 2px;
+   margin-left: -1px;
    height: 8px;
    top: calc(50% - 4px);
    background: inherit;
