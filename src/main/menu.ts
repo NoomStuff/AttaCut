@@ -46,6 +46,11 @@ export function installMenu(window: BrowserWindow, recent: RecentFile[], onClear
             item("Delete clip", "delete"),
             item("Invert clips", "invert"),
             { type: "separator" },
+            {
+               label: "Copy clip times",
+               submenu: [item("As YouTube chapters", "copyChapters"), item("As CSV", "copyCsv")],
+            },
+            { type: "separator" },
             item("Settings…", "settings"),
          ],
       },

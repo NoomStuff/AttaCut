@@ -29,6 +29,8 @@ export const commandDefinitions = {
    next: { label: "Next cut", bindings: ["Mod+ArrowRight"], group: "Clips" },
    split: { label: "Split at playhead", bindings: ["S"], group: "Clips" },
    autoDetectCuts: { label: "Auto detect cuts…", bindings: [], group: "Clips" },
+   copyChapters: { label: "Copy clip times as YouTube chapters", bindings: [], group: "Clips" },
+   copyCsv: { label: "Copy clip times as CSV", bindings: [], group: "Clips" },
    setStart: { label: "Trim left", bindings: ["A"], group: "Clips" },
    setEnd: { label: "Trim right", bindings: ["D"], group: "Clips" },
    delete: { label: "Delete highlighted clip", bindings: ["Delete"], group: "Clips" },
@@ -53,6 +55,8 @@ export const commandDefinitions = {
 export type CommandId = keyof typeof commandDefinitions;
 export interface Command {
    resolve?: () => (() => void) | undefined;
+   /** A label that depends on the current document, for in-app menus. */
+   label?: () => string;
    feedback?: () => CommandId;
    enabled: () => boolean;
    run: () => void;

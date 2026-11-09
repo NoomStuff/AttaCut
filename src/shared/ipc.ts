@@ -20,7 +20,9 @@ interface IpcResponses {
    "source:close": void;
    "source:keyframes": number[];
    "source:scenes": number[];
-   "source:cancel-scenes": void;
+   "source:ranges": Result<"detectRanges">;
+   "source:cancel-detection": void;
+   "clipboard:write": void;
    "source:frame-time": number;
    "source:frame-times": number[];
    "directory:choose": string | null;

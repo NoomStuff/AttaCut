@@ -4,7 +4,7 @@ import { packetsAround, probeSource, sourceFrames } from "./media/probe.ts";
 import { preparePreview } from "./media/preview.ts";
 import { extractScrubPcm } from "./media/scrub-audio.ts";
 import { extractWaveform } from "./media/waveform.ts";
-import { detectSceneCuts } from "./media/scenes";
+import { detectBlack, detectSceneCuts, detectSilence } from "./media/scenes";
 import type { ProbedSource } from "./media/probe.ts";
 vi.mock("./media/probe.ts", () => ({
    setSourceLifetime: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock("./media/scrub-audio.ts", () => ({
 }));
 vi.mock("./media/preview.ts", () => ({ preparePreview: vi.fn(), leasePreview: vi.fn(), releasePreview: vi.fn() }));
 vi.mock("./media/waveform.ts", () => ({ extractWaveform: vi.fn(async () => ({ rate: 1000, buckets: 1 })) }));
-vi.mock("./media/scenes", () => ({ detectSceneCuts: vi.fn(async () => []) }));
+vi.mock("./media/scenes", () => ({ detectSceneCuts: vi.fn(async () => []), detectSilence: vi.fn(async () => []), detectBlack: vi.fn(async () => []) }));
 afterEach(() => vi.clearAllMocks());
 describe("source lifetime", () => {
    it("cancels scene scans on replacement, source close, and only the matching cancel request", async () => {
@@ -42,15 +42,51 @@ describe("source lifetime", () => {
       const first = session.autoDetectCuts("a", "first", 10);
       const second = session.autoDetectCuts("a", "second", 5);
       expect(signals[0]!.aborted).toBe(true);
-      session.cancelScenes("first");
+      session.cancelDetection("first");
       expect(signals[1]!.aborted).toBe(false);
-      session.cancelScenes("second");
+      session.cancelDetection("second");
       expect(signals[1]!.aborted).toBe(true);
       const third = session.autoDetectCuts("a", "third", 10);
       session.close();
       expect(signals[2]!.aborted).toBe(true);
       finishers.forEach((finish) => finish());
       await Promise.all([first, second, third]);
+      session.dispose();
+   });
+   it("shares one scan slot between scene and range scans", async () => {
+      const session = new SourceSession("unused-preview-directory");
+      await session.open("a");
+      const signals: AbortSignal[] = [];
+      vi.mocked(detectSceneCuts).mockImplementation((_source, _threshold, signal) => {
+         signals.push(signal);
+         return new Promise((resolve) => signal.addEventListener("abort", () => resolve([])));
+      });
+      vi.mocked(detectBlack).mockImplementation(async (_source, _minimum, signal) => {
+         signals.push(signal);
+         return [];
+      });
+      const scene = session.autoDetectCuts("a", "scene", 10);
+      await session.detectRanges("a", "black", { kind: "black", minimum: 0.5 });
+      expect(signals[0]!.aborted).toBe(true);
+      expect(signals[1]!.aborted).toBe(false);
+      await scene;
+      session.dispose();
+   });
+   it("snaps removal ranges to the nearest source frames and covers the lead-in", async () => {
+      vi.mocked(sourceFrames).mockResolvedValueOnce(Float64Array.from({ length: 100 }, (_, i) => 0.04 + i * 0.04));
+      vi.mocked(detectSilence).mockResolvedValueOnce([
+         { start: 0.03, end: 0.51 },
+         { start: 1.01, end: 1.02 },
+         { start: 2.13, end: 2.51 },
+         { start: 2.51, end: 36000 },
+      ]);
+      const session = new SourceSession("unused-preview-directory");
+      await session.open("a");
+      const ranges = await session.detectRanges("a", "silence", { kind: "silence", audioIndex: 1, noise: -40, minimum: 0.5 });
+      expect(ranges.map(({ start, end }) => [Number(start.toFixed(6)), Number(end.toFixed(6))])).toEqual([
+         [0, 0.52],
+         [2.12, 36000],
+      ]);
       session.dispose();
    });
    it("remembers editor activity while the waveform job waits for capacity", async () => {

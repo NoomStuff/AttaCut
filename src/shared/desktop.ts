@@ -2,7 +2,7 @@ import type { FrameRequest, WaveformRequest } from "./media-requests";
 import type { Preferences } from "./preferences";
 import type { SavedSession } from "./editing";
 import type { SessionInput } from "./session-codec";
-import type { MediaSource, ScrubAudio } from "./media";
+import type { DetectedRange, MediaSource, RangeDetection, ScrubAudio } from "./media";
 import type { RecentEntry } from "./recent";
 import type { PlanRequest, AnalyzeRequest, ExportApproval, ExportPlan, ExportDestinations, CutReport, ExportJob } from "./export";
 export interface Bootstrap {
@@ -61,7 +61,10 @@ export interface DesktopApi {
    cancelPreview(): Promise<void>;
    keyframes(sourceId: string): Promise<number[]>;
    autoDetectCuts(request: { sourceId: string; requestId: string; threshold: number }): Promise<number[]>;
-   cancelScenes(requestId: string): Promise<void>;
+   detectRanges(request: { sourceId: string; requestId: string; detection: RangeDetection }): Promise<DetectedRange[]>;
+   /** Cancels a scene or range scan by its request id. */
+   cancelDetection(requestId: string): Promise<void>;
+   writeClipboard(text: string): Promise<void>;
    scrubAudio(sourceId: string, streamIndices: number[], time?: number): Promise<ScrubAudio | null>;
    cancelScrub(): Promise<void>;
    waveformStart(request: WaveformRequest): Promise<{ rate: number; buckets: number } | null>;

@@ -1,4 +1,4 @@
-import type { ScrubAudio } from "../shared/types.ts";
+import type { DetectedRange, RangeDetection, ScrubAudio } from "../shared/types.ts";
 import { resolveFrameTime } from "../shared/frames.ts";
 import { packetsAround, sourceFrames, sourceKeyframes, setSourceLifetime } from "./media/probe.ts";
 import { SourceProbe } from "./source-probe";
@@ -10,7 +10,7 @@ import { extractScrubPcm, scrubChunkSeconds } from "./media/scrub-audio.ts";
 import { extractWaveform } from "./media/waveform.ts";
 import type { WaveformChunk, WaveformResult, WaveformRange } from "./media/waveform-decode.ts";
 import { join } from "node:path";
-import { detectSceneCuts } from "./media/scenes";
+import { detectBlack, detectSceneCuts, detectSilence } from "./media/scenes";
 
 /** Owns the active source. Export plans retain their own immutable source reference. */
 export class SourceSession {
@@ -28,7 +28,7 @@ export class SourceSession {
    private previewPath: string | null = null;
    private scrub = new AbortController();
    private pcm: { key: string; value: Promise<ScrubAudio | null> } | null = null;
-   private sceneScan: { requestId: string; controller: AbortController } | null = null;
+   private detection: { requestId: string; controller: AbortController } | null = null;
    private wave = new AbortController();
    private waveRequest: string | null = null;
    private waveJobs = new Set<Promise<WaveformResult | null>>();
@@ -104,17 +104,45 @@ export class SourceSession {
    }
    async autoDetectCuts(id: string, requestId: string, threshold: number): Promise<number[]> {
       const source = this.get(id);
-      this.sceneScan?.controller.abort();
+      return this.scan(requestId, (signal) => detectSceneCuts(source, threshold, signal));
+   }
+   /** Removal ranges land on the nearest source frames, like any committed boundary. */
+   async detectRanges(id: string, requestId: string, detection: RangeDetection): Promise<DetectedRange[]> {
+      const source = this.get(id);
+      return this.scan(requestId, async (signal) => {
+         const ranges =
+            detection.kind === "silence"
+               ? await detectSilence(source, detection.audioIndex, detection.noise, detection.minimum, signal)
+               : await detectBlack(source, detection.minimum, signal);
+         if (!ranges.length) return ranges;
+         const [first = 0, ...times] = await this.frameTimes(id, [0, ...ranges.flatMap((range) => [range.start, range.end])]);
+         signal.throwIfAborted();
+         const snapped: DetectedRange[] = [];
+         for (let index = 0; index < ranges.length; index++) {
+            // A range that starts on the first picture also covers the lead-in before it.
+            const start = times[index * 2]! <= first ? 0 : times[index * 2]!;
+            const end = times[index * 2 + 1]!;
+            if (end <= start) continue;
+            const last = snapped.at(-1);
+            if (last && start <= last.end) last.end = Math.max(last.end, end);
+            else snapped.push({ start, end });
+         }
+         return snapped;
+      });
+   }
+   /** Scene and range scans share one slot: a new scan replaces the previous one. */
+   private async scan<T>(requestId: string, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+      this.detection?.controller.abort();
       const scan = { requestId, controller: new AbortController() };
-      this.sceneScan = scan;
+      this.detection = scan;
       try {
-         return await detectSceneCuts(source, threshold, AbortSignal.any([this.signal, scan.controller.signal]));
+         return await run(AbortSignal.any([this.signal, scan.controller.signal]));
       } finally {
-         if (this.sceneScan === scan) this.sceneScan = null;
+         if (this.detection === scan) this.detection = null;
       }
    }
-   cancelScenes(requestId: string): void {
-      if (this.sceneScan?.requestId === requestId) this.sceneScan.controller.abort();
+   cancelDetection(requestId: string): void {
+      if (this.detection?.requestId === requestId) this.detection.controller.abort();
    }
    cancelPreview(): void {
       this.preview.abort();

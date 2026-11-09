@@ -161,6 +161,68 @@ export function splitAtSceneCuts(document: EditDocument, times: number[]): EditD
    }
    return next === document ? document : { ...next, selectedId: document.selectedId };
 }
+/** Sorted, merged, finite ranges with a positive length. */
+function normalizeRanges(ranges: readonly { start: number; end: number }[]): { start: number; end: number }[] {
+   const merged: { start: number; end: number }[] = [];
+   for (const range of ranges
+      .filter((item) => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start)
+      .sort((a, b) => a.start - b.start)) {
+      const last = merged.at(-1);
+      if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
+      else merged.push({ start: range.start, end: range.end });
+   }
+   return merged;
+}
+/** Detected ranges worth listing: those that would remove kept footage. */
+export function rangesInClips<T extends { start: number; end: number }>(clips: readonly Clip[], ranges: readonly T[]): T[] {
+   return ranges.filter((range) => clips.some((clip) => Math.min(range.end, clip.end) - Math.max(range.start, clip.start) > timeEpsilon));
+}
+/**
+ * Trim ranges out of kept footage. A range inside a clip splits it; a clip left empty or
+ * shorter than `minimum` (one source frame) is dropped. The first surviving piece keeps the
+ * clip's identity. Refuse an overfull result instead of silently truncating it.
+ */
+export function removeRanges(document: EditDocument, ranges: readonly { start: number; end: number }[], minimum = timeEpsilon): EditDocument {
+   const removed = normalizeRanges(ranges);
+   if (!removed.length) return document;
+   const clips: Clip[] = [];
+   let changed = false;
+   for (const [index, clip] of document.clips.entries()) {
+      const pieces: { start: number; end: number }[] = [];
+      let start = clip.start;
+      for (const range of removed) {
+         if (range.end <= start || range.start >= clip.end) continue;
+         if (range.start > start) pieces.push({ start, end: range.start });
+         start = Math.max(start, range.end);
+      }
+      if (start < clip.end) pieces.push({ start, end: clip.end });
+      const kept = pieces.filter((piece) => piece.end - piece.start >= minimum - 0.000001);
+      if (kept.length === 1 && kept[0]!.start === clip.start && kept[0]!.end === clip.end) {
+         clips.push(clip);
+         continue;
+      }
+      changed = true;
+      for (const [position, piece] of kept.entries()) {
+         if (clips.length >= clipLimit) throw new Error(`This would exceed ${clipLimit} clips. Raise the minimum length and scan again.`);
+         if (position === 0) clips.push({ ...clip, ...piece });
+         else {
+            const color = nextClipColor([...clips, ...document.clips], clips.at(-1), document.clips[index + 1]);
+            clips.push({ ...clip, ...piece, id: crypto.randomUUID(), color });
+         }
+      }
+   }
+   if (!changed) return document;
+   if (clips.some((clip) => clip.id === document.selectedId) || document.selectedId === null) return { clips, selectedId: document.selectedId };
+   // A removed selection moves to the footage that now follows it.
+   const previous = document.clips.find((clip) => clip.id === document.selectedId);
+   return { clips, selectedId: (clips.find((clip) => !previous || clip.end > previous.start) ?? clips.at(-1))?.id ?? null };
+}
+/** Chapter starts that would split the timeline: inside the source, sorted, without duplicates. */
+export function chapterSplitTimes(chapters: readonly { start: number }[], duration: number): number[] {
+   return [
+      ...new Set(chapters.map((chapter) => chapter.start).filter((time) => Number.isFinite(time) && time > timeEpsilon && time < duration - timeEpsilon)),
+   ].sort((a, b) => a - b);
+}
 export function deleteClip(document: EditDocument, id: string): EditDocument {
    const index = document.clips.findIndex((clip) => clip.id === id);
    if (index < 0) return document;

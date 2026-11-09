@@ -33,7 +33,21 @@ export const ipcRequestSchemas = {
    "source:close": z.void(),
    "source:keyframes": z.string(),
    "source:scenes": z.object({ sourceId: z.string(), requestId: z.string().uuid(), threshold: z.number().min(1).max(100) }),
-   "source:cancel-scenes": z.string().uuid(),
+   "source:ranges": z.object({
+      sourceId: z.string(),
+      requestId: z.string().uuid(),
+      detection: z.discriminatedUnion("kind", [
+         z.object({
+            kind: z.literal("silence"),
+            audioIndex: z.number().int().nonnegative(),
+            noise: z.number().min(-90).max(-10),
+            minimum: z.number().min(0.05).max(60),
+         }),
+         z.object({ kind: z.literal("black"), minimum: z.number().min(0.01).max(60) }),
+      ]),
+   }),
+   "source:cancel-detection": z.string().uuid(),
+   "clipboard:write": z.string().max(1_000_000),
    "source:frame-time": frameTimeRequestSchema,
    "source:frame-times": frameTimesRequestSchema,
    "directory:choose": z.string(),
