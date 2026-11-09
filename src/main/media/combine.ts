@@ -5,18 +5,21 @@ import { publishOutput } from "./publish.ts";
 import { dirname, extname, join } from "node:path";
 import type { ProbedSource } from "./probe.ts";
 import { assertSourceUnchanged } from "./probe.ts";
-import { exportCut } from "./cut.ts";
+import { exportCut, keepsStream } from "./cut.ts";
 import type { CutAnalysis, CutOptions } from "./cut.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
 import { isMp4Container, containerFlags, containerKeepsData, aspectArguments } from "./formats.ts";
 import { ffconcatList, dropOutside, isLosslessAudio, dispositionFlags, serializeChapters } from "./mux.ts";
-import { verifyCutFrames, verifyOutputStructure } from "./verify.ts";
+import { verifyCutFrames, verifyLosslessPackets, verifyOutputStructure } from "./verify.ts";
 
 export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], destination: string, options: CutOptions): Promise<void> {
    return withTemporaryOutput(dirname(destination), ".attacut-combined-", async (temporary) => {
       const selectedAudio = source.streams.filter(
          (stream) => stream.type === "audio" && (options.audioTracks === undefined || options.audioTracks.includes(stream.index))
       );
+      const kept = (stream: (typeof source.streams)[number]) => keepsStream(stream, options);
+      // Clip chapters describe the joined output, never one of its parts.
+      const { chapters: outputChapters, ...partOptions } = options;
       const paths: string[] = [];
       const duration = cuts.reduce((sum, cut) => sum + cut.clip.end - cut.clip.start, 0);
       const totalWork = duration * 3;
@@ -28,7 +31,7 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
          // Verification of each cut happens on the concatenated output below, so the
          // intermediate files skip it instead of decoding every clip twice.
          await exportCut(source, cut, rawPath, {
-            ...options,
+            ...partOptions,
             verify: false,
             onStage: (stage) => {
                if (stage === "copying" || stage === "encoding") options.onStage?.(stage);
@@ -81,28 +84,33 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
       // clips. Concatenating those packets under the first clip's codec header corrupts the
       // result on stricter decoders. Re-encode these tracks losslessly at the final join so the
       // output has one consistent stream configuration.
-      const joinedAudioCodecs = selectedAudio.flatMap((audio, index) => (isLosslessAudio(audio.codec) ? [`-c:a:${index}`, audio.codec] : []));
+      // Force lossless copied every packet from one source stream, so the headers already agree.
+      const joinedAudioCodecs = options.lossless
+         ? []
+         : selectedAudio.flatMap((audio, index) => (isLosslessAudio(audio.codec) ? [`-c:a:${index}`, audio.codec] : []));
       const trackMetadata = (["audio", "subtitle"] as const).flatMap((type) =>
          source.streams
-            .filter((stream) => stream.type === type && (type !== "audio" || selectedAudio.some((audio) => audio.index === stream.index)))
+            .filter((stream) => stream.type === type && kept(stream))
             .flatMap((stream, index) => {
                const specifier = `${type === "audio" ? "a" : "s"}:${index}`;
                return [`-map_metadata:s:${specifier}`, `1:s:${stream.index}`, `-disposition:${specifier}`, dispositionFlags(stream.disposition)];
             })
       );
       let chapterOffset = 0;
-      const chapters = cuts.flatMap((cut) => {
-         const result = source.chapters
-            .filter((chapter) => chapter.end > cut.clip.start && chapter.start < cut.clip.end)
-            .map((chapter) => ({
-               start: chapterOffset + Math.max(chapter.start, cut.clip.start) - cut.clip.start,
-               end: chapterOffset + Math.min(chapter.end, cut.clip.end) - cut.clip.start,
-               title: chapter.title,
-               ...(chapter.tags ? { tags: chapter.tags } : {}),
-            }));
-         chapterOffset += cut.clip.end - cut.clip.start;
-         return result;
-      });
+      const chapters =
+         outputChapters ??
+         cuts.flatMap((cut) => {
+            const result = source.chapters
+               .filter((chapter) => chapter.end > cut.clip.start && chapter.start < cut.clip.end)
+               .map((chapter) => ({
+                  start: chapterOffset + Math.max(chapter.start, cut.clip.start) - cut.clip.start,
+                  end: chapterOffset + Math.min(chapter.end, cut.clip.end) - cut.clip.start,
+                  title: chapter.title,
+                  ...(chapter.tags ? { tags: chapter.tags } : {}),
+               }));
+            chapterOffset += cut.clip.end - cut.clip.start;
+            return result;
+         });
       const chapterPath = join(temporary, "chapters.ffmetadata");
       if (chapters.length) await writeFile(chapterPath, serializeChapters(chapters));
       const video = primaryVideo(source)!;
@@ -123,7 +131,7 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
             "-map",
             "0",
             ...source.streams
-               .filter((stream) => stream.type === "attachment")
+               .filter((stream) => stream.type === "attachment" && kept(stream))
                .flatMap((stream, index) => ["-map", `1:${stream.index}`, `-map_metadata:s:t:${index}`, `1:s:${stream.index}`]),
             "-map_metadata",
             "1",
@@ -156,7 +164,12 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
          cuts[0]!.clip.start,
          containerKeepsData(extname(destination).toLowerCase()) ? [] : ["data"],
          Math.max(0, ...cuts.map((cut) => cut.frameDuration ?? 0)) || undefined,
-         cuts.every((cut) => cut.frameCount !== undefined) ? cuts.reduce((sum, cut) => sum + cut.frameCount!, 0) : undefined
+         cuts.every((cut) => cut.frameCount !== undefined) ? cuts.reduce((sum, cut) => sum + cut.frameCount!, 0) : undefined,
+         {
+            excludedStreams: options.excludedStreams ?? [],
+            ...(options.rotation === undefined ? {} : { rotation: options.rotation }),
+            copiedAudio: !!options.lossless,
+         }
       );
       let offset = 0;
       for (const cut of cuts) {
@@ -164,6 +177,14 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
          offset += cut.clip.end - cut.clip.start;
          options.onProgress?.(0.9 + (0.07 * offset) / duration);
       }
+      if (options.lossless)
+         await verifyLosslessPackets(
+            source,
+            checkedOutput,
+            cuts.map((cut) => cut.clip),
+            selectedAudio.map((stream) => stream.index),
+            options.signal
+         );
       options.signal?.throwIfAborted();
       await assertSourceUnchanged(source);
       options.onStage?.("saving");

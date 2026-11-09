@@ -135,6 +135,11 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
                original quality if that is what you're looking for.
             </p>
             <p>You will get a heads up when exporting showing how much time needs to be re-encoded to do that export so you know what you lose.</p>
+            <p>
+               <strong>Force lossless export</strong>, under Advanced in the export dialog, does this for you at export time. Each cut moves to the nearest
+               point that copies cleanly, the dialog says how much that adds or drops, and the finished file is checked packet by packet against the original.
+               If anything would need encoding, the export stops instead.
+            </p>
          </>
       ),
    },
@@ -148,7 +153,16 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
                Choose the clips you want to save, their filenames, and an output folder. Separate Clips saves each selected clip as its own file. Single Video
                joins them into one file in their original order, leaving out the gaps.
             </p>
-            <p>Choose which audio tracks to keep in the export dialog.</p>
+            <p>
+               Choose which audio tracks to keep in the export dialog. <strong>Format</strong> picks the file type, for example MP4 for a recording made as MKV.
+               Changing it copies the video and sound as they are.
+            </p>
+            <h3>Advanced options</h3>
+            <p>
+               Advanced can export the gaps instead of the clips, add a chapter for each clip to a single video, rotate the picture, and turn off subtitles or
+               other extra tracks. Rotation only changes how players turn the picture, so the image is never encoded again. When Advanced is closed, its header
+               still lists the options that are on.
+            </p>
             <h3>When encoding needs your approval</h3>
             <p>Small sections near a cut may need encoding again for an accurate cut.</p>
             <p>

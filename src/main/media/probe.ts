@@ -20,6 +20,7 @@ const probeSchema = z.object({
          index: z.number(),
          codec_type: z.string().optional(),
          codec_name: z.string().optional(),
+         codec_tag_string: z.string().optional(),
          extradata_hash: z.string().optional(),
          sample_rate: numberLike,
          channels: z.number().optional(),
@@ -124,6 +125,8 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
       maxCll: "",
       dynamicHdr: stream.side_data_list?.some((item) => isDynamicHdrMetadata(item["side_data_type"])) ?? false,
       attachedPicture: stream.disposition?.["attached_pic"] === 1,
+      // MP4 stores chapters as a text track. It follows the chapters, never the data tracks.
+      ...(stream.codec_type === "data" && stream.codec_tag_string === "text" ? { chapterTrack: true } : {}),
       disposition: stream.disposition ?? {},
    }));
    const video = streams.find((stream) => stream.type === "video" && !stream.attachedPicture);

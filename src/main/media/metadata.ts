@@ -4,7 +4,8 @@ import type { Clip } from "../../shared/types.ts";
 import type { ProbedSource } from "./probe.ts";
 import { runMedia } from "./process.ts";
 import { dispositionFlags, serializeChapters } from "./mux.ts";
-import { isMp4Container } from "./formats.ts";
+import type { ChapterMark } from "./mux.ts";
+import { subtitleCodecFor } from "../../shared/export-format.ts";
 
 export const textSubtitleCodecs = new Set(["subrip", "ass", "ssa", "mov_text", "webvtt", "text"]);
 const subtitleCache = new WeakMap<ProbedSource, Map<number, string>>();
@@ -50,14 +51,15 @@ export async function metadataInputs(
    directory: string,
    destination: string,
    signal?: AbortSignal,
-   audioTracks?: number[]
+   audioTracks?: number[],
+   options: { excludedStreams?: number[]; chapters?: ChapterMark[] } = {}
 ): Promise<{ inputs: string[]; outputs: string[] }> {
    const inputs: string[] = [];
    const outputs: string[] = [];
    let nextInput = 2;
    let subtitleIndex = 0;
-   const mp4 = isMp4Container(extname(destination));
-   for (const stream of source.streams.filter((item) => item.type === "subtitle")) {
+   const kept = (index: number) => !options.excludedStreams?.includes(index);
+   for (const stream of source.streams.filter((item) => item.type === "subtitle" && kept(item.index))) {
       // Bitmap subtitles (PGS, VobSub, DVB) cannot be re-cut line by line; MKV outputs copy
       // them from the pre-seeked source input and exportCut drops packets outside the clip.
       if (!textSubtitleCodecs.has(stream.codec)) {
@@ -81,12 +83,7 @@ export async function metadataInputs(
       // FFmpeg subtitle extraction starts at the input's format start time.
       await writeFile(path, trimAss(ass, clip.start, clip.end));
       inputs.push("-i", path);
-      outputs.push(
-         "-map",
-         `${nextInput++}:s:0`,
-         `-c:s:${subtitleIndex}`,
-         mp4 ? "mov_text" : extname(destination) === ".webm" ? "webvtt" : stream.codec === "mov_text" ? "subrip" : stream.codec
-      );
+      outputs.push("-map", `${nextInput++}:s:0`, `-c:s:${subtitleIndex}`, subtitleCodecFor(extname(destination), stream.codec));
       outputs.push(
          `-metadata:s:s:${subtitleIndex}`,
          `language=${stream.language || "und"}`,
@@ -97,18 +94,20 @@ export async function metadataInputs(
       );
       subtitleIndex++;
    }
-   for (const [index, stream] of source.streams.filter((item) => item.type === "attachment").entries())
+   for (const [index, stream] of source.streams.filter((item) => item.type === "attachment" && kept(item.index)).entries())
       outputs.push("-map", `1:${stream.index}`, `-map_metadata:s:t:${index}`, `1:s:${stream.index}`);
    for (const [index, stream] of source.streams.filter((item) => item.type === "audio" && (!audioTracks || audioTracks.includes(item.index))).entries())
       outputs.push(`-map_metadata:s:a:${index}`, `1:s:${stream.index}`, `-disposition:a:${index}`, dispositionFlags(stream.disposition));
-   const chapters = source.chapters
-      .filter((chapter) => chapter.end > clip.start && chapter.start < clip.end)
-      .map((chapter) => ({
-         start: Math.max(chapter.start, clip.start) - clip.start,
-         end: Math.min(chapter.end, clip.end) - clip.start,
-         title: chapter.title,
-         ...(chapter.tags ? { tags: chapter.tags } : {}),
-      }));
+   const chapters =
+      options.chapters ??
+      source.chapters
+         .filter((chapter) => chapter.end > clip.start && chapter.start < clip.end)
+         .map((chapter) => ({
+            start: Math.max(chapter.start, clip.start) - clip.start,
+            end: Math.min(chapter.end, clip.end) - clip.start,
+            title: chapter.title,
+            ...(chapter.tags ? { tags: chapter.tags } : {}),
+         }));
    if (chapters.length) {
       const path = join(directory, "chapters.ffmetadata");
       await writeFile(path, serializeChapters(chapters));

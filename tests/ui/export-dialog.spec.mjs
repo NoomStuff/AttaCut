@@ -216,3 +216,37 @@ test("duplicate clip names block the export instead of being rewritten", async (
    await combined.fill("valid name");
    await expect(dialog.getByRole("button", { name: "Export video", exact: true })).toBeEnabled();
 });
+
+test("advanced export options say what they change, even while collapsed", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, resolve("work/fixture.mp4"));
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const bar = await page.locator(".timeline-viewport").boundingBox();
+   // Keyframes sit every two seconds. Clip 1 ends at 7.4 and clip 2 starts at 10, leaving one gap.
+   await page.mouse.click(bar.x + (bar.width * 7.4) / 18.021, bar.y + 36);
+   await waitForPlaybackTime(page, 7.4);
+   await page.keyboard.press("s");
+   await expect(page.getByRole("slider", { name: "Clip 2 start", exact: true })).toBeVisible();
+   await page.mouse.click(bar.x + (bar.width * 10) / 18.021, bar.y + 36);
+   await waitForPlaybackTime(page, 10);
+   await page.keyboard.press("a");
+   await page.getByRole("button", { name: "Export", exact: true }).click();
+   await page.getByLabel("Save to", { exact: true }).fill(profile + "/advanced");
+   const advanced = page.locator(".export-advanced-toggle");
+   await expect(advanced).toHaveAttribute("aria-expanded", "false");
+   await advanced.click();
+   await page.getByRole("switch", { name: "Export the gaps instead", exact: true }).check();
+   await page.getByRole("switch", { name: "Force lossless export", exact: true }).check();
+   const note = page.locator(".export-note");
+   await expect(note).toContainText("Exporting losslessly.");
+   await expect(note.locator(".export-note-change")).toContainText("Cuts move to keyframes");
+   await expect(note).not.toContainText("re-encoded");
+   await advanced.click();
+   await expect(page.locator(".export-advanced-summary")).toHaveText("Force lossless, Gaps between clips");
+   await page.getByRole("button", { name: "Export format", exact: true }).click();
+   await page.getByRole("option", { name: "MKV (.mkv)", exact: true }).click();
+   await expect(page.locator(".filename-extension")).toHaveText(".mkv");
+   await page.getByRole("button", { name: "Export video", exact: true }).click();
+   await page.getByRole("button", { name: "Create folder and export", exact: true }).click();
+   await expect(page.locator(".notification-entry").first().getByRole("button", { name: "Open file", exact: true })).toBeVisible({ timeout: 60000 });
+});

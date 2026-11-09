@@ -1,17 +1,22 @@
-import { audioStreams } from "../../../shared/media";
-import { useEffect, useMemo, useState } from "react";
+import { audioStreams, primaryVideo } from "../../../shared/media";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { substantialEncoding } from "../../../shared/export-policy";
 import { applyNamePattern, duplicateNames, filenameError } from "../../../shared/filename";
-import { exportExtensionFor } from "../../../shared/export-format";
-import type { Clip, ExportJob, ExportPlan, CutReport, MediaSource, Preferences } from "../../../shared/types";
+import { containerChoices, exportExtensionFor } from "../../../shared/export-format";
+import type { ContainerChoice, ExportRotation } from "../../../shared/export-format";
+import type { Clip, ExportJob, ExportPlan, CutReport, MediaSource, MediaStream, Preferences } from "../../../shared/types";
 import { errorText, isCancellation } from "../lib/errors";
 import { rememberAudioSelection, resolveAudioSelection } from "../playback/audioSelection";
+import { gapsBetween } from "./exportClips";
 
 export interface ExportDraft {
    sourceId: string;
    directory: string;
    mode: Preferences["exportMode"];
    audioTracks: number[];
+   excludedStreams: number[];
+   rotation: ExportRotation;
+   gaps: boolean;
    name: string;
    nameAltered: boolean;
    rows: { clipId: string; included: boolean; name: string; altered: boolean }[];
@@ -30,6 +35,19 @@ export interface ExportOptions {
    onSourceReplaceStartFailed: () => void;
 }
 
+/** Streams besides the picture and audio that an export can leave out. */
+export function optionalStreams(source: MediaSource): MediaStream[] {
+   return source.streams.filter(
+      (stream) => (["subtitle", "data", "attachment"].includes(stream.type) && !stream.chapterTrack) || (stream.type === "video" && stream.attachedPicture)
+   );
+}
+
+interface RowState {
+   included: boolean;
+   /** Null follows the name template. A string, even empty while typing, is the user's own name. */
+   name: string | null;
+}
+
 export function useExport({
    source,
    draft,
@@ -45,127 +63,187 @@ export function useExport({
    const saved = draft?.sourceId === source.id ? draft : null;
    const sourceAudio = audioStreams(source);
    const [directory, setDirectory] = useState(saved?.directory ?? (preferences.outputDirectory || source.directory));
-   const [mode, setMode] = useState<Preferences["exportMode"]>(clips.length === 1 ? "combined" : (saved?.mode ?? preferences.exportMode));
    const [audioTracks, updateAudioTracks] = useState(saved?.audioTracks ?? resolveAudioSelection(sourceAudio, preferences.exportAudio, true));
    const setAudioTracks = (selected: number[]) => {
       updateAudioTracks(selected);
       onPreferences((current) => ({ ...current, exportAudio: rememberAudioSelection(sourceAudio, selected, true) }));
    };
+   const otherStreams = optionalStreams(source);
+   const [excludedStreams, setExcludedStreams] = useState<number[]>(
+      () => saved?.excludedStreams.filter((index) => otherStreams.some((stream) => stream.index === index)) ?? []
+   );
+   const [rotation, setRotation] = useState<ExportRotation>(saved?.rotation ?? 0);
+   const [gaps, setGaps] = useState(saved?.gaps ?? false);
+   // The automatic container is already the first choice, so it is not listed twice.
+   const choices = containerChoices(source).filter((value) => value !== source.exportExtension);
+   // A remembered container this video cannot use falls back to automatic, without changing the preference.
+   const container: ContainerChoice =
+      preferences.exportContainer !== "auto" && choices.includes(preferences.exportContainer) ? preferences.exportContainer : "auto";
+   const setContainer = (value: ContainerChoice) => onPreferences((current) => ({ ...current, exportContainer: value }));
+   const lossless = preferences.exportLossless;
+   const setLossless = (value: boolean) => onPreferences((current) => ({ ...current, exportLossless: value }));
+   const clipChapters = preferences.exportClipChapters;
+   const setClipChapters = (value: boolean) => onPreferences((current) => ({ ...current, exportClipChapters: value }));
+   const advanced = preferences.exportAdvanced;
+   const setAdvanced = (value: boolean) => onPreferences((current) => ({ ...current, exportAdvanced: value }));
+   const frameRate = primaryVideo(source)?.frameRate ?? 0;
+   // "Export the gaps" swaps the list for everything outside the clips.
+   const targets = useMemo(
+      () => (gaps ? gapsBetween(clips, source.duration, frameRate > 0 ? 1 / frameRate : 0.01) : clips),
+      [gaps, clips, source.duration, frameRate]
+   );
+   const [mode, setMode] = useState<Preferences["exportMode"]>(clips.length === 1 ? "combined" : (saved?.mode ?? preferences.exportMode));
+   const singleTarget = targets.length <= 1;
+   const effectiveMode = singleTarget ? "combined" : mode;
+   const unchanged = audioTracks.length === sourceAudio.length && !excludedStreams.length && !rotation;
    const sourceStem = source.name.slice(0, -source.extension.length);
    // The patterns from settings are defaults: every output name follows its template until
    // it is edited by hand, and clearing a field hands the name back to the template. So a
    // template change in settings reaches every name that was never touched.
-   const patternDefaults = { source: sourceStem, total: source.duration, date: new Date() };
+   const [openedAt] = useState(() => new Date());
+   const patternDefaults = { source: sourceStem, total: source.duration, date: openedAt };
    const generatedCombined = () =>
       applyNamePattern(preferences.combinedNamePattern, {
          ...patternDefaults,
          index: 0,
          count: 1,
-         start: Math.min(...clips.map((clip) => clip.start)),
-         end: Math.max(...clips.map((clip) => clip.end)),
+         start: Math.min(...targets.map((clip) => clip.start)),
+         end: Math.max(...targets.map((clip) => clip.end)),
       });
-   const generatedName = (clip: Clip, index: number) =>
-      applyNamePattern(preferences.clipNamePattern, { ...patternDefaults, index, count: clips.length, start: clip.start, end: clip.end });
-   const [nameAltered, setNameAltered] = useState(saved?.nameAltered ?? false);
-   const [name, setName] = useState(() => (saved?.nameAltered && saved?.name ? saved.name : generatedCombined()));
-   const [rows, setRows] = useState(() =>
-      clips.map((clip, index) => {
-         const savedRow = saved?.rows.find((row) => row.clipId === clip.id);
-         return {
-            clip,
-            included: savedRow?.included ?? true,
-            altered: savedRow?.altered ?? false,
-            name: savedRow?.altered && savedRow?.name ? savedRow.name : generatedName(clip, index),
-         };
-      })
+   const [combinedName, setCombinedNameState] = useState<string | null>(saved?.nameAltered && saved.name ? saved.name : null);
+   const name = combinedName ?? generatedCombined();
+   const nameAltered = combinedName !== null && combinedName.trim() !== "";
+   const [rowStates, setRowStates] = useState<Record<string, RowState>>(() =>
+      Object.fromEntries((saved?.rows ?? []).map((row) => [row.clipId, { included: row.included, name: row.altered && row.name ? row.name : null }]))
    );
-   const setCombinedName = (value: string) => {
-      // An emptied field stays empty while typing (clearing to retype must not snap back);
-      // leaving the field empty is what hands the name to the template, on blur.
-      setNameAltered(value.trim() !== "");
-      setName(value);
-   };
-   const setRowName = (index: number, value: string) => {
-      setRows((current) => current.map((row, i) => (i === index ? { ...row, altered: value.trim() !== "", name: value } : row)));
-   };
+   const rows = useMemo(
+      () =>
+         targets.map((clip, index) => {
+            const state = rowStates[clip.id];
+            return {
+               clip,
+               included: state?.included ?? true,
+               altered: state?.name !== null && state?.name !== undefined && state.name.trim() !== "",
+               name:
+                  state?.name ??
+                  applyNamePattern(preferences.clipNamePattern, {
+                     source: sourceStem,
+                     total: source.duration,
+                     date: openedAt,
+                     index,
+                     count: targets.length,
+                     start: clip.start,
+                     end: clip.end,
+                  }),
+            };
+         }),
+      [targets, rowStates, preferences.clipNamePattern, sourceStem, source.duration, openedAt]
+   );
+   const updateRow = (id: string, change: Partial<RowState>) =>
+      setRowStates((current) => ({ ...current, [id]: { included: current[id]?.included ?? true, name: current[id]?.name ?? null, ...change } }));
+   const setIncluded = (index: number, included: boolean) => updateRow(rows[index]!.clip.id, { included });
+   // An emptied field stays empty while typing (clearing to retype must not snap back);
+   // leaving the field empty is what hands the name to the template, on blur.
+   const setRowName = (index: number, value: string) => updateRow(rows[index]!.clip.id, { name: value });
+   const setCombinedName = (value: string) => setCombinedNameState(value);
    useEffect(() => {
       onDraft({
          sourceId: source.id,
          directory,
          mode: clips.length === 1 ? preferences.exportMode : mode,
          audioTracks,
+         excludedStreams,
+         rotation,
+         gaps,
          name,
          nameAltered,
          rows: rows.map(({ clip, included, name, altered }) => ({ clipId: clip.id, included, name, altered })),
       });
-   }, [source.id, directory, mode, clips.length, preferences.exportMode, audioTracks, name, nameAltered, rows, onDraft]);
+   }, [source.id, directory, mode, clips.length, preferences.exportMode, audioTracks, excludedStreams, rotation, gaps, name, nameAltered, rows, onDraft]);
    // A single clip requires combined mode but must not overwrite the multi-clip preference.
    useEffect(() => {
-      if (clips.length > 1) onPreferences((current) => (current.exportMode === mode ? current : { ...current, exportMode: mode }));
-   }, [clips.length, mode, onPreferences]);
+      if (!singleTarget) onPreferences((current) => (current.exportMode === mode ? current : { ...current, exportMode: mode }));
+   }, [singleTarget, mode, onPreferences]);
    const [confirmation, setConfirmation] = useState<ExportPlan | null>(null);
    // Only an empty field hands the name back to its template on blur.
    // Invalid names stay visible until the user corrects them.
    const normalizeName = (index?: number) => {
       if (index === undefined) {
-         if (name.trim() === "") {
-            setNameAltered(false);
-            setName(generatedCombined());
-            return;
-         }
+         if (name.trim() === "") setCombinedNameState(null);
          return;
       }
-      setRows((current) =>
-         current.map((row, i) => {
-            if (i !== index) return row;
-            if (row.name.trim() === "") return { ...row, altered: false, name: generatedName(row.clip, i) };
-            return row;
-         })
-      );
+      const row = rows[index];
+      if (row && row.name.trim() === "") updateRow(row.clip.id, { name: null });
    };
    const [replaceSourceChecked, setReplaceSourceChecked] = useState(false);
    const [conflicts, setConflicts] = useState<Map<string, string | null>>(() => new Map());
    const [dangers, setDangers] = useState<Map<string, boolean>>(() => new Map());
+   const includedRows = useMemo(() => rows.filter((row) => row.included), [rows]);
    // Batch-internal name collisions are computed live: two clips headed for one file would
    // overwrite each other, which no confirmation should ever have to referee.
    const collisions = useMemo(
-      () => (mode === "separate" ? duplicateNames(rows.filter((row) => row.included).map((row) => row.name)) : new Set<string>()),
-      [mode, rows]
+      () => (effectiveMode === "separate" ? duplicateNames(includedRows.map((row) => row.name)) : new Set<string>()),
+      [effectiveMode, includedRows]
+   );
+   const output = useMemo(
+      () => ({
+         audioTracks,
+         excludedStreams,
+         rotation,
+         container,
+         lossless,
+         clipChapters: effectiveMode === "combined" && clipChapters,
+      }),
+      [audioTracks, excludedStreams, rotation, container, lossless, effectiveMode, clipChapters]
    );
    const request = useMemo(
       () => ({
          sourceId: source.id,
          directory,
-         mode,
-         audioTracks,
+         mode: effectiveMode,
          name,
-         items: rows.filter((row) => row.included).map((row, index) => ({ clip: row.clip, name: mode === "combined" ? `Clip ${index + 1}` : row.name })),
+         ...output,
+         items: includedRows.map((row, index) => ({
+            clip: row.clip,
+            name: effectiveMode === "combined" ? `${gaps ? "Part" : "Clip"} ${index + 1}` : row.name,
+         })),
       }),
-      [source.id, directory, mode, audioTracks, name, rows]
+      [source.id, directory, effectiveMode, name, output, includedRows, gaps]
    );
    const [error, setError] = useState<string | null>(null);
    const [starting, setStarting] = useState(false);
    const [analysis, setAnalysis] = useState<CutReport[] | null>(null);
    const selectedCount = request.items.length;
+   const extensionFor = useCallback(
+      (clip: Clip, separate: boolean) => exportExtensionFor(source, clip, { separate, unchanged, container }),
+      [source, unchanged, container]
+   );
+   const combinedExtension = container === "auto" ? source.exportExtension : container;
    const nameErrors = new Map<string, string>();
-   if (mode === "combined") {
-      const message = filenameError(name, source.exportExtension);
+   if (effectiveMode === "combined") {
+      const message = filenameError(name, combinedExtension);
       if (message) nameErrors.set("combined", message);
    } else {
-      for (const row of rows.filter((row) => row.included)) {
-         const extension = exportExtensionFor(source, row.clip, { separate: true, allAudio: audioTracks.length === sourceAudio.length });
-         const message = filenameError(row.name, extension);
+      for (const row of includedRows) {
+         const message = filenameError(row.name, extensionFor(row.clip, true));
          if (message) nameErrors.set(row.clip.id, message);
       }
    }
-   const selectedClips = useMemo(() => rows.filter((row) => row.included).map((row) => row.clip), [rows]);
+   const selectedKey = JSON.stringify(includedRows.map((row) => row.clip));
+   // Typing a filename must not restart media analysis, so the ranges are compared by value.
+   const selectedClips = useMemo(() => JSON.parse(selectedKey) as Clip[], [selectedKey]);
    // Media analysis is independent of filenames and destination checks, and reused at export.
    useEffect(() => {
       let cancelled = false;
       setAnalysis(null);
       if (!selectedClips.length) return;
       window.desktop
-         .analyzeExport({ sourceId: source.id, mode, audioTracks, items: selectedClips.map((clip) => ({ clip, name: "clip" })) })
+         .analyzeExport({
+            sourceId: source.id,
+            mode: effectiveMode,
+            ...output,
+            items: selectedClips.map((clip) => ({ clip, name: "clip" })),
+         })
          .then((items) => {
             if (!cancelled) setAnalysis(items);
          })
@@ -176,11 +254,11 @@ export function useExport({
          cancelled = true;
          void window.desktop.cancelExportAnalysis();
       };
-   }, [source.id, selectedClips, mode, audioTracks]);
+   }, [source.id, selectedClips, effectiveMode, output]);
    const valid =
       request.items.length > 0 &&
       !!directory.trim() &&
-      (mode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim())) &&
+      (effectiveMode === "combined" ? !!name.trim() : request.items.every((item) => !!item.name.trim())) &&
       collisions.size === 0 &&
       nameErrors.size === 0;
    // Main reports conflicts per clip, so the panel never replicates export naming rules.
@@ -259,18 +337,37 @@ export function useExport({
    };
    return {
       sourceAudio,
+      otherStreams,
       directory,
       setDirectory,
-      mode,
+      mode: effectiveMode,
       setMode,
+      singleTarget,
       audioTracks,
       setAudioTracks,
+      excludedStreams,
+      setExcludedStreams,
+      rotation,
+      setRotation,
+      gaps,
+      setGaps,
+      container,
+      setContainer,
+      choices,
+      combinedExtension,
+      extensionFor,
+      lossless,
+      setLossless,
+      clipChapters,
+      setClipChapters,
+      advanced,
+      setAdvanced,
       name,
       setName: setCombinedName,
       setRowName,
+      setIncluded,
       normalizeName,
       rows,
-      setRows,
       confirmation,
       setConfirmation,
       replaceSourceChecked,

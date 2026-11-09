@@ -29,6 +29,8 @@ export interface MediaStream {
    maxCll: string;
    dynamicHdr: boolean;
    attachedPicture: boolean;
+   /** MP4 chapter text track; chapters are rewritten separately, so it is never copied as data. */
+   chapterTrack?: boolean;
    disposition: Record<string, number>;
 }
 export interface MediaSource {

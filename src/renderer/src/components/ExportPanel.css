@@ -12,6 +12,71 @@
 .audio-export-field .field-label {
    margin-top: 0;
 }
+.export-format-field {
+   padding: 17px 0 18px;
+   border-bottom: 1px solid var(--line);
+}
+.export-format-field .field-label,
+.export-advanced-field .field-label {
+   margin-top: 0;
+}
+.export-advanced {
+   border-bottom: 1px solid var(--line);
+}
+.export-advanced-toggle {
+   display: flex;
+   gap: 8px;
+   align-items: center;
+   width: 100%;
+   padding: 14px 0;
+   font-size: 12px;
+   font-weight: 600;
+   text-align: left;
+}
+.export-advanced-chevron {
+   font-size: 10px;
+   color: var(--muted);
+   transform: rotate(-90deg);
+   transition: transform 150ms ease-out;
+}
+.export-advanced[data-open="true"] .export-advanced-chevron {
+   transform: none;
+}
+/* Hidden options still change the output, so the collapsed header says which are on. */
+.export-advanced-summary {
+   flex: 1;
+   min-width: 0;
+   overflow: hidden;
+   color: var(--warning);
+   font-weight: 400;
+   text-align: right;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+}
+.export-advanced-body {
+   padding-bottom: 8px;
+   animation: export-advanced-in 160ms ease-out both;
+}
+.export-advanced-body .toggle-row {
+   padding: 10px 0;
+}
+.export-advanced-field {
+   padding: 10px 0;
+}
+@keyframes export-advanced-in {
+   from {
+      opacity: 0;
+      transform: translateY(-4px);
+   }
+}
+@media (prefers-reduced-motion: reduce) {
+   .export-advanced-body {
+      animation: none;
+   }
+   .export-advanced-chevron {
+      transition: none;
+   }
+}
 .folder-field {
    display: flex;
    gap: 8px;
@@ -146,10 +211,12 @@
    flex-shrink: 0;
    font-size: 12px;
 }
-.export-note.problem {
+/* The footer rule above sets the muted color, so these repeat its selector to win. */
+.export-modal .modal-footer .export-note.problem {
    color: var(--danger);
 }
-.export-note.warning {
+.export-modal .modal-footer .export-note.warning,
+.export-note-change {
    color: var(--warning);
 }
 .export-note-link {
