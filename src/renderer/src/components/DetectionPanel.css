@@ -1,19 +1,19 @@
-.scene-cuts-modal {
-   width: min(460px, calc(100vw - 40px));
-   height: min(440px, calc(100dvh - 40px));
+.detection-modal {
+   width: min(480px, calc(100vw - 40px));
+   height: min(500px, calc(100dvh - 40px));
    max-height: none;
    overflow: hidden;
 }
-.scene-cuts-modal[open],
-.scene-cuts-modal.closing {
+.detection-modal[open],
+.detection-modal.closing {
    display: flex;
    flex-direction: column;
 }
-.scene-cuts-modal .modal-header,
-.scene-cuts-footer {
+.detection-modal .modal-header,
+.detection-footer {
    flex: 0 0 auto;
 }
-.scene-cuts-body {
+.detection-body {
    display: flex;
    flex-direction: column;
    gap: 16px;
@@ -21,19 +21,44 @@
    min-height: 0;
    padding-bottom: 12px;
 }
-.scene-cuts-sensitivity {
+.detection-mode {
+   flex: 0 0 auto;
+}
+.detection-mode button,
+.detection-options .segmented-control button {
+   padding-inline: 6px;
+   white-space: nowrap;
+}
+/* Every mode keeps one row of options, so switching never moves the results. */
+.detection-options {
+   display: grid;
+   grid-template-columns: repeat(2, minmax(0, 1fr));
+   gap: 12px;
+   flex: 0 0 auto;
+}
+.detection-option {
    display: grid;
    gap: 7px;
    min-width: 0;
-   flex: 0 0 auto;
 }
-.scene-cuts-results {
+.detection-option.wide {
+   grid-column: 1 / -1;
+}
+/* Matches a segmented control's box and font, so every mode's options row has one height. */
+.detection-hint {
+   margin: 0;
+   padding: 11px 0;
+   border: 1px solid transparent;
+   line-height: normal;
+   color: var(--muted);
+}
+.detection-results {
    display: flex;
    flex-direction: column;
    min-height: 0;
    flex: 1;
 }
-.scene-cuts-summary {
+.detection-summary {
    display: flex;
    align-items: center;
    justify-content: space-between;
@@ -41,24 +66,24 @@
    height: 32px;
    border-bottom: 1px solid var(--line);
 }
-.scene-cuts-summary h3 {
+.detection-summary h3 {
    font-size: 12px;
    font-weight: 600;
    margin: 0;
 }
-.scene-cuts-summary > span,
-.scene-cuts-selection {
+.detection-summary > span,
+.detection-selection {
    color: var(--muted);
    font-size: 12px;
    font-variant-numeric: tabular-nums;
 }
-.scene-cuts-content {
+.detection-content {
    flex: 1;
    min-height: 0;
    overflow-y: auto;
    scrollbar-gutter: stable;
 }
-.scene-cuts-empty {
+.detection-empty {
    min-height: 100%;
    display: flex;
    flex-direction: column;
@@ -70,12 +95,12 @@
    color: var(--muted);
    line-height: 1.5;
 }
-.scene-cuts-empty progress {
+.detection-empty progress {
    width: 140px;
    height: 4px;
    accent-color: var(--accent);
 }
-.scene-cuts-list label {
+.detection-list label {
    display: flex;
    align-items: center;
    justify-content: space-between;
@@ -88,17 +113,34 @@
    font-variant-numeric: tabular-nums;
    border-radius: 4px;
 }
-.scene-cuts-list label:hover {
+.detection-list label:hover {
    background: var(--surface-hover);
 }
-.scene-cuts-list label:focus-within {
+.detection-list label:focus-within {
    outline: 1px solid var(--accent);
    outline-offset: -1px;
 }
-.scene-cuts-list label.excluded {
+.detection-time {
+   white-space: nowrap;
+}
+.detection-detail {
+   flex: 1;
+   min-width: 0;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+   text-align: right;
+   color: var(--muted);
+   font-size: 12px;
+}
+.detection-track {
+   color: var(--muted);
+   font-weight: 400;
+}
+.detection-list label.excluded {
    color: var(--muted);
 }
-.scene-cuts-note {
+.detection-note {
    margin: 0;
    height: 32px;
    overflow-y: auto;
@@ -107,13 +149,13 @@
    font-size: 11px;
    line-height: 16px;
 }
-.scene-cuts-note.error,
-.scene-cuts-empty[role="alert"] {
+.detection-note.error,
+.detection-empty[role="alert"] {
    color: var(--danger);
 }
-.scene-cuts-footer {
+.detection-footer {
    justify-content: space-between;
 }
-.scene-cuts-footer .button {
+.detection-footer .button {
    min-width: 112px;
 }

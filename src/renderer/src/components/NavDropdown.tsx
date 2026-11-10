@@ -18,6 +18,7 @@ import {
    faClockRotateLeft,
    faCrosshairs,
    faExpand,
+   faFileCsv,
    faFileLines,
    faFilePen,
    faFilm,
@@ -26,6 +27,7 @@ import {
    faGear,
    faKeyboard,
    faLink,
+   faListOl,
    faMagnifyingGlassMinus,
    faMagnifyingGlassPlus,
    faPlus,
@@ -63,6 +65,8 @@ const menuIcons: Partial<Record<CommandId, IconDefinition>> = {
    split: faScissors,
    merge: faLink,
    autoDetectCuts: faWandMagicSparkles,
+   copyChapters: faListOl,
+   copyCsv: faFileCsv,
    setStart: faCaretLeft,
    setEnd: faCaretRight,
    add: faPlus,
@@ -237,7 +241,7 @@ function NavDropdownItems({
                            commands[id].run();
                         }}
                      >
-                        <MenuLabel icon={menuIcons[id]}>{commandDefinitions[id].label}</MenuLabel>
+                        <MenuLabel icon={menuIcons[id]}>{commands[id].label?.() ?? commandDefinitions[id].label}</MenuLabel>
                         <kbd>{displayBindings(bindingsFor(id, shortcuts), mac)}</kbd>
                      </button>
                      {id === "open" && recent && <RecentSubmenu recent={recent} close={close} />}

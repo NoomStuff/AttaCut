@@ -7,7 +7,8 @@ import { playbackSpeeds } from "../playback/speed";
 import { nextKeptTime } from "../playback/ranges";
 import { mergePair, mergeClips, addGap, canSplit, clipGaps, deleteClip, gapAt, invertClips, minClipLength, selectedClip, splitClip } from "./model";
 import type { EditDocument } from "./model";
-import { guardCommands, resolvedCommand } from "./commands";
+import { commandDefinitions, guardCommands, resolvedCommand } from "./commands";
+import { clipTimesCsv, youtubeChapters } from "./clipTimes";
 import type { Commands } from "./commands";
 import type { EditorSession } from "./useEditorSession";
 import type { EditorInteraction } from "./useEditorInteraction";
@@ -39,6 +40,7 @@ export function useEditorCommands({
    job,
    onError,
    onWarning,
+   onInfo,
 }: {
    session: EditorSession;
    editing: EditorInteraction;
@@ -50,6 +52,7 @@ export function useEditorCommands({
    job: ExportJob | null;
    onError: (message: string) => void;
    onWarning: (message: string) => void;
+   onInfo: (message: string) => void;
 }) {
    const {
       source,
@@ -112,6 +115,12 @@ export function useEditorCommands({
          .catch((value: unknown) => {
             if (sourceRef.current?.id === id) showError(errorText(value));
          });
+   };
+   const copy = (text: string, notice: string, warn = false) => {
+      void window.desktop.writeClipboard(text).then(
+         () => (warn ? onWarning : onInfo)(notice),
+         (value: unknown) => showError(errorText(value))
+      );
    };
    const joinAtPlayhead = () => mergePair(editor.document, clock.get(), frameStep, frameStep / 2);
    const navigate = (resolveTime: () => number | null) =>
@@ -246,6 +255,26 @@ export function useEditorCommands({
          run: () => {
             pause();
             view.openPanel("scenes");
+         },
+      },
+      copyChapters: {
+         enabled: () => available() && editor.document.clips.length > 0,
+         label: () =>
+            youtubeChapters(editor.document.clips, source?.duration ?? 0).combined
+               ? "Copy clip times as YouTube chapters (combined export)"
+               : commandDefinitions.copyChapters.label,
+         run: () => {
+            const chapters = youtubeChapters(editor.document.clips, source!.duration);
+            const count = editor.document.clips.length;
+            const copied = `Copied ${count} ${count === 1 ? "chapter" : "chapters"}${chapters.combined ? " timed for the combined export" : ""}.`;
+            copy(chapters.text, chapters.usable ? copied : `${copied} YouTube needs at least 3, each 10 seconds or longer.`, !chapters.usable);
+         },
+      },
+      copyCsv: {
+         enabled: () => available() && editor.document.clips.length > 0,
+         run: () => {
+            const count = editor.document.clips.length;
+            copy(clipTimesCsv(editor.document.clips), `Copied ${count} clip ${count === 1 ? "time" : "times"} as CSV.`);
          },
       },
       setStart: trimCommand("start"),

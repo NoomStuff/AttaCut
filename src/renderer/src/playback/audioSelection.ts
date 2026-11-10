@@ -45,3 +45,18 @@ export function audioTrackLabel(track: MediaStream, position: number): string {
    const details = [track.title || `Track ${position + 1}`, language].filter(Boolean);
    return details.join(" · ");
 }
+
+/** Silence detection reads one track: the first one the export includes, else the default track. */
+export function analysisAudioTrack(tracks: MediaStream[], exported: readonly number[]): { index: number; label: string | null } | null {
+   const chosen = tracks.findIndex((track) => exported.includes(track.index));
+   const position =
+      chosen >= 0
+         ? chosen
+         : Math.max(
+              0,
+              tracks.findIndex((track) => track.disposition["default"] === 1)
+           );
+   const track = tracks[position];
+   if (!track) return null;
+   return { index: track.index, label: tracks.length > 1 ? audioTrackLabel(track, position) : null };
+}

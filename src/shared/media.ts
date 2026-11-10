@@ -51,6 +51,13 @@ export interface MediaSource {
    url: string;
    chapters: { start: number; end: number; title: string; tags?: Record<string, string> }[];
 }
+/** A detected stretch of source time to remove. Starts are inclusive, ends exclusive. */
+export interface DetectedRange {
+   start: number;
+   end: number;
+}
+/** Background scans that find parts to remove rather than split points. */
+export type RangeDetection = { kind: "silence"; audioIndex: number; noise: number; minimum: number } | { kind: "black"; minimum: number };
 export function audioStreams(source: Pick<MediaSource, "streams">): MediaStream[] {
    return source.streams.filter((stream) => stream.type === "audio");
 }

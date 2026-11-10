@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import "./SegmentedControl.css";
 
-/** Shared sliding selection used by export mode and scene sensitivity. */
+/** Shared sliding selection used by export mode and the detection panel. */
 export function SegmentedControl<T extends string>({
    label,
    options,
@@ -11,7 +11,7 @@ export function SegmentedControl<T extends string>({
    className = "",
 }: {
    label: string;
-   options: readonly { value: T; label: string }[];
+   options: readonly { value: T; label: string; disabled?: boolean; title?: string }[];
    value: T;
    onChange: (value: T) => void;
    disabled?: boolean;
@@ -36,7 +36,8 @@ export function SegmentedControl<T extends string>({
          {options.map((option) => (
             <button
                key={option.value}
-               disabled={disabled}
+               disabled={disabled || option.disabled}
+               title={option.title}
                aria-pressed={value === option.value}
                onClick={() => {
                   if (value !== option.value) onChange(option.value);

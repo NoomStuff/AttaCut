@@ -6,6 +6,9 @@ import type { EditorNotice } from "./editor/useEditorSession";
 import { useAppearance } from "./lib/appearance";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { ExportJob } from "../../shared/types";
+import { audioStreams } from "../../shared/media";
+import { minClipLength } from "./editor/model";
+import { analysisAudioTrack, resolveAudioSelection } from "./playback/audioSelection";
 import { CommandContext, useCommands } from "./editor/commands";
 import { createDraftStore } from "./editor/draftStore";
 import { Button, Modal } from "./components/Controls";
@@ -42,7 +45,7 @@ const loadHelpPanel = () => import("./components/HelpPanel").then((module) => ({
 const HelpPanel = lazy(loadHelpPanel);
 const loadAboutPanel = () => import("./components/AboutPanel").then((module) => ({ default: module.AboutPanel }));
 const AboutPanel = lazy(loadAboutPanel);
-const SceneCutsPanel = lazy(() => import("./components/SceneCutsPanel").then((module) => ({ default: module.SceneCutsPanel })));
+const DetectionPanel = lazy(() => import("./components/DetectionPanel").then((module) => ({ default: module.DetectionPanel })));
 
 export default function App() {
    // The architecture test counts root commits. Clear each mark to bound the buffer.
@@ -193,6 +196,7 @@ export default function App() {
       job,
       onError: showError,
       onWarning: (text) => setError({ text, tone: "warning" }),
+      onInfo: (text) => setError({ text, tone: "info" }),
       view: {
          openPanel,
          openSettings,
@@ -377,7 +381,20 @@ export default function App() {
             </main>
             <Suspense key={panel} fallback={null}>
                {panel === "scenes" && source && (
-                  <SceneCutsPanel key={source.id} source={source} document={editor.document} onApply={commit} onClose={() => setPanel(null)} />
+                  <DetectionPanel
+                     key={source.id}
+                     source={source}
+                     document={editor.document}
+                     minimum={minClipLength(frameStep)}
+                     audio={analysisAudioTrack(
+                        audioStreams(source),
+                        exportDraft?.sourceId === source.id
+                           ? exportDraft.audioTracks
+                           : resolveAudioSelection(audioStreams(source), preferences.exportAudio, true)
+                     )}
+                     onApply={commit}
+                     onClose={() => setPanel(null)}
+                  />
                )}
                {panel === "export" && source && (
                   <ExportPanel

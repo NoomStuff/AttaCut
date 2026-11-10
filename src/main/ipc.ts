@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, net, shell, type BrowserWindow } from "electron";
+import { app, clipboard, dialog, ipcMain, net, shell, type BrowserWindow } from "electron";
 import { isPackagedApp } from "./identity.ts";
 import type { IpcTestAdapter } from "./ipc-test-adapter";
 import { appFailure } from "./failure";
@@ -245,7 +245,9 @@ export function registerIpc({
    });
    handle("source:keyframes", (id) => sourceSession.keyframes(id));
    handle("source:scenes", ({ sourceId, requestId, threshold }) => sourceSession.autoDetectCuts(sourceId, requestId, threshold));
-   handle("source:cancel-scenes", (requestId) => sourceSession.cancelScenes(requestId));
+   handle("source:ranges", ({ sourceId, requestId, detection }) => sourceSession.detectRanges(sourceId, requestId, detection));
+   handle("source:cancel-detection", (requestId) => sourceSession.cancelDetection(requestId));
+   handle("clipboard:write", (text) => clipboard.writeText(text));
    handle("source:frame-time", (request) => sourceSession.frameTime(request.sourceId, request.time, request.direction));
    handle("source:frame-times", (request) => sourceSession.frameTimes(request.sourceId, request.times));
    handle("audio:scrub", (request) => {
