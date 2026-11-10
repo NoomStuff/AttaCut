@@ -189,16 +189,19 @@ export function Toggle({
    onChange,
    description,
    disabled,
+   icon,
 }: {
    label: string;
    checked: boolean;
    onChange: (checked: boolean) => void;
    description?: string;
    disabled?: boolean;
+   icon?: IconDefinition;
 }) {
    const descriptionId = useId();
    return (
       <label className="toggle-row">
+         {icon && <FontAwesomeIcon className="row-icon" icon={icon} />}
          <span>
             {label}
             {description && <small id={descriptionId}>{description}</small>}

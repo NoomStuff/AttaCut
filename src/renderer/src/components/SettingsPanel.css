@@ -11,9 +11,8 @@
    gap: 7px;
    padding: 0 12px;
    height: var(--control-height);
-   border: 1px solid var(--field-border);
    border-radius: var(--radius-control);
-   background: var(--control-background, var(--surface));
+   background: var(--slot);
    color: var(--muted);
    font-size: 12px;
    transition:
@@ -23,14 +22,14 @@
 }
 
 .theme-picker button:hover {
-   background: var(--control-hover-background, var(--surface-hover));
+   background: var(--slot-hover);
    color: var(--text);
 }
 
 .theme-picker button[aria-pressed="true"] {
    background: var(--accent-soft);
-   border-color: var(--accent);
    color: var(--accent);
+   font-weight: 600;
 }
 
 .accent-picker {
@@ -68,31 +67,53 @@
 }
 
 .settings-group + .settings-group {
-   margin-top: 24px;
+   margin-top: 22px;
 }
 
 .settings-group h3 {
-   margin: 0 0 4px;
-   color: var(--text);
-   font-size: 13px;
+   margin: 0 0 8px 2px;
+   color: var(--muted);
+   font-size: 12px;
    font-weight: 600;
 }
 
-.settings-group :is(.setting-row, .toggle-row, .pattern-editor):last-child {
-   border-bottom: 0;
+/* Each group is one card; its rows split by hairlines instead of floating in whitespace. */
+.settings-group > :is(.setting-row, .toggle-row, .pattern-editor) {
+   padding: 14px 16px;
+   background: var(--card);
+   border-bottom: 1px solid var(--card-line);
 }
-
-.pattern-editor {
-   padding: 16px 0;
-   border-bottom: 1px solid var(--line);
+.settings-group > h3 + * {
+   border-top-left-radius: var(--radius-card);
+   border-top-right-radius: var(--radius-card);
+}
+.settings-group > :is(.setting-row, .toggle-row, .pattern-editor):last-child {
+   border-bottom: 0;
+   border-bottom-left-radius: var(--radius-card);
+   border-bottom-right-radius: var(--radius-card);
+}
+.settings-group > .toggle-row:hover:not(:has(input:disabled)) {
+   background: var(--card-hover);
+}
+.settings-group > .toggle-row input {
+   right: 16px;
 }
 
 .pattern-head {
    display: flex;
-   justify-content: space-between;
    align-items: center;
-   gap: 12px;
+   gap: 16px;
    font-size: 13px;
+}
+
+.pattern-head > span {
+   flex: 1;
+   min-width: 0;
+}
+
+/* The field, tokens and example line up under the label, past the row icon. */
+.pattern-editor > :not(.pattern-head) {
+   margin-left: 34px;
 }
 
 .pattern-input {
@@ -157,16 +178,16 @@
 }
 
 .pattern-tokens button {
-   padding: 4px 9px;
-   border-radius: 5px;
-   background: var(--control-background, var(--surface));
+   padding: 5px 10px;
+   border-radius: 6px;
+   background: var(--slot);
    color: var(--muted);
    font-size: 11px;
 }
 
 .pattern-tokens button:hover {
    color: var(--text);
-   background: var(--control-hover-background, var(--surface-hover));
+   background: var(--slot-hover);
 }
 
 .pattern-preview {
