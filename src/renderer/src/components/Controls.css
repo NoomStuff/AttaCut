@@ -57,12 +57,10 @@
    background: var(--control-accent-hover-background, var(--accent-hover));
 }
 .button.secondary {
-   border: 1px solid var(--field-border);
    background: var(--control-background, var(--surface-raised));
 }
 .button.secondary:is(:hover:not(:disabled), .shortcut-active) {
    background: var(--control-hover-background, var(--surface-hover));
-   border-color: var(--muted);
 }
 .button.danger {
    color: var(--danger);
@@ -129,10 +127,10 @@
    transform: translateX(-50%);
 }
 .modal {
-   --control-background: color-mix(in srgb, var(--surface-raised) 20%, transparent);
-   --control-hover-background: color-mix(in srgb, var(--surface-hover) 35%, transparent);
-   --control-selected-background: color-mix(in srgb, var(--surface-hover) 85%, transparent);
-   --control-well-background: color-mix(in srgb, var(--background) 15%, transparent);
+   --control-background: var(--surface-hover);
+   --control-hover-background: color-mix(in srgb, var(--surface-hover) 90%, var(--text));
+   --control-selected-background: var(--surface-hover);
+   --control-well-background: var(--slot);
    --control-accent-background: color-mix(in srgb, var(--accent) 98%, transparent);
    --control-accent-hover-background: color-mix(in srgb, var(--accent-hover) 98%, transparent);
    --panel-footer-background: color-mix(in srgb, var(--surface) 20%, transparent);
@@ -212,33 +210,31 @@
 .modal-tabs {
    display: flex;
    padding: 0 24px;
-   margin-bottom: 15px;
-   gap: 12px;
+   margin-bottom: 18px;
+   gap: 4px;
    flex-shrink: 0;
 }
 
+/* Tabs read like the sidebar items they stand in for: a soft accent pill marks the open one. */
 .modal-tabs button {
-   padding: 10px 12px;
+   padding: 8px 14px;
    font-size: 13px;
-   border-bottom: 2px solid transparent;
    color: var(--muted);
-   border-radius: 5px;
+   border-radius: var(--radius-popover);
    transition:
-      border-color 170ms ease-out,
+      background-color 170ms ease-out,
       color 170ms ease-out;
 }
 
 .modal-tabs button:hover {
    color: var(--text);
-   background: var(--control-hover-background, var(--surface-hover));
+   background: color-mix(in srgb, var(--text) 5%, transparent);
    transition-duration: 0ms;
 }
 
 .modal-tabs button[aria-selected="true"] {
-   border-radius: 5px 5px 0 0;
-   border-color: var(--accent);
    color: var(--accent);
-   background: var(--control-selected-background, var(--surface-hover));
+   background: var(--accent-soft);
    font-weight: 600;
 }
 
@@ -331,12 +327,25 @@
    margin-top: 4px;
    overflow-wrap: anywhere;
 }
-.toggle-row > span:first-child {
+.toggle-row > span:first-of-type {
    flex: 1;
    min-width: 0;
 }
 .setting-row > div {
    min-width: 0;
+}
+.setting-row > .row-icon + div {
+   flex: 1;
+}
+/* Settings rows lead with a muted icon, a little closer to its label than the control gap. */
+.row-icon {
+   flex: 0 0 18px;
+   width: 18px;
+   color: var(--muted);
+   font-size: 15px;
+}
+:is(.toggle-row, .setting-row) > .row-icon {
+   margin-right: -4px;
 }
 .toggle-row input {
    position: absolute;
@@ -346,12 +355,14 @@
    height: var(--control-height);
    margin: 0;
 }
+/* Off is a dark slot with a light thumb; on fills with the accent and the thumb turns dark. */
 .switch {
-   flex: 0 0 36px;
-   width: 36px;
-   height: 20px;
+   flex: 0 0 40px;
+   width: 40px;
+   height: 24px;
    border-radius: 12px;
-   background: var(--faint);
+   background: var(--slot);
+   box-shadow: inset 0 0 0 1px var(--slot-ring);
    padding: 3px;
    pointer-events: none;
    transition: background-color 150ms ease-out;
@@ -359,17 +370,28 @@
 .switch::before {
    content: "";
    display: block;
-   width: 14px;
-   height: 14px;
+   width: 18px;
+   height: 18px;
    border-radius: 50%;
-   background: var(--surface);
-   transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+   background: var(--muted);
+   box-shadow: 0 1px 3px #0005;
+   transition:
+      transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      background-color 150ms ease-out;
+}
+.toggle-row:hover:not(:has(input:disabled)) .switch {
+   background: var(--slot-hover);
 }
 .toggle-row input:checked + .switch {
    background: var(--accent);
+   box-shadow: none;
+}
+.toggle-row:hover:not(:has(input:disabled)) input:checked + .switch {
+   background: var(--accent-hover);
 }
 .toggle-row input:checked + .switch::before {
    transform: translateX(16px);
+   background: var(--accent-text);
 }
 .toggle-row input:focus-visible + .switch {
    outline: 2px solid var(--accent);

@@ -1,5 +1,20 @@
 .export-mode {
-   margin-bottom: 20px;
+   margin-bottom: 16px;
+}
+/* Where it goes and what it carries share one card above the clips. */
+.export-card {
+   padding: 2px 16px 16px;
+   border-radius: var(--radius-card);
+   background: var(--card);
+}
+.export-card > .field-label:first-child {
+   margin-top: 12px;
+}
+.export-card .export-fields {
+   padding-bottom: 0;
+}
+.export-card > .toggle-row {
+   padding-bottom: 0;
 }
 .combined-name {
    display: block;
@@ -17,28 +32,24 @@
 }
 .export-advanced {
    --advanced-ease: cubic-bezier(0.22, 1, 0.36, 1);
-   border: 1px solid var(--line);
-   border-radius: var(--radius-popover);
-   transition: border-color 160ms ease-out;
-}
-.export-advanced[data-open="true"] {
-   border-color: var(--field-border);
+   border-radius: var(--radius-card);
+   background: var(--card);
 }
 .export-advanced-toggle {
    display: flex;
    gap: 12px;
    align-items: center;
    width: 100%;
-   min-height: var(--control-height);
-   padding: 8px 12px;
-   border-radius: calc(var(--radius-popover) - 1px);
+   min-height: 44px;
+   padding: 8px 16px;
+   border-radius: var(--radius-card);
    color: var(--text);
    font-size: 13px;
    text-align: left;
    transition: background-color 150ms ease-out;
 }
 .export-advanced-toggle:hover {
-   background: var(--surface-hover);
+   background: var(--card-hover);
    transition-duration: 0ms;
 }
 .export-advanced[data-open="true"] .export-advanced-toggle {
@@ -83,7 +94,7 @@
 .export-advanced-body {
    min-height: 0;
    overflow: hidden;
-   padding: 0 12px;
+   padding: 0 16px;
    visibility: hidden;
    opacity: 0;
    transform: translateY(-6px);
@@ -105,7 +116,7 @@
       visibility 0s;
 }
 .export-advanced-body > :first-child {
-   border-top: 1px solid var(--line);
+   border-top: 1px solid var(--card-line);
 }
 .export-advanced-body .toggle-row {
    padding: 12px 0;
@@ -140,7 +151,7 @@
    margin-top: 6px;
 }
 .export-list + .export-advanced {
-   margin-top: 16px;
+   margin-top: 12px;
 }
 .folder-field {
    display: flex;
@@ -180,7 +191,7 @@
 .format-picker {
    display: flex;
    flex: none;
-   margin-left: -1px;
+   margin-left: 2px;
 }
 .format-picker .select-trigger {
    min-height: 0;
@@ -203,7 +214,7 @@
 .format-picker.static {
    align-items: center;
    padding: 0 10px;
-   border: 1px solid var(--field-border);
+   background: var(--slot);
    border-radius: 0 var(--radius-control) var(--radius-control) 0;
    color: var(--muted);
    font-size: 12px;
@@ -224,8 +235,12 @@
    border-color: transparent;
    background: var(--surface-hover);
 }
+/* The clips are one card with the column labels as its header strip. */
 .export-list {
-   margin-top: 23px;
+   margin-top: 12px;
+   padding: 0 14px;
+   border-radius: var(--radius-card);
+   background: var(--card);
 }
 .export-list-heading {
    display: flex;
@@ -233,9 +248,9 @@
    align-items: center;
    color: var(--muted);
    font-size: 11px;
-   min-height: 32px;
-   padding: 0 0 6px;
-   border-bottom: 1px solid var(--line);
+   min-height: 38px;
+   padding: 0;
+   border-bottom: 1px solid var(--card-line);
 }
 .export-list-heading > span:first-child {
    flex: 1;
@@ -245,8 +260,11 @@
    text-align: right;
 }
 .export-clip-entry {
-   border-bottom: 1px solid var(--line);
+   border-bottom: 1px solid var(--card-line);
    transition: opacity 150ms ease-out;
+}
+.export-clip-entry:last-child {
+   border-bottom: 0;
 }
 .export-clip-entry[data-included="false"] {
    opacity: 0.65;
@@ -266,19 +284,8 @@
    min-width: 0;
 }
 .export-row input:not([type="checkbox"]) {
-   padding: 7px;
-   padding-right: 32px;
+   padding: 7px 32px 7px 10px;
    font-size: 12px;
-   border-color: var(--field-border);
-   background: var(--control-background, var(--surface-raised));
-   transition:
-      border-color 150ms ease-out,
-      background-color 150ms ease-out;
-}
-.export-row input:not([type="checkbox"]):hover {
-   border-color: var(--muted);
-   background: var(--control-hover-background, var(--surface-raised));
-   transition-duration: 0ms;
 }
 .export-row time {
    min-width: 65px;

@@ -1,6 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { navigateTabs } from "../lib/tabs";
-import { faMoon, faSun, faDesktop, faCheck, faPlus, faXmark, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
+import {
+   faMoon,
+   faSun,
+   faDesktop,
+   faCheck,
+   faPlus,
+   faXmark,
+   faTriangleExclamation,
+   faPalette,
+   faDroplet,
+   faClockRotateLeft,
+   faArrowsRotate,
+   faPlay,
+   faForwardStep,
+   faScissors,
+   faHeadphones,
+   faWaveSquare,
+   faTag,
+   faFilm,
+} from "@fortawesome/free-solid-svg-icons";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { Clip, MediaSource, Preferences } from "../../../shared/types";
 import { applyNamePattern, duplicateNames, hasNameToken, nameTokens } from "../../../shared/filename";
@@ -45,8 +65,10 @@ function PatternEditor({
    kind,
    source,
    clips,
+   icon,
 }: {
    label: string;
+   icon: IconDefinition;
    ariaLabel: string;
    value: string;
    onChange: (value: string) => void;
@@ -148,6 +170,7 @@ function PatternEditor({
    return (
       <div className="pattern-editor">
          <div className="pattern-head">
+            <FontAwesomeIcon className="row-icon" icon={icon} />
             <span>{label}</span>
             <DropdownSelect
                label={`${label} preset`}
@@ -300,6 +323,7 @@ export function SettingsPanel({
                      <section className="settings-group" aria-labelledby="settings-appearance">
                         <h3 id="settings-appearance">Appearance</h3>
                         <div className="setting-row">
+                           <FontAwesomeIcon className="row-icon" icon={faPalette} />
                            <div>
                               Theme<small>System follows your device's appearance.</small>
                            </div>
@@ -321,6 +345,7 @@ export function SettingsPanel({
                            </div>
                         </div>
                         <div className="setting-row">
+                           <FontAwesomeIcon className="row-icon" icon={faDroplet} />
                            <div>
                               Accent colour<small>Used for buttons, active controls, and focus.</small>
                            </div>
@@ -343,18 +368,21 @@ export function SettingsPanel({
                      <section className="settings-group" aria-labelledby="settings-startup">
                         <h3 id="settings-startup">Startup</h3>
                         <Toggle
+                           icon={faClockRotateLeft}
                            label="Pick up where you left off"
                            description="Reopen your latest video and timeline when AttaCut starts."
                            checked={preferences.resume}
                            onChange={(resume) => onChange({ ...preferences, resume })}
                         />
                         <Toggle
+                           icon={faArrowsRotate}
                            label="Check for updates"
                            description="Look for new AttaCut releases while the app starts. You can check anytime from the Help menu."
                            checked={preferences.updateCheck}
                            onChange={(updateCheck) => onChange({ ...preferences, updateCheck })}
                         />
                         <Toggle
+                           icon={faPlay}
                            label="Autoplay opened videos"
                            description="Automatically start playback when a video loads."
                            checked={preferences.autoPlay}
@@ -367,24 +395,28 @@ export function SettingsPanel({
                      <section className="settings-group" aria-labelledby="settings-playback">
                         <h3 id="settings-playback">Playback</h3>
                         <Toggle
+                           icon={faForwardStep}
                            label="Play kept clips only"
                            description="Skip deleted ranges when playing them in the editor."
                            checked={preferences.keptOnly}
                            onChange={(keptOnly) => onChange({ ...preferences, keptOnly })}
                         />
                         <Toggle
+                           icon={faScissors}
                            label="Keep playing while editing"
                            description="Don't stop playing after seeking, trimming or splitting."
                            checked={preferences.keepPlaying}
                            onChange={(keepPlaying) => onChange({ ...preferences, keepPlaying })}
                         />
                         <Toggle
+                           icon={faHeadphones}
                            label="Audio scrubbing"
                            description="Play a short audio burst at the playhead while scrubbing and stepping with playback paused."
                            checked={preferences.audioScrub}
                            onChange={(audioScrub) => onChange({ ...preferences, audioScrub })}
                         />
                         <Toggle
+                           icon={faWaveSquare}
                            label="Timeline waveform"
                            description="Show the selected playback audio inside clips."
                            checked={preferences.waveform}
@@ -394,6 +426,7 @@ export function SettingsPanel({
                      <section className="settings-group" aria-labelledby="settings-export">
                         <h3 id="settings-export">Export</h3>
                         <PatternEditor
+                           icon={faTag}
                            label="Clip names"
                            ariaLabel="Clip name pattern"
                            value={preferences.clipNamePattern}
@@ -404,6 +437,7 @@ export function SettingsPanel({
                            clips={clips}
                         />
                         <PatternEditor
+                           icon={faFilm}
                            label="Merged video name"
                            ariaLabel="Merged video name pattern"
                            value={preferences.combinedNamePattern}

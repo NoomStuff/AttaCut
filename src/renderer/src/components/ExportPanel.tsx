@@ -270,74 +270,76 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                      { value: "separate", label: "Separate Clips" },
                   ]}
                />
-               <label className="field-label" htmlFor="destination">
-                  Save to
-               </label>
-               <OutputDirectoryField
-                  id="destination"
-                  className="folder-field"
-                  value={directory}
-                  disabled={starting}
-                  onChange={setDirectory}
-                  onError={(value) => setError(errorText(value))}
-               />
-               <div>
-                  {mode === "combined" && (
-                     <label className="field-label combined-name">
-                        Filename
-                        <div className="filename-field">
-                           <span className="export-name-input">
-                              <input
-                                 aria-label="Combined filename"
-                                 aria-invalid={nameErrors.has("combined")}
-                                 value={name}
-                                 disabled={starting}
-                                 onBlur={() => normalizeName()}
-                                 onChange={(event) => setName(event.target.value)}
-                              />
-                              <ConflictIndicator
-                                 message={nameErrors.get("combined") ?? conflicts.get("combined") ?? null}
-                                 tone={nameErrors.has("combined") || dangers.get("combined") ? "danger" : "warning"}
-                              />
-                           </span>
-                           {formatPicker({ label: "Export format", value: container, trigger: combinedExtension, onChange: setContainer })}
+               <div className="export-card">
+                  <label className="field-label" htmlFor="destination">
+                     Save to
+                  </label>
+                  <OutputDirectoryField
+                     id="destination"
+                     className="folder-field"
+                     value={directory}
+                     disabled={starting}
+                     onChange={setDirectory}
+                     onError={(value) => setError(errorText(value))}
+                  />
+                  <div>
+                     {mode === "combined" && (
+                        <label className="field-label combined-name">
+                           Filename
+                           <div className="filename-field">
+                              <span className="export-name-input">
+                                 <input
+                                    aria-label="Combined filename"
+                                    aria-invalid={nameErrors.has("combined")}
+                                    value={name}
+                                    disabled={starting}
+                                    onBlur={() => normalizeName()}
+                                    onChange={(event) => setName(event.target.value)}
+                                 />
+                                 <ConflictIndicator
+                                    message={nameErrors.get("combined") ?? conflicts.get("combined") ?? null}
+                                    tone={nameErrors.has("combined") || dangers.get("combined") ? "danger" : "warning"}
+                                 />
+                              </span>
+                              {formatPicker({ label: "Export format", value: container, trigger: combinedExtension, onChange: setContainer })}
+                           </div>
+                        </label>
+                     )}
+                  </div>
+                  {sourceAudio.length === 1 && (
+                     <Toggle
+                        label="Export audio"
+                        checked={audioTracks.length === 1}
+                        disabled={starting}
+                        onChange={(checked) => setAudioTracks(checked ? [sourceAudio[0]!.index] : [])}
+                     />
+                  )}
+                  {sourceAudio.length > 1 && (
+                     <div className="export-fields">
+                        <div className="audio-export-field">
+                           <span className="field-label">Audio tracks</span>
+                           <DropdownSelect
+                              label="Audio tracks to export"
+                              options={sourceAudio.map((track, index) => ({ value: String(track.index), label: audioTrackLabel(track, index) }))}
+                              value={audioTracks.map(String)}
+                              multiple
+                              disabled={starting}
+                              onChange={(values) => setAudioTracks(values.map(Number))}
+                              trigger={
+                                 audioTracks.length === sourceAudio.length
+                                    ? "All audio tracks"
+                                    : audioTracks.length === 1
+                                      ? audioTrackLabel(
+                                           sourceAudio.find((track) => track.index === audioTracks[0])!,
+                                           sourceAudio.findIndex((track) => track.index === audioTracks[0])
+                                        )
+                                      : `${audioTracks.length} audio tracks`
+                              }
+                           />
                         </div>
-                     </label>
+                     </div>
                   )}
                </div>
-               {sourceAudio.length === 1 && (
-                  <Toggle
-                     label="Export audio"
-                     checked={audioTracks.length === 1}
-                     disabled={starting}
-                     onChange={(checked) => setAudioTracks(checked ? [sourceAudio[0]!.index] : [])}
-                  />
-               )}
-               {sourceAudio.length > 1 && (
-                  <div className="export-fields">
-                     <div className="audio-export-field">
-                        <span className="field-label">Audio tracks</span>
-                        <DropdownSelect
-                           label="Audio tracks to export"
-                           options={sourceAudio.map((track, index) => ({ value: String(track.index), label: audioTrackLabel(track, index) }))}
-                           value={audioTracks.map(String)}
-                           multiple
-                           disabled={starting}
-                           onChange={(values) => setAudioTracks(values.map(Number))}
-                           trigger={
-                              audioTracks.length === sourceAudio.length
-                                 ? "All audio tracks"
-                                 : audioTracks.length === 1
-                                   ? audioTrackLabel(
-                                        sourceAudio.find((track) => track.index === audioTracks[0])!,
-                                        sourceAudio.findIndex((track) => track.index === audioTracks[0])
-                                     )
-                                   : `${audioTracks.length} audio tracks`
-                           }
-                        />
-                     </div>
-                  </div>
-               )}
                {rows.length > 1 && (
                   <div className="export-list">
                      <div className="export-list-heading">
