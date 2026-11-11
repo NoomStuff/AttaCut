@@ -14,8 +14,16 @@ permissions:
 # runners, with the UI suite sharded, keeps the slowest of them on the critical path
 # instead of their sum.
 jobs:
+   # The suites test the ffmpeg and ffprobe that releases ship.
+   build-media:
+      uses: ./.github/workflows/media.yml
+      with:
+         candidate_sha: ${{ inputs.candidate_sha }}
+         target: win-x64
+
    media:
       name: Media
+      needs: build-media
       runs-on: windows-2025
       timeout-minutes: 30
       steps:
@@ -23,9 +31,11 @@ jobs:
            with:
               ref: ${{ inputs.candidate_sha }}
          - uses: ./.github/actions/setup
+         - uses: actions/download-artifact@v8
            with:
-              media: "true"
-         - run: bun scripts/provision-media.ts
+              name: media-win-x64
+              path: work/media-build/win-x64
+         - run: bun scripts/provision-media.ts --from work/media-build/win-x64
          - run: bun run test:media
          # Playback checks read the format manifest the media suite just wrote.
          - run: bun run build
@@ -42,6 +52,7 @@ jobs:
 
    ui:
       name: UI ${{ matrix.shard }}/2
+      needs: build-media
       runs-on: windows-2025
       timeout-minutes: 30
       strategy:
@@ -53,9 +64,11 @@ jobs:
            with:
               ref: ${{ inputs.candidate_sha }}
          - uses: ./.github/actions/setup
+         - uses: actions/download-artifact@v8
            with:
-              media: "true"
-         - run: bun scripts/provision-media.ts
+              name: media-win-x64
+              path: work/media-build/win-x64
+         - run: bun scripts/provision-media.ts --from work/media-build/win-x64
          - run: bun run build
          - run: bun tests/create-fixtures.ts
          - run: bun x --no-install playwright test --project=ui --project=native --shard=${{ matrix.shard }}/2

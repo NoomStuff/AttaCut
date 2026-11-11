@@ -74,4 +74,27 @@ export async function provisionMedia(): Promise<{ FFMPEG_PATH: string; FFPROBE_P
    return paths;
 }
 
-if (import.meta.main) await provisionMedia();
+/**
+ * CI uses the ffmpeg and ffprobe that scripts/build-media.sh built from source, which
+ * are the ones releases ship. The pinned downloads above serve local development only.
+ */
+export async function useBuiltMedia(directory: string): Promise<{ FFMPEG_PATH: string; FFPROBE_PATH: string }> {
+   const paths = {} as { FFMPEG_PATH: string; FFPROBE_PATH: string };
+   for (const name of ["ffmpeg", "ffprobe"] as const) {
+      const path = resolve(directory, `${name}${process.platform === "win32" ? ".exe" : ""}`);
+      if (process.platform !== "win32") await chmod(path, 0o755);
+      execFileSync(path, ["-version"], { stdio: "ignore" });
+      const variable = name === "ffmpeg" ? "FFMPEG_PATH" : "FFPROBE_PATH";
+      paths[variable] = path;
+      if (process.env["GITHUB_ENV"]) await appendFile(process.env["GITHUB_ENV"], `${variable}=${path}\n`);
+      console.log(`${variable}=${path}`);
+   }
+   return paths;
+}
+
+if (import.meta.main) {
+   const [flag, directory] = process.argv.slice(2);
+   if (flag === "--from" && directory) await useBuiltMedia(directory);
+   else if (!flag) await provisionMedia();
+   else throw new Error("Usage: provision-media.ts [--from <built media directory>]");
+}

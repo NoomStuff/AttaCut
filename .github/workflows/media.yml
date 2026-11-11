@@ -96,6 +96,7 @@ jobs:
               path: work/media-build/${{ matrix.target }}/
               if-no-files-found: error
               retention-days: 14
+              overwrite: true
          - uses: actions/upload-artifact@v7
            if: matrix.target == 'linux-x64'
            with:
@@ -103,4 +104,5 @@ jobs:
               path: work/media-packet/AttaCut-sources.zip
               if-no-files-found: error
               retention-days: 14
+              overwrite: true
               compression-level: 0

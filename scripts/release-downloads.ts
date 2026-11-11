@@ -2,6 +2,8 @@ import { copyFile, mkdir, readdir, lstat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 export const feeds = ["latest.yml", "latest-linux.yml", "latest-linux-arm64.yml"];
+/** The exact sources and recipe of the bundled ffmpeg and ffprobe, built by scripts/build-media.sh. */
+export const sourcesPacket = "AttaCut-sources.zip";
 
 function assertVersion(version: string): void {
    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error("Invalid release version.");
@@ -43,9 +45,9 @@ export function publishedName(version: string, source: string): string {
    return file.name;
 }
 
-/** Everything the release page carries: app downloads and the updater feeds. */
+/** Everything the release page carries: app downloads, updater feeds and the corresponding sources. */
 export function publishedAssets(version: string): string[] {
-   return [...publishedDownloads(version).map((file) => file.name), ...feeds];
+   return [...publishedDownloads(version).map((file) => file.name), ...feeds, sourcesPacket];
 }
 
 export async function selectReleaseDownloads(source: string, feedDirectory: string, destination: string, version: string): Promise<void> {
@@ -54,12 +56,13 @@ export async function selectReleaseDownloads(source: string, feedDirectory: stri
    if ((await readdir(destination)).length) throw new Error("Download destination must be empty.");
    const expected = releaseDownloads(version);
    const entries = await readdir(source);
-   const selected = entries.filter((name) => /\.(exe|zip|dmg|AppImage|blockmap)$/i.test(name));
+   const selected = entries.filter((name) => name !== sourcesPacket && /\.(exe|zip|dmg|AppImage|blockmap)$/i.test(name));
    if (selected.length !== expected.length || selected.some((name) => !expected.includes(name)) || expected.some((name) => !selected.includes(name)))
       throw new Error("Expected exactly the verified build outputs for this version.");
    const files = [
       ...publishedDownloads(version).map((file) => ({ from: join(source, file.source), name: file.name })),
       ...feeds.map((name) => ({ from: join(feedDirectory, name), name })),
+      { from: join(source, sourcesPacket), name: sourcesPacket },
    ];
    for (const file of files) {
       const info = await lstat(file.from);

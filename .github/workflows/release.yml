@@ -220,6 +220,12 @@ jobs:
          - name: Seal complete verified target set
            if: needs.prepare.outputs.build == 'true'
            run: bun scripts/ci-stage.ts seal
+         - name: Add the corresponding sources of the bundled media
+           if: needs.prepare.outputs.build == 'true'
+           uses: actions/download-artifact@v8
+           with:
+              name: media-sources
+              path: dist
          - uses: actions/upload-artifact@v7
            if: needs.prepare.outputs.build == 'true'
            with:

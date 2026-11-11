@@ -23,8 +23,15 @@ permissions:
    contents: read
 
 jobs:
+   media:
+      uses: ./.github/workflows/media.yml
+      with:
+         candidate_sha: ${{ inputs.candidate_sha }}
+         target: ${{ inputs.target }}
+
    build:
       name: Build
+      needs: media
       runs-on: ${{ inputs.os }}
       timeout-minutes: 45
       env:
@@ -35,10 +42,13 @@ jobs:
               ref: ${{ inputs.candidate_sha }}
          - uses: ./.github/actions/setup
            with:
-              media: "true"
               builder: "true"
-         - name: Provision pinned media binaries
-           run: bun scripts/provision-media.ts
+         - uses: actions/download-artifact@v8
+           with:
+              name: media-${{ inputs.target }}
+              path: work/media-build/${{ inputs.target }}
+         - name: Use the ffmpeg and ffprobe built from source
+           run: bun scripts/provision-media.ts --from work/media-build/${{ inputs.target }}
          - name: Package
            run: ${{ runner.os == 'Windows' && 'bun run dist:win:all' || runner.os == 'macOS' && 'bun run dist:mac:all' || 'bun run dist' }}
            env:

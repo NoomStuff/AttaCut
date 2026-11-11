@@ -4,9 +4,11 @@ AttaCut bundles third-party software to do its job. The licenses below apply to 
 
 ## FFmpeg and ffprobe
 
-The bundled FFmpeg and ffprobe versions, build configurations, and hashes are recorded in `resources/media/provenance.json`. Automated builds use [BtbN FFmpeg Builds](https://github.com/BtbN/FFmpeg-Builds) for Windows and Linux, [Evermeet](https://evermeet.cx/ffmpeg/) for Intel macOS, and [OSXExperts](https://www.osxexperts.net/) for Apple Silicon macOS. Local builds use the tools supplied by the developer.
+Released builds bundle ffmpeg and ffprobe built from source by `scripts/build-media.sh`, from the sources pinned in `scripts/media-sources.json`: FFmpeg 8.1.3 with x264, x265, libvpx, libaom, dav1d, zimg, zlib, Opus, Ogg, Vorbis and LAME. FFmpeg is built with `--enable-gpl`, so the executables are distributed under the GNU General Public License, version 2 or later. Each library keeps its own license.
 
-FFmpeg's license depends on its build configuration and included libraries. License files supplied alongside the binaries are copied to `resources/media/ffmpeg-LICENSE.txt` and `resources/media/ffprobe-LICENSE.txt`. See the build providers for their source and build instructions, and [ffmpeg.org](https://ffmpeg.org) for FFmpeg's source.
+Every GitHub release carries `AttaCut-sources.zip`, which holds the exact source archives and the build recipe for that release's executables. The complete license texts ship with the app as `resources/media/ffmpeg-LICENSE.txt`, and `resources/media/provenance.json` records the versions, configuration and hashes.
+
+Local development builds may use any FFmpeg the developer supplies. Those builds are not distributed.
 
 ## JavaScript packages
 

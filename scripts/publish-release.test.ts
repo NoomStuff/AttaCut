@@ -49,7 +49,7 @@ it.each([
       const gh = vi.fn((...args: string[]): string => {
          if (args[0] === "release" && args[1] === "create") {
             expect(args).toContain("--notes");
-            expect(args[args.indexOf("--notes") + 1]).toBe("");
+            expect(args[args.indexOf("--notes") + 1]).toContain("AttaCut-sources.zip");
             expect(args).not.toContain("--notes-file");
             releases = [
                {

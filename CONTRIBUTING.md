@@ -28,7 +28,7 @@ Development and integration tests use the local FFmpeg binaries. Set `FFMPEG_PAT
 
 Media and UI tests need FFmpeg and `ffprobe`. UI tests need a desktop session. On Linux, use `xvfb-run --auto-servernum bun run test:ui` when a visible desktop is unavailable. Use `ATTACUT_TEST_VISIBLE=1` to show the app during UI tests.
 
-Before release, run `bun run verify:release`. It downloads the pinned FFmpeg build, packages the app, and checks the packaged result. Run it on each target OS and CPU architecture. A build on one host cannot verify another platform's Electron package.
+Before release, run `bun run verify:release`. It downloads a pinned FFmpeg build for development, packages the app, and checks the packaged result. Released packages instead bundle ffmpeg and ffprobe that the Media workflow builds from source with `scripts/build-media.sh`; run that script on Linux or macOS to reproduce them. Run it on each target OS and CPU architecture. A build on one host cannot verify another platform's Electron package.
 
 ## Build packages
 

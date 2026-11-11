@@ -87,7 +87,7 @@ export async function publishRelease(candidate: Candidate, gh: Gh, directory = "
       "--title",
       `AttaCut ${tag.slice(1)}`,
       "--notes",
-      "",
+      "Source code for the FFmpeg build bundled with AttaCut is in AttaCut-sources.zip.",
       ...(tag.includes("-") ? ["--prerelease"] : [])
    );
    assertCurrent();

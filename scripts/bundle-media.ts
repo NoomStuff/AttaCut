@@ -41,8 +41,13 @@ for (const name of ["ffmpeg", "ffprobe"] as const) {
    }
 }
 await writeFile(join(destination, "provenance.json"), JSON.stringify(provenance, null, 2));
-await writeFile(
-   join(destination, "README.txt"),
-   "These FFmpeg/ffprobe binaries were copied from the build computer. See provenance.json for exact versions, configuration, and hashes. FFmpeg: https://ffmpeg.org/ . Preserve applicable source and license obligations before public redistribution.\n"
-);
+// Builds from scripts/build-media.sh carry their own README and LICENSE, which point to
+// the corresponding sources published with each release.
+const builtReadme = process.env["FFMPEG_PATH"] ? join(dirname(await realpath(process.env["FFMPEG_PATH"])), "README.txt") : "";
+if (builtReadme && existsSync(builtReadme)) await copyFile(builtReadme, join(destination, "README.txt"));
+else
+   await writeFile(
+      join(destination, "README.txt"),
+      "These FFmpeg/ffprobe binaries were copied from the build computer for local development. See provenance.json for exact versions, configuration, and hashes. Released builds ship binaries built by scripts/build-media.sh instead. FFmpeg: https://ffmpeg.org/\n"
+   );
 console.log("Bundled FFmpeg, ffprobe, and provenance.");
