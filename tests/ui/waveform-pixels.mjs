@@ -3,7 +3,7 @@ const sharp = createRequire(import.meta.url)("sharp");
 
 // Offscreen canvases cannot be read with getContext on the window. Inspect the
 // composited pixels, avoiding the clip border, label and handles.
-export async function waveformColorCount(page, from = 0.3, to = 0.7) {
+async function waveformColorCount(page, from = 0.3, to = 0.7) {
    const canvas = page.locator(".clip-waveform").first();
    if (!(await canvas.count()) || !(await canvas.isVisible())) return 0;
    const { data, info } = await sharp(await canvas.screenshot())

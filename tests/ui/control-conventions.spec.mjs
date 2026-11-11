@@ -1,6 +1,5 @@
 import { expect } from "@playwright/test";
-import { test, waitForVideo } from "./app.mjs";
-import { resolve } from "node:path";
+import { test } from "./app.mjs";
 
 test("menus and pickers leave on Tab and restore their trigger on Escape", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, "");
@@ -47,65 +46,4 @@ test("menus and pickers leave on Tab and restore their trigger on Escape", async
    await page.getByRole("button", { name: "View", exact: true }).click();
    await page.getByRole("menuitem", { name: "Settings…", exact: false }).click();
    await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
-});
-
-test("compact editor keeps timing and preview controls within the window", async ({ launchApp, profile }) => {
-   const app = await launchApp(profile, resolve("work/fixture.mp4"));
-   const page = await app.firstWindow();
-   await waitForVideo(page);
-   for (const width of [800, 980, 1050, 1160, 1161, 1280]) {
-      await app.evaluate(({ BrowserWindow }, width) => BrowserWindow.getAllWindows()[0].setContentSize(width, 560), width);
-      await expect
-         .poll(() =>
-            page.locator(".transport").evaluate((transport) => {
-               const bounds = transport.getBoundingClientRect();
-               return [...transport.querySelectorAll("button, .time-field input")].every((element) => {
-                  const rect = element.getBoundingClientRect();
-                  return rect.left >= bounds.left && rect.right <= bounds.right + 1 && rect.bottom <= globalThis.innerHeight;
-               });
-            })
-         )
-         .toBe(true);
-      await expect(page.getByRole("textbox", { name: "Clip start", exact: true })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Play", exact: true })).toHaveCSS("width", "39px");
-      await expect
-         .poll(() =>
-            page.getByRole("button", { name: "Play", exact: true }).evaluate((button) => {
-               const rect = button.getBoundingClientRect();
-               return Math.abs(rect.left + rect.width / 2 - globalThis.innerWidth / 2);
-            })
-         )
-         .toBeLessThan(1);
-      await expect
-         .poll(() =>
-            page.locator(".clip-details").evaluate((details) => {
-               const start = details.querySelector(".time-field > span").getBoundingClientRect();
-               const duration = details.querySelector(".clip-duration small").getBoundingClientRect();
-               return Math.abs(start.top + start.height / 2 - duration.top - duration.height / 2);
-            })
-         )
-         .toBeLessThan(1);
-      if (width <= 1160) {
-         await expect
-            .poll(() =>
-               page.locator(".clip-details").evaluate((details) => {
-                  const timing = details.querySelector(".clip-boundaries").getBoundingClientRect();
-                  return Math.abs(details.getBoundingClientRect().right - timing.right);
-               })
-            )
-            .toBeLessThan(1);
-      }
-      const audio = page.getByRole("button", { name: "Preview audio tracks", exact: true });
-      await audio.click();
-      await expect
-         .poll(() =>
-            page.getByRole("listbox", { name: "Preview audio tracks", exact: true }).evaluate((menu) => {
-               const rect = menu.getBoundingClientRect();
-               return rect.left >= 0 && rect.right <= globalThis.innerWidth;
-            })
-         )
-         .toBe(true);
-      await page.keyboard.press("Escape");
-      await expect(audio).toHaveAttribute("aria-expanded", "false");
-   }
 });

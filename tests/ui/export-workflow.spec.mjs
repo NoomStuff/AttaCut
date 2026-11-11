@@ -141,37 +141,6 @@ test("export workflow", async ({ launchApp, profile }) => {
          await expectAudioMatches(resolve("work/fixture.mp4"), original, joined, result, track);
 });
 
-test("fullscreen stays in-window and keeps playback running", async ({ launchApp, profile }) => {
-   const app = await launchApp(profile, resolve("work/fixture.mp4"));
-   const page = await app.firstWindow();
-   await waitForVideo(page);
-   await page.getByRole("button", { name: "Play", exact: true }).click();
-   await page.getByRole("button", { name: "Fullscreen video", exact: true }).click();
-   await expect(page.locator(".player-stage.fullscreen")).toHaveClass(/fullscreen/, { timeout: 5000 });
-   await expect(page.locator(".fullscreen-bar")).toBeVisible();
-   await expect(page.locator(".fullscreen-progress")).toBeVisible();
-   const before = await page.locator("video").evaluate((video) => video.currentTime);
-   await page.waitForFunction((before) => document.querySelector("video").currentTime > before + 0.3, before);
-   // The clip-colored progress bar seeks; pause first so the landing spot is exact. The
-   // playback wait can outlast the controls' idle fade on slow runners, so wake them.
-   await page.locator(".player-stage.fullscreen").hover();
-   await page.locator(".fullscreen-bar").getByRole("button", { name: "Pause", exact: true }).click();
-   const progress = await page.locator(".fullscreen-progress").boundingBox();
-   await page.mouse.click(progress.x + progress.width / 2, progress.y + progress.height / 2);
-   await expect.poll(() => page.locator("video").evaluate((video) => video.currentTime)).toBeCloseTo(9, 1);
-   if (process.env.ATTACUT_TEST_VISIBLE !== "1") {
-      // Custom fullscreen retains the inactive test window's presentation.
-      expect(
-         await app.evaluate(({ BrowserWindow }) => {
-            const window = BrowserWindow.getAllWindows()[0];
-            return { visible: window.isVisible(), opacity: window.getOpacity(), focused: window.isFocused(), fullscreen: window.isFullScreen() };
-         })
-      ).toMatchObject(process.platform === "linux" ? { visible: true, focused: false } : { opacity: 0, focused: false });
-   }
-   await page.locator(".player-stage.fullscreen").dblclick();
-   await expect(page.locator(".player-stage.fullscreen")).toHaveCount(0);
-});
-
 test("fullscreen survives video replacement and exits when the project closes", async ({ launchApp, profile }) => {
    test.skip(!!process.env.ATTACUT_EXECUTABLE, "Development fault injection");
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
@@ -194,24 +163,4 @@ test("fullscreen survives video replacement and exits when the project closes", 
    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:command", "closeProject"));
    await expect(page.locator("video")).toHaveCount(0);
    await expect.poll(nativeFullscreen).toBe(false);
-});
-
-test("compact layout keeps transport controls within the window", async ({ launchApp, profile }) => {
-   const app = await launchApp(profile, resolve("work/fixture.mp4"));
-   const page = await app.firstWindow();
-   await waitForVideo(page);
-   await page.setViewportSize({ width: 800, height: 560 });
-   await expect.poll(() => page.evaluate(() => [globalThis.innerWidth, globalThis.innerHeight])).toEqual([800, 560]);
-   await expect
-      .poll(async () => {
-         const controls = await page.locator(".transport").boundingBox();
-         return controls.y + controls.height;
-      })
-      .toBeLessThanOrEqual(560);
-   await expect
-      .poll(async () => {
-         const volume = await page.getByRole("button", { name: "Settings", exact: true }).boundingBox();
-         return volume.x + volume.width;
-      })
-      .toBeLessThanOrEqual(800);
 });

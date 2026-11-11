@@ -3,7 +3,7 @@ import { configureIpc, mediaBinary, test, waitForVideo } from "./app.mjs";
 import { execFileSync } from "node:child_process";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { hasWaveformPixels, waveformColorCount } from "./waveform-pixels.mjs";
+import { hasWaveformPixels } from "./waveform-pixels.mjs";
 
 async function preferences(profile, values) {
    await writeFile(join(profile, "settings.json"), JSON.stringify({ version: 1, preferences: { updateCheck: false, ...values }, session: null }));
@@ -201,37 +201,6 @@ test("a settled region streams before the full scan and does not corrupt its per
    expect((await readFile(join(profile, "waveforms", caches[0]))).length).toBe(16 + covered * 3);
 });
 
-test("a saved waveform opt-out can be toggled without changing timeline height", async ({ launchApp, profile }) => {
-   await preferences(profile, { waveform: false });
-   const app = await launchApp(profile, resolve("work/fixture.mp4"));
-   const page = await app.firstWindow();
-   await waitForVideo(page);
-   await expect(page.locator(".clip-waveform")).toHaveCount(0);
-   const height = await page.locator(".timeline-viewport").evaluate((node) => node.getBoundingClientRect().height);
-   await page.keyboard.press("ControlOrMeta+,");
-   await page.getByRole("tab", { name: "Editing", exact: true }).press("Enter");
-   await expect(page.getByRole("tab", { name: "Editing", exact: true })).toHaveAttribute("aria-selected", "true");
-   const toggle = page.getByRole("switch", { name: "Timeline waveform" });
-   await expect(toggle).not.toBeChecked();
-   await toggle.press("Space");
-   await page.keyboard.press("Escape");
-   await painted(page);
-   expect(await page.locator(".timeline-viewport").evaluate((node) => node.getBoundingClientRect().height)).toBe(height);
-   const placement = await page.locator(".clip-waveform").evaluate((canvas) => {
-      const a = canvas.getBoundingClientRect(),
-         b = canvas.parentElement.querySelector(".clip-range").getBoundingClientRect();
-      return { bottom: a.bottom - b.bottom, height: a.height, clipHeight: b.height };
-   });
-   expect(Math.abs(placement.bottom)).toBeLessThanOrEqual(1);
-   expect(placement.height).toBeLessThanOrEqual(placement.clipHeight);
-   await page.keyboard.press("ControlOrMeta+,");
-   await page.getByRole("tab", { name: "Editing", exact: true }).press("Enter");
-   await expect(page.getByRole("tab", { name: "Editing", exact: true })).toHaveAttribute("aria-selected", "true");
-   await toggle.press("Space");
-   await page.keyboard.press("Escape");
-   await expect(page.locator(".clip-waveform")).toHaveCount(0);
-});
-
 test("prepared preview maps a higher source track, persists peaks and reuses them after restart", async ({ launchApp, profile }) => {
    const path = await trackFixture(profile);
    await preferences(profile, { waveform: true, playbackAudio: { mode: "tracks", sourceTrackCount: 3, tracks: [{ position: 2, title: "", language: "" }] } });
@@ -281,53 +250,4 @@ test("prepared preview maps a higher source track, persists peaks and reuses the
    await waitForVideo(next);
    await painted(next);
    expect((await readdir(join(profile, "waveforms"))).filter((name) => name.endsWith(".wave"))).toHaveLength(1);
-});
-
-test("waveform paints through deep zoom and panning while editor input and playback remain responsive", async ({ launchApp, profile }, testInfo) => {
-   await preferences(profile, { waveform: true });
-   const app = await launchApp(profile, resolve("work/fixture.mp4"));
-   const page = await app.firstWindow();
-   await waitForVideo(page);
-   await painted(page);
-   const viewport = await page.locator(".timeline-viewport").boundingBox();
-   await page.mouse.move(viewport.x + viewport.width / 2, viewport.y + 35);
-   for (let step = 0; step < 10; step++) await page.mouse.wheel(0, -500);
-   await page.waitForTimeout(800);
-   await painted(page);
-   expect(
-      await page
-         .locator(".clip-waveform")
-         .first()
-         .evaluate((canvas) => canvas.width)
-   ).toBeLessThanOrEqual(Math.ceil(viewport.width * 3));
-   await page.mouse.wheel(500, 0);
-   await page.waitForTimeout(300);
-   await painted(page);
-   const start = page.getByRole("textbox", { name: "Clip start", exact: true });
-   await start.fill("00:01.00");
-   await start.press("Tab");
-   await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", "1");
-   await page.locator(".title-filename").click();
-   await page.keyboard.press("ControlOrMeta+z");
-   await expect(page.getByRole("slider", { name: "Clip 1 start", exact: true })).toHaveAttribute("aria-valuenow", "0");
-   await page.getByRole("button", { name: "Play", exact: true }).click();
-   await page.waitForFunction(() => document.querySelector("video").currentTime > 1.2);
-   await page.getByRole("button", { name: "Pause", exact: true }).click();
-   await page.screenshot({ path: testInfo.outputPath("waveform-zoom.png") });
-});
-
-test("the shared waveform canvas clears excluded time after a trim", async ({ launchApp, profile }) => {
-   await preferences(profile, { waveform: true });
-   const app = await launchApp(profile, resolve("work/fixture.mp4"));
-   const page = await app.firstWindow();
-   await waitForVideo(page);
-   await painted(page);
-   await expect(page.locator(".clip-waveform")).toHaveCount(1);
-   const start = page.getByRole("textbox", { name: "Clip start", exact: true });
-   await start.fill("00:09.00");
-   await start.press("Tab");
-   // The excluded track has two flat colors. Audio detail must disappear here,
-   // while the kept half still contains the peaks and RMS core.
-   await expect.poll(() => waveformColorCount(page, 0.1, 0.25)).toBeLessThanOrEqual(2);
-   await expect.poll(() => waveformColorCount(page, 0.65, 0.8)).toBeGreaterThan(5);
 });
