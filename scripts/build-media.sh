@@ -103,11 +103,11 @@ if [[ -n "$host" ]]; then
    cp "$build/zlib/zlib.h" "$build/zlib/zconf.h" "$prefix/include/"
    printf 'prefix=%s\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\nName: zlib\nDescription: zlib\nVersion: 1.4\nLibs: -L${libdir} -lz\nCflags: -I${includedir}\n' "$prefix" > "$prefix/lib/pkgconfig/zlib.pc"
 else
-   (cd "$build/zlib" && ./configure --prefix="$prefix" --static && make -j"$jobs" install)
+   (cd "$build/zlib" && ./configure --prefix="$prefix" --static && make -j"$jobs" && make install)
 fi
 
 extract x264 "x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz"
-(cd "$build/x264" && ./configure --prefix="$prefix" --enable-static --enable-pic --disable-cli ${host:+--host=$host --cross-prefix=$host-} && make -j"$jobs" install)
+(cd "$build/x264" && ./configure --prefix="$prefix" --enable-static --enable-pic --disable-cli ${host:+--host=$host --cross-prefix=$host-} && make -j"$jobs" && make install)
 
 extract x265 x265_4.2.tar.gz
 cmake -S "$build/x265/source" -B "$build/x265/out" "${cmake_common[@]}" -DENABLE_SHARED=OFF -DENABLE_CLI=OFF
@@ -116,12 +116,15 @@ cmake --install "$build/x265/out"
 # x265 is C++. Static linking needs the C++ runtime that its pkg-config entry omits on some hosts.
 grep -q -- "$cxxlib" "$prefix/lib/pkgconfig/x265.pc" || sed -i.bak "s#^Libs.private:.*#& $cxxlib#" "$prefix/lib/pkgconfig/x265.pc"
 grep -q '^Libs.private:' "$prefix/lib/pkgconfig/x265.pc" || echo "Libs.private: $cxxlib -lpthread" >> "$prefix/lib/pkgconfig/x265.pc"
+# The compiler driver links the GCC runtime itself. x265 also lists it, and with -static
+# the shared and static unwinders then both define _Unwind_Resume.
+sed -i.bak -E 's/ -lgcc(_s|_eh)?( |$)/ /g' "$prefix/lib/pkgconfig/x265.pc"
 
 extract libvpx libvpx-1.17.0.tar.gz
 vpx_target=()
 [[ -n "$host" ]] && vpx_target=(--target=x86_64-win64-gcc)
 (cd "$build/libvpx" && CROSS=${host:+$host-} ./configure --prefix="$prefix" ${vpx_target[@]+"${vpx_target[@]}"} --enable-static --disable-shared --enable-pic \
-   --disable-examples --disable-tools --disable-docs --disable-unit-tests --enable-vp9-highbitdepth && make -j"$jobs" install)
+   --disable-examples --disable-tools --disable-docs --disable-unit-tests --enable-vp9-highbitdepth && make -j"$jobs" && make install)
 
 extract libaom libaom-3.15.3.tar.gz
 aom_cross=()
@@ -139,18 +142,20 @@ meson setup "$build/dav1d/out" "$build/dav1d" --prefix="$prefix" --libdir=lib --
 meson install -C "$build/dav1d/out"
 
 extract zimg zimg-3.0.6.tar.gz
-(cd "$build/zimg" && ./autogen.sh && ./configure "${autotools[@]}" && make -j"$jobs" install)
+(cd "$build/zimg" && ./autogen.sh && ./configure "${autotools[@]}" && make -j"$jobs" && make install)
 
 extract opus opus-1.5.2.tar.gz
-(cd "$build/opus" && ./configure "${autotools[@]}" --disable-doc --disable-extra-programs && make -j"$jobs" install)
+(cd "$build/opus" && ./configure "${autotools[@]}" --disable-doc --disable-extra-programs && make -j"$jobs" && make install)
 extract libogg libogg-1.3.6.tar.xz
-(cd "$build/libogg" && ./configure "${autotools[@]}" && make -j"$jobs" install)
+(cd "$build/libogg" && ./configure "${autotools[@]}" && make -j"$jobs" && make install)
 extract libvorbis libvorbis-1.3.7.tar.xz
-(cd "$build/libvorbis" && ./configure "${autotools[@]}" --with-ogg="$prefix" --disable-docs --disable-examples && make -j"$jobs" install)
+# libvorbis 1.3.7 passes a Darwin linker flag that current Apple linkers reject.
+sed -i.bak 's/-force_cpusubtype_ALL//g' "$build/libvorbis/configure"
+(cd "$build/libvorbis" && ./configure "${autotools[@]}" --with-ogg="$prefix" --disable-docs --disable-examples && make -j"$jobs" && make install)
 extract lame lame-3.100.tar.gz
 # LAME 3.100 exports a symbol it no longer defines, which breaks some toolchains.
 sed -i.bak '/lame_init_old/d' "$build/lame/include/libmp3lame.sym"
-(cd "$build/lame" && ./configure "${autotools[@]}" --disable-frontend --disable-gtktest --disable-decoder && make -j"$jobs" install)
+(cd "$build/lame" && ./configure "${autotools[@]}" --disable-frontend --disable-gtktest --disable-decoder && make -j"$jobs" && make install)
 
 extract ffmpeg ffmpeg-8.1.3.tar.xz
 ffmpeg_cross=()
