@@ -13,7 +13,7 @@ test("second launches resolve relative video and project paths in the launcher's
          writeFileSync(path, "");
          expect(fileArgument(["--ignored.mp4", "missing.mp4", name], directory)).toBe(path);
          expect(fileArgument([path], "/")).toBe(path);
-         expect(fileArgument(["file://invalid-host/video.mp4", pathToFileURL(path).href], "/")).toBe(path);
+         expect(fileArgument([pathToFileURL(join(directory, "missing", "video.mp4")).href, pathToFileURL(path).href], "/")).toBe(path);
       }
       expect(fileArgument(["missing.mp4"], directory)).toBeNull();
    } finally {
