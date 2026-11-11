@@ -22,6 +22,7 @@
       "bundle:media": "bun scripts/bundle-media.ts",
       "package": "bun scripts/package-app.ts package",
       "dist": "bun scripts/package-app.ts dist",
+      "release": "bun scripts/release.ts",
       "dist:win": "bun scripts/package-app.ts dist win32",
       "dist:win:installer": "bun scripts/package-app.ts dist win32 installer",
       "dist:win:all": "bun scripts/package-app.ts dist win32 all",

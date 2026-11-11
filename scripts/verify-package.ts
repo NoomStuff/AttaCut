@@ -34,10 +34,16 @@ const executable = resolve(
 const resources = resolve(base, process.platform === "darwin" ? "Resources" : "resources", "media");
 const extension = process.platform === "win32" ? ".exe" : "";
 if (!existsSync(executable)) throw new Error(`Packaged app missing: ${executable}`);
+// Version-only releases set ATTACUT_PACKAGE_SMOKE: their parent commit's candidate already
+// passed the installer, update, media and UI suites on identical code. Payloads, branding,
+// the launcher and bundled media still run against these exact packages.
+const smoke = process.env["ATTACUT_PACKAGE_SMOKE"] === "1";
 await verifyWindowsPayloads();
 await verifyUnixPayloads();
-await verifyInstaller();
-await verifyUpdate();
+if (!smoke) {
+   await verifyInstaller();
+   await verifyUpdate();
+}
 if (process.platform === "win32") {
    // Check both processes. The launcher can look correct while the runtime still says Electron.
    for (const file of new Set([executable, resolve(base, "AttaCut.exe")])) {
@@ -144,7 +150,7 @@ const env = {
    ATTACUT_EXECUTABLE: executable,
 };
 if (hasLauncher) await smokeLauncher();
-const reusable = receipt ? await canReuseMediaVerification(receipt, process.cwd(), env.FFMPEG_PATH, env.FFPROBE_PATH) : false;
+const reusable = smoke || (receipt ? await canReuseMediaVerification(receipt, process.cwd(), env.FFMPEG_PATH, env.FFPROBE_PATH) : false);
 if (reusable) console.log("Identical source, dependencies and media tools already passed the full suite. Running bundled-media smoke and packaged UI.");
 else console.log("Running the full bundled-media suite.");
 execFileSync(process.execPath, reusable ? ["tests/media/packaged-smoke.ts"] : ["run", "test:media"], { stdio: "inherit", env });
@@ -159,5 +165,6 @@ const args = [
    "tests/ui/architecture.spec.mjs",
    "tests/ui/waveform.spec.mjs",
 ];
-if (process.platform === "linux") execFileSync("xvfb-run", ["--auto-servernum", process.execPath, ...args], { stdio: "inherit", env });
+if (smoke) console.log("Version-only release: skipping the packaged UI suite its parent candidate passed.");
+else if (process.platform === "linux") execFileSync("xvfb-run", ["--auto-servernum", process.execPath, ...args], { stdio: "inherit", env });
 else execFileSync(process.execPath, args, { stdio: "inherit", env });

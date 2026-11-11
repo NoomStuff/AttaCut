@@ -17,18 +17,24 @@ on:
 permissions:
    contents: read
 
+# A newer main commit supersedes the older run, which could never publish anyway.
+# Publication is safe to interrupt: the release stays a private draft until done.
 concurrency:
    group: release-${{ github.event_name == 'workflow_dispatch' && (inputs.verify_candidate || inputs.candidate_sha != '') && github.run_id || 'main' }}
-   cancel-in-progress: false
+   cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
    prepare:
       name: Select candidate
       runs-on: ubuntu-latest
       timeout-minutes: 5
+      permissions:
+         contents: read
+         statuses: write
       outputs:
          build: ${{ steps.select.outputs.build }}
          publish: ${{ steps.select.outputs.publish }}
+         fast: ${{ steps.select.outputs.fast }}
          candidate_sha: ${{ steps.select.outputs.candidate_sha }}
          tag: ${{ steps.select.outputs.tag }}
       steps:
@@ -56,24 +62,48 @@ jobs:
                  const version = JSON.parse(Buffer.from(data.content, 'base64').toString('utf8')).version;
                  if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error('Invalid package version.');
                  const tag = `v${version}`;
-                 let build = !superseded;
+                 // Every current main commit is a full candidate, so releases land on proven code.
+                 const build = !superseded;
+                 let publish = false;
                  if (!privateCandidate && !superseded) {
+                   publish = true;
                    try {
                      const release = (await github.rest.repos.getReleaseByTag({ owner, repo, tag })).data;
-                     build = release.draft;
+                     publish = release.draft;
                    } catch (error) { if (error.status !== 404) throw error; }
-                   if (build) {
+                   if (publish) {
                      try {
                        await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
                        throw new Error('An unpublished release cannot reserve a version tag.');
                      } catch (error) { if (error.status !== 404) throw error; }
                    }
                  }
+                 // A commit that only changes the version, on top of a commit whose full candidate
+                 // passed, ships after building and smoke-testing its packages. The parent already
+                 // ran every media, installer, update and UI suite on identical code.
+                 let fast = false;
+                 if (publish) {
+                   const commit = (await github.rest.repos.getCommit({ owner, repo, ref: sha })).data;
+                   const lines = (commit.files?.[0]?.patch ?? '').split('\n').filter((line) => /^[+-](?![+-])/.test(line));
+                   const versionOnly = commit.parents.length === 1 && commit.files?.length === 1 && commit.files[0].filename === 'package.json'
+                     && lines.length === 2 && lines.every((line) => /^[+-]\s*"version": "[^"]+",$/.test(line));
+                   if (versionOnly) {
+                     const parent = commit.parents[0].sha;
+                     const statuses = await github.paginate(github.rest.repos.listCommitStatusesForRef, { owner, repo, ref: parent, per_page: 100 });
+                     // Statuses list newest first. Only the latest candidate result counts.
+                     fast = statuses.find((status) => status.context === 'Release candidate')?.state === 'success';
+                     if (!fast) core.notice(`${parent.slice(0, 7)} has no passing candidate, so this release runs every suite.`);
+                   }
+                 }
+                 if (build && !publish)
+                   await github.rest.repos.createCommitStatus({ owner, repo, sha, state: 'pending', context: 'Release candidate', description: 'Verifying all five packages',
+                     target_url: `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}` });
                  core.setOutput('candidate_sha', sha);
                  core.setOutput('tag', tag);
                  core.setOutput('build', String(build));
-                 core.setOutput('publish', String(build && !privateCandidate));
-                 await core.summary.addRaw(privateCandidate ? `Private candidate ${sha}, ${tag}. Publication disabled.` : superseded ? `Superseded ${sha}. Running app checks without packaging or publication.` : build ? `Verifying ${tag} at ${sha}.` : `${tag} is public and immutable. Running app checks.`).write();
+                 core.setOutput('publish', String(publish));
+                 core.setOutput('fast', String(fast));
+                 await core.summary.addRaw(privateCandidate ? `Private candidate ${sha}, ${tag}. Publication disabled.` : superseded ? `Superseded ${sha}. Running app checks without packaging or publication.` : fast ? `Version-only release of ${tag} on a verified candidate. Build, smoke-test and publish.` : publish ? `Verifying and publishing ${tag} at ${sha} with every suite.` : `Verifying ${sha} as a private candidate. ${tag} is already public.`).write();
 
    checks:
       needs: prepare
@@ -83,6 +113,8 @@ jobs:
 
    app-checks:
       needs: prepare
+      # A version-only release reuses the app checks its parent candidate passed.
+      if: needs.prepare.outputs.fast != 'true'
       uses: ./.github/workflows/app-checks.yml
       with:
          candidate_sha: ${{ needs.prepare.outputs.candidate_sha }}
@@ -93,36 +125,64 @@ jobs:
       needs: prepare
       if: needs.prepare.outputs.build == 'true'
       uses: ./.github/workflows/candidate.yml
-      with: { candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}", target: win-x64, os: windows-2025 }
+      with:
+         {
+            candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}",
+            target: win-x64,
+            os: windows-2025,
+            smoke: "${{ needs.prepare.outputs.fast == 'true' }}",
+         }
 
    mac-x64:
       needs: prepare
       if: needs.prepare.outputs.build == 'true'
       uses: ./.github/workflows/candidate.yml
-      with: { candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}", target: mac-x64, os: macos-15-intel }
+      with:
+         {
+            candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}",
+            target: mac-x64,
+            os: macos-15-intel,
+            smoke: "${{ needs.prepare.outputs.fast == 'true' }}",
+         }
 
    mac-arm64:
       needs: prepare
       if: needs.prepare.outputs.build == 'true'
       uses: ./.github/workflows/candidate.yml
-      with: { candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}", target: mac-arm64, os: macos-15 }
+      with:
+         { candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}", target: mac-arm64, os: macos-15, smoke: "${{ needs.prepare.outputs.fast == 'true' }}" }
 
    linux-x64:
       needs: prepare
       if: needs.prepare.outputs.build == 'true'
       uses: ./.github/workflows/candidate.yml
-      with: { candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}", target: linux-x64, os: ubuntu-24.04 }
+      with:
+         {
+            candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}",
+            target: linux-x64,
+            os: ubuntu-24.04,
+            smoke: "${{ needs.prepare.outputs.fast == 'true' }}",
+         }
 
    linux-arm64:
       needs: prepare
       if: needs.prepare.outputs.build == 'true'
       uses: ./.github/workflows/candidate.yml
-      with: { candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}", target: linux-arm64, os: ubuntu-24.04-arm }
+      with:
+         {
+            candidate_sha: "${{ needs.prepare.outputs.candidate_sha }}",
+            target: linux-arm64,
+            os: ubuntu-24.04-arm,
+            smoke: "${{ needs.prepare.outputs.fast == 'true' }}",
+         }
 
    check:
       name: Check
       if: always()
       needs: [prepare, checks, app-checks, win-x64, mac-x64, mac-arm64, linux-x64, linux-arm64]
+      permissions:
+         contents: read
+         statuses: write
       runs-on: ubuntu-latest
       timeout-minutes: 15
       env:
@@ -135,7 +195,8 @@ jobs:
               script: |
                  const jobs = JSON.parse(process.env.RESULTS);
                  for (const name of ['prepare', 'checks', 'app-checks']) {
-                   if (jobs[name].result !== 'success') throw new Error(`${name}: ${jobs[name].result}`);
+                   const expected = name === 'app-checks' && jobs.prepare.outputs.fast === 'true' ? 'skipped' : 'success';
+                   if (jobs[name].result !== expected) throw new Error(`${name}: ${jobs[name].result}, expected ${expected}`);
                  }
                  for (const name of ['win-x64', 'mac-x64', 'mac-arm64', 'linux-x64', 'linux-arm64']) {
                    const expected = jobs.prepare.outputs.build === 'true' ? 'success' : 'skipped';
@@ -169,6 +230,21 @@ jobs:
          - name: Record candidate outcome
            if: needs.prepare.outputs.build == 'true'
            run: echo "Verified candidate $CANDIDATE_SHA. Exact artifacts retained. Re-run failed jobs to retry verification without rebuilding successful targets." >> "$GITHUB_STEP_SUMMARY"
+         - name: Report the candidate result on the source commit
+           if: always() && needs.prepare.outputs.build == 'true' && needs.prepare.outputs.publish != 'true'
+           uses: actions/github-script@v9
+           env:
+              VERIFICATION_STATUS: ${{ job.status }}
+           with:
+              script: |
+                 const sha = process.env.CANDIDATE_SHA;
+                 if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('Invalid candidate commit');
+                 const passed = process.env.VERIFICATION_STATUS === 'success';
+                 await github.rest.repos.createCommitStatus({
+                   ...context.repo, sha, state: passed ? 'success' : 'failure', context: 'Release candidate',
+                   description: passed ? 'All five packages verified' : 'Candidate verification failed',
+                   target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                 });
 
    publish:
       name: Publish release

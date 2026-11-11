@@ -14,6 +14,10 @@ on:
          os:
             type: string
             required: true
+         smoke:
+            description: Smoke-test the packages only. Version-only releases set this because their parent ran every suite.
+            type: boolean
+            default: false
 
 permissions:
    contents: read
@@ -75,6 +79,8 @@ jobs:
               FFPROBE_PATH: ${{ github.workspace }}/resources/media/ffprobe${{ runner.os == 'Windows' && '.exe' || '' }}
          - name: Verify packaged media, installer, in-app update and editor workflows
            run: bun run verify:package
+           env:
+              ATTACUT_PACKAGE_SMOKE: ${{ inputs.smoke && '1' || '' }}
          - name: Record successful verification of unchanged candidate
            run: bun scripts/ci-stage.ts receipt ${{ inputs.target }}
          - uses: actions/upload-artifact@v7
