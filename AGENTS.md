@@ -39,3 +39,5 @@ Every push to main also builds and verifies all five targets as a private candid
 Always run `bun run format` and `bun run verify` after a turn with many file edits. For changes to export, playback, packaging, or release workflows, run `bun run verify:release` too. Fix local failures before pushing, then fix isolated check failures before publication.
 
 After a version bump, watch the release through completion on all five targets. If an unpublished release fails, rerun the failed jobs or fix and retry the same version. The release workflow publishes automatically after every required check passes. Release notes and custom attempt counts are not required. Create the final tag only when publishing the verified commit. Public releases and tags are immutable, so fixes after publication require a new version. A release carries the app downloads under versionless names, the updater feeds and the installer blockmap.
+
+`src/main/update-manager.ts` is shared line for line with AcroClip and Deduup, apart from its imports and app block. Make updater changes there and copy them to both apps in the same turn.
