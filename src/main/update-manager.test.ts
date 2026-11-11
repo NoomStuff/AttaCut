@@ -3,10 +3,9 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import type { BrowserWindow } from "electron";
 import { app, net } from "electron";
 import type * as NodeFs from "node:fs";
-import { UpdateManager, fetchAvailableUpdate, skipInstallerCrc, updateEndpoints } from "./updates";
+import { UpdateManager, fetchAvailableUpdate, skipInstallerCrc, updateEndpoints } from "./update-manager";
 
 vi.mock("electron", () => ({ app: { getVersion: () => "0.14.1", getPath: vi.fn() }, net: { fetch: vi.fn() } }));
 vi.mock("./identity", () => ({ isPackagedApp: () => true }));
@@ -27,10 +26,10 @@ afterEach(async () => {
    automatic.removeAllListeners();
    for (const folder of folders.splice(0)) await rm(folder, { recursive: true, force: true });
 });
-const release = { version: "0.15.0", name: "next", url: "https://example.com/release", mode: "releases" as const };
+const release = { version: "0.15.0", name: "next", url: "https://github.com/NoomStuff/AttaCut/releases/tag/v0.15.0", mode: "releases" as const };
 function manager() {
    const send = vi.fn();
-   return { manager: new UpdateManager({ isDestroyed: () => false, webContents: { send } } as unknown as BrowserWindow), send };
+   return { manager: new UpdateManager((status) => send("update:status", status)), send };
 }
 it.skipIf(process.platform !== "win32").each(["temporary", "destination"])("preserves a portable %s collision created during download", async (collision) => {
    vi.stubEnv("PORTABLE_EXECUTABLE_FILE", "portable.exe");
@@ -273,4 +272,15 @@ it("redirects updates only for test launches on loopback", () => {
       releases: "http://127.0.0.1:4000/releases/latest",
       feed: "http://127.0.0.1:4000/feed/",
    });
+});
+
+it("rejects release links outside this project's releases", async () => {
+   for (const html_url of [
+      "https://example.com/releases/v99.0.0",
+      "http://github.com/NoomStuff/AttaCut/releases/tag/v99.0.0",
+      "https://github.com/NoomStuff/Other/releases/tag/v99.0.0",
+   ])
+      await expect(
+         fetchAvailableUpdate("0.14.1", async () => Response.json({ tag_name: "v99.0.0", name: null, html_url, draft: false, prerelease: false }))
+      ).rejects.toThrow("unexpected release URL");
 });

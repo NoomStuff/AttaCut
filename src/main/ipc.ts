@@ -19,7 +19,7 @@ import { ipcRequestSchemas } from "../shared/ipc-requests";
 import { IpcEvents, type IpcCalls, type IpcRequest } from "../shared/ipc";
 import { exportFrame } from "./media/frame.ts";
 import { videoExtensions } from "./media/formats.ts";
-import { fetchAvailableUpdate, updateEndpoints, type UpdateManager } from "./updates.ts";
+import { fetchAvailableUpdate, updateEndpoints, type UpdateManager } from "./update-manager.ts";
 import type { SourceSession } from "./source-session.ts";
 import type { ExportService } from "./exports.ts";
 import type { Storage } from "./storage.ts";

@@ -18,7 +18,7 @@ import { windowIcon, registerWindowsIdentity, isPackagedApp } from "./identity.t
 import { registerIpc } from "./ipc.ts";
 import { fileArgument } from "./launch-file";
 import { IpcTestAdapter } from "./ipc-test-adapter";
-import { UpdateManager } from "./updates.ts";
+import { UpdateManager } from "./update-manager.ts";
 import { createUpdateLog } from "./update-log.ts";
 import { clearInstallRecord, takeInstallOutcome, writeInstallRecord } from "./update-install-record.ts";
 import type { AvailableUpdate } from "../shared/types";
@@ -304,7 +304,12 @@ async function start(): Promise<void> {
       }
    });
    const updateLog = createUpdateLog(app.getPath("logs"));
-   const updates = new UpdateManager(window, updateLog);
+   const updates = new UpdateManager(
+      (status) => {
+         if (!window.isDestroyed()) window.webContents.send(IpcEvents.updateStatus, status);
+      },
+      (message) => updateLog.info(message)
+   );
    const userData = app.getPath("userData");
    // A launch that still runs the version which started an install means it did not apply.
    const installOutcome = takeInstallOutcome(userData, app.getVersion())

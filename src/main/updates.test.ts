@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fetchAvailableUpdate, isNewerVersion } from "./updates.ts";
+import { fetchAvailableUpdate, isNewerVersion } from "./update-manager.ts";
 
 describe("update checker", () => {
    it("compares release versions by numeric parts", () => {
