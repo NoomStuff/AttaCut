@@ -126,9 +126,17 @@ export async function verifyUpdate(): Promise<void> {
             response.writeHead(206, { "content-length": String(end - start + 1), "content-range": `bytes ${start}-${end}/${statSync(file).size}` });
             createReadStream(file, { start, end }).pipe(response);
          } else createReadStream(file).pipe(response);
-      } else if (path.startsWith("/feed/") && path.endsWith(".blockmap") && existsSync(join(dirname(installers[newVersion]!), basename(path))))
-         createReadStream(join(dirname(installers[newVersion]!), basename(path))).pipe(response);
-      else {
+      } else if (path.startsWith("/feed/") && path.endsWith(".blockmap")) {
+         // Each version's installer and blockmap live in that version's own output folder.
+         const blockmap = Object.values(installers)
+            .map((installer) => join(dirname(installer), basename(path)))
+            .find((file) => existsSync(file));
+         if (blockmap) createReadStream(blockmap).pipe(response);
+         else {
+            response.statusCode = 404;
+            response.end();
+         }
+      } else {
          response.statusCode = 404;
          response.end();
       }
@@ -152,6 +160,9 @@ export async function verifyUpdate(): Promise<void> {
    try {
       for (const scope of ["currentuser", "allusers"] as const) {
          const firstRequest = requests.length;
+         // Each scope starts without the previous scope's downloaded update, so it really
+         // downloads. Installing the old version then caches its own installer for the diff.
+         await rm(updaterCache, { recursive: true, force: true });
          const install = join(installRoot, scope);
          const shots = join(results, scope);
          await mkdir(shots, { recursive: true });
