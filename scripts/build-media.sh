@@ -30,6 +30,8 @@ case "$(uname -s)" in
 Darwin)
    jobs=$(sysctl -n hw.ncpu)
    sha256() { shasum -a 256 | cut -d' ' -f1; }
+   # Homebrew installs GNU libtoolize as glibtoolize, next to Apple's unrelated libtool.
+   export LIBTOOLIZE=glibtoolize
    ;;
 *)
    jobs=$(nproc)
@@ -92,7 +94,7 @@ EOF
 fi
 # Older CMakeLists in x265 request CMake 2.8 policies. CMake 4 needs this to configure them.
 cmake_common=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=OFF
-   -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_POSITION_INDEPENDENT_CODE=ON "${cmake_cross[@]}")
+   -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_POSITION_INDEPENDENT_CODE=ON ${cmake_cross[@]+"${cmake_cross[@]}"})
 
 extract zlib zlib-1.4.tar.gz
 if [[ -n "$host" ]]; then
@@ -118,7 +120,7 @@ grep -q '^Libs.private:' "$prefix/lib/pkgconfig/x265.pc" || echo "Libs.private: 
 extract libvpx libvpx-1.17.0.tar.gz
 vpx_target=()
 [[ -n "$host" ]] && vpx_target=(--target=x86_64-win64-gcc)
-(cd "$build/libvpx" && CROSS=${host:+$host-} ./configure --prefix="$prefix" "${vpx_target[@]}" --enable-static --disable-shared --enable-pic \
+(cd "$build/libvpx" && CROSS=${host:+$host-} ./configure --prefix="$prefix" ${vpx_target[@]+"${vpx_target[@]}"} --enable-static --disable-shared --enable-pic \
    --disable-examples --disable-tools --disable-docs --disable-unit-tests --enable-vp9-highbitdepth && make -j"$jobs" install)
 
 extract libaom libaom-3.15.3.tar.gz
@@ -126,7 +128,7 @@ aom_cross=()
 [[ -n "$host" ]] && aom_cross=(-DCMAKE_TOOLCHAIN_FILE="$build/libaom/build/cmake/toolchains/x86_64-mingw-gcc.cmake")
 [[ -n "$host" && ! -f "$build/libaom/build/cmake/toolchains/x86_64-mingw-gcc.cmake" ]] && aom_cross=(-DCMAKE_TOOLCHAIN_FILE="$build/libaom/cmake/toolchains/x86_64-mingw-gcc.cmake")
 # dav1d decodes AV1, so libaom only needs its encoder.
-cmake -S "$build/libaom" -B "$build/libaom/out" "${cmake_common[@]}" "${aom_cross[@]}" -DCONFIG_AV1_DECODER=0 \
+cmake -S "$build/libaom" -B "$build/libaom/out" "${cmake_common[@]}" ${aom_cross[@]+"${aom_cross[@]}"} -DCONFIG_AV1_DECODER=0 \
    -DENABLE_DOCS=0 -DENABLE_EXAMPLES=0 -DENABLE_TESTS=0 -DENABLE_TOOLS=0
 cmake --build "$build/libaom/out" -j"$jobs"
 cmake --install "$build/libaom/out"
@@ -163,10 +165,10 @@ fi
 # Autodetection stays off, so nothing from the build machine slips into the binaries.
 # Native encoders stay on: lossless copies re-encode audio with the source's own codec.
 configure=(--prefix="$prefix" --pkg-config-flags=--static --extra-cflags="-I$prefix/include" --extra-ldflags="$ffmpeg_ldflags"
-   --extra-libs="$cxxlib -lm" "${ffmpeg_cross[@]}" --enable-gpl --disable-autodetect --enable-static --disable-shared
+   --extra-libs="$cxxlib -lm" ${ffmpeg_cross[@]+"${ffmpeg_cross[@]}"} --enable-gpl --disable-autodetect --enable-static --disable-shared
    --disable-debug --disable-doc --disable-ffplay --disable-network
    --enable-libx264 --enable-libx265 --enable-libvpx --enable-libaom --enable-libdav1d --enable-libzimg
-   --enable-libopus --enable-libvorbis --enable-libmp3lame --enable-zlib)
+   --enable-libopus --enable-libvorbis --enable-libmp3lame --enable-zlib --disable-decoder=libaom_av1)
 [[ "$target" == linux-* ]] && configure+=(--enable-pthreads)
 [[ "$target" == mac-* ]] && configure+=(--enable-pthreads)
 [[ "$target" == win-x64 ]] && configure+=(--enable-w32threads)
