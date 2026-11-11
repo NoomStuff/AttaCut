@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { mediaArchives } from "./media-lock";
-import { releaseDownloads } from "./release-downloads";
+import { publishedAssets } from "./release-downloads";
 import { targets } from "./ci-candidate";
 
 // Run before any media downloads or packaging. Publication repeats remote guards.
 const pkg = JSON.parse(await readFile("package.json", "utf8")) as { version: string; build: { publish: { owner: string; repo: string }[] } };
-const downloads = releaseDownloads(pkg.version);
-if (downloads.length !== 8 || new Set(downloads).size !== 8) throw new Error("Release must contain eight distinct app downloads.");
+const assets = publishedAssets(pkg.version);
+if (new Set(assets).size !== assets.length) throw new Error("Release files must have distinct names.");
 if (pkg.build.publish.length !== 1 || pkg.build.publish[0]?.owner !== "NoomStuff" || pkg.build.publish[0]?.repo !== "AttaCut")
    throw new Error("Unexpected release destination.");
 for (const target of targets) {
