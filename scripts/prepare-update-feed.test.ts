@@ -25,16 +25,16 @@ describe("update feeds", () => {
          rmSync(folder, { recursive: true, force: true });
       }
    });
-   it("points each channel to its exact GitHub release package", () => {
+   it("points each channel to its tagged, versionless GitHub release package", () => {
       const folder = mkdtempSync(join(tmpdir(), "attacut-feed-"));
       try {
          const dist = join(folder, "dist");
          const feed = join(folder, "feed");
          mkdirSync(dist);
          const channels = [
-            ["latest.yml", "AttaCut-0.13.3-win-x64-Installer.exe"],
-            ["latest-linux.yml", "AttaCut-0.13.3-linux-x86_64.AppImage"],
-            ["latest-linux-arm64.yml", "AttaCut-0.13.3-linux-arm64.AppImage"],
+            ["latest.yml", "AttaCut-0.13.3-win-x64-Installer.exe", "AttaCut-windows-x64-setup.exe"],
+            ["latest-linux.yml", "AttaCut-0.13.3-linux-x86_64.AppImage", "AttaCut-linux-x64.AppImage"],
+            ["latest-linux-arm64.yml", "AttaCut-0.13.3-linux-arm64.AppImage", "AttaCut-linux-arm64.AppImage"],
          ] as const;
          for (const [channel, packageName] of channels) {
             writeFileSync(join(dist, packageName), "package");
@@ -44,9 +44,9 @@ describe("update feeds", () => {
             );
          }
          execFileSync("bun", [resolve("scripts/prepare-update-feed.mjs"), dist, feed, "v0.13.3"], { windowsHide: true });
-         for (const [channel, packageName] of channels) {
+         for (const [channel, , publicName] of channels) {
             const content = readFileSync(join(feed, channel), "utf8");
-            const url = `https://github.com/NoomStuff/AttaCut/releases/download/v0.13.3/${packageName}`;
+            const url = `https://github.com/NoomStuff/AttaCut/releases/download/v0.13.3/${publicName}`;
             expect(content).toContain(url);
             expect(content).toContain(createHash("sha512").update("package").digest("base64"));
             if (channel !== "latest.yml") expect(content).toContain("blockMapSize: 3");

@@ -2,11 +2,11 @@ import { requireDisposableDesktop } from "./test-isolation";
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createReadStream, existsSync, realpathSync } from "node:fs";
+import { createReadStream, existsSync, realpathSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { _electron as electron } from "@playwright/test";
 import manifest from "../package.json";
 import { asarVersion, setAsarVersion } from "./asar-version";
@@ -87,7 +87,7 @@ export async function verifyUpdate(): Promise<void> {
             fileAssociations: [],
             directories: { output },
             publish: [{ provider: "generic", url: "http://127.0.0.1/feed/" }],
-            nsis: { ...manifest.build.nsis, guid, differentialPackage: false, shortcutName: `AttaCut Update Test ${guid}` },
+            nsis: { ...manifest.build.nsis, guid, shortcutName: `AttaCut Update Test ${guid}` },
          })
       );
       execFileSync(
@@ -117,7 +117,17 @@ export async function verifyUpdate(): Promise<void> {
             })
          );
       } else if (path === "/feed/latest.yml") response.end(feed);
-      else if (path === `/feed/${packageFile}`) createReadStream(join(dirname(installers[newVersion]!), packageFile)).pipe(response);
+      else if (path === `/feed/${packageFile}`) {
+         // Differential updates fetch changed blocks one range at a time, like GitHub's download host.
+         const file = join(dirname(installers[newVersion]!), packageFile);
+         const range = /^bytes=(\d+)-(\d+)$/.exec(request.headers.range ?? "");
+         if (range) {
+            const [start, end] = [Number(range[1]), Number(range[2])];
+            response.writeHead(206, { "content-length": String(end - start + 1), "content-range": `bytes ${start}-${end}/${statSync(file).size}` });
+            createReadStream(file, { start, end }).pipe(response);
+         } else createReadStream(file).pipe(response);
+      } else if (path.startsWith("/feed/") && path.endsWith(".blockmap") && existsSync(join(dirname(installers[newVersion]!), basename(path))))
+         createReadStream(join(dirname(installers[newVersion]!), basename(path))).pipe(response);
       else {
          response.statusCode = 404;
          response.end();
@@ -141,6 +151,7 @@ export async function verifyUpdate(): Promise<void> {
    const failures: string[] = [];
    try {
       for (const scope of ["currentuser", "allusers"] as const) {
+         const firstRequest = requests.length;
          const install = join(installRoot, scope);
          const shots = join(results, scope);
          await mkdir(shots, { recursive: true });
@@ -273,10 +284,15 @@ export async function verifyUpdate(): Promise<void> {
          if ((await readFile(join(profile, "update-preserve.txt"), "utf8")) !== guid) failures.push(`${scope}: the update changed a user file.`);
          // The relaunched app consumes the install record at startup.
          if (existsSync(join(profile, "update-install.json"))) failures.push(`${scope}: the relaunched app did not consume its install record.`);
-         report["requests"] = [...new Set(requests)];
+         const scopeRequests = requests.slice(firstRequest);
+         report["requests"] = [...new Set(scopeRequests)];
+         // The installed version's blockmap is found by swapping the version in the new package URL.
+         for (const blockmap of [`/feed/${basename(installers[oldVersion]!)}.blockmap`, `/feed/${packageFile}.blockmap`])
+            if (!scopeRequests.includes(blockmap)) failures.push(`${scope}: the update did not request ${blockmap}, so it cannot download differentially.`);
          if (existsSync(join(logs, "updater.log"))) {
             const log = await readFile(join(logs, "updater.log"), "utf8");
             await writeFile(join(results, `updater-${scope}.log`), log);
+            if (log.includes("fallback to full download")) failures.push(`${scope}: the differential download fell back to the full installer.`);
             // Which of electron-updater's install paths ran: direct spawn, elevate.exe, or the interactive fallback.
             report["installPath"] = log.split("\n").filter((line) => /Executing:|Cannot run installer|isAdminRightsRequired|Install:|Handing over/.test(line));
          } else failures.push(`${scope}: the updater wrote no log.`);

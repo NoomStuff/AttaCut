@@ -38,8 +38,8 @@ it.skipIf(process.platform !== "win32").each(["temporary", "destination"])("pres
    folders.push(folder);
    vi.mocked(app.getPath).mockReturnValue(folder);
    const bytes = Buffer.from("verified executable");
-   const name = `AttaCut-${release.version}-win-${process.arch}.exe`;
-   const otherFile = join(folder, name + (collision === "temporary" ? ".part" : ""));
+   const name = `AttaCut-windows-${process.arch}-portable.exe`;
+   const otherFile = join(folder, `AttaCut-${release.version}-windows-${process.arch}-portable.exe` + (collision === "temporary" ? ".part" : ""));
    vi.mocked(net.fetch).mockResolvedValueOnce(
       Response.json({
          assets: [{ name, browser_download_url: "https://example.com/app", digest: "sha256:" + createHash("sha256").update(bytes).digest("hex") }],
@@ -54,7 +54,7 @@ it.skipIf(process.platform !== "win32").each(["temporary", "destination"])("pres
    await expect(updates.downloadPortable(release.version)).rejects.toThrow();
    expect(await readFile(otherFile, "utf8")).toBe("another process owns this");
    expect(updates.downloadedPath).toBeNull();
-   if (collision === "destination") expect(await readdir(folder)).toEqual([name]);
+   if (collision === "destination") expect(await readdir(folder)).toEqual([`AttaCut-${release.version}-windows-${process.arch}-portable.exe`]);
 });
 it.each([404, 429, 500])("reports HTTP %s during release checks", async (status) => {
    await expect(fetchAvailableUpdate("0.14.1", async () => new Response("", { status }))).rejects.toThrow(String(status));
@@ -129,7 +129,7 @@ it.skipIf(process.platform !== "win32").each(["headers", "release body", "downlo
    const folder = await mkdtemp(join(tmpdir(), "attacut-update-"));
    folders.push(folder);
    vi.mocked(app.getPath).mockReturnValue(folder);
-   const name = `AttaCut-${release.version}-win-${process.arch}.exe`;
+   const name = `AttaCut-windows-${process.arch}-portable.exe`;
    const response =
       stage === "release body"
          ? new Response(new ReadableStream())
@@ -172,8 +172,9 @@ it.skipIf(process.platform !== "win32").each(["checksum", "interrupted", "http",
    folders.push(folder);
    vi.mocked(app.getPath).mockReturnValue(folder);
    const bytes = Buffer.from("verified executable");
-   const name = `AttaCut-0.15.0-win-${process.arch}.exe`;
-   await writeFile(join(folder, name), "existing download");
+   const name = `AttaCut-windows-${process.arch}-portable.exe`;
+   const local = `AttaCut-0.15.0-windows-${process.arch}-portable.exe`;
+   await writeFile(join(folder, local), "existing download");
    vi.mocked(net.fetch).mockResolvedValueOnce(
       scenario === "http"
          ? new Response("", { status: 500 })
@@ -208,7 +209,7 @@ it.skipIf(process.platform !== "win32").each(["checksum", "interrupted", "http",
       expect(updates.downloadedPath).toBeNull();
       expect(send).toHaveBeenLastCalledWith("update:status", expect.objectContaining({ phase: "error" }));
    }
-   expect(await readFile(join(folder, name), "utf8")).toBe("existing download");
+   expect(await readFile(join(folder, local), "utf8")).toBe("existing download");
    expect((await readdir(folder)).some((file) => file.endsWith(".part"))).toBe(false);
 });
 
@@ -263,7 +264,7 @@ it("skips only the redundant NSIS CRC pass for updater-run installers", async ()
 it("redirects updates only for test launches on loopback", () => {
    const github = {
       releases: "https://api.github.com/repos/NoomStuff/AttaCut/releases/latest",
-      feed: "https://raw.githubusercontent.com/NoomStuff/AttaCut/updates/",
+      feed: "https://github.com/NoomStuff/AttaCut/releases/latest/download/",
    };
    expect(updateEndpoints({})).toEqual(github);
    expect(updateEndpoints({ ATTACUT_TEST_UPDATE_SERVER: "http://127.0.0.1:4000/" })).toEqual(github);

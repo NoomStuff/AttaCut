@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 import { publishRelease } from "./publish-release";
-import { releaseDownloads } from "./release-downloads";
+import { publishedAssets } from "./release-downloads";
 
 it.each([
    "valid",
@@ -26,7 +26,7 @@ it.each([
       const sha = "a".repeat(40);
       const downloads = join(folder, "downloads");
       await mkdir(downloads);
-      const names = releaseDownloads("0.25.0");
+      const names = publishedAssets("0.25.0");
       for (const name of names) await writeFile(join(downloads, name), "app");
       const release = {
          id: 1,

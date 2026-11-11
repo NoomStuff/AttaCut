@@ -3,7 +3,7 @@ import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { releaseDownloads } from "./release-downloads";
+import { publishedAssets } from "./release-downloads";
 
 interface Asset {
    name: string;
@@ -33,10 +33,10 @@ export async function publishRelease(candidate: Candidate, gh: Gh, directory = "
       if (api<{ object: { sha: string } }>("git/ref/heads/main").object.sha !== sha) throw new Error("A newer main commit superseded this candidate.");
    };
    assertCurrent();
-   const expected = releaseDownloads(tag.slice(1));
+   const expected = publishedAssets(tag.slice(1));
    const names = await readdir(directory);
    if (!tag.startsWith("v") || names.length !== expected.length || names.some((name) => !expected.includes(name)))
-      throw new Error("Expected exactly eight candidate downloads.");
+      throw new Error("Expected exactly the published downloads and feeds.");
    const assets = names.map((name) => join(directory, name));
    const releasesByTag = (): Release[] => {
       const matches: Release[] = [];

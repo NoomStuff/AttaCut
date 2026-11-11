@@ -52,7 +52,7 @@ it.each([
          await writeFile(join(directory, "manifest.json"), JSON.stringify(original));
          const names =
             target === "win-x64"
-               ? [`AttaCut-${version}-win-x64.exe`, `AttaCut-${version}-win-x64-Installer.exe`]
+               ? [`AttaCut-${version}-win-x64.exe`, `AttaCut-${version}-win-x64-Installer.exe.blockmap`, `AttaCut-${version}-win-x64-Installer.exe`]
                : target.startsWith("mac-")
                  ? [`AttaCut-${version}-${target}.zip`, `AttaCut-${version}-${target}.dmg`]
                  : [`AttaCut-${version}-${target === "linux-x64" ? "linux-x86_64" : target}.AppImage`];

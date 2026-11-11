@@ -4,6 +4,7 @@ import { createReadStream } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import process from "node:process";
+import { publishedName } from "./release-downloads.ts";
 
 const [dist, output, tag] = process.argv.slice(2);
 if (!dist || !output || !/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag ?? "")) {
@@ -54,7 +55,9 @@ for (const [channel, suffix] of channels) {
    for await (const chunk of createReadStream(packagePath)) hash.update(chunk);
    if (hash.digest("base64") !== file.sha512 || (info.sha512 !== undefined && info.sha512 !== file.sha512))
       throw new Error(`${channel} checksum does not match package bytes.`);
-   const url = `https://github.com/NoomStuff/AttaCut/releases/download/${tag}/${encodeURIComponent(name)}`;
+   // Absolute tag URLs let electron-updater find the installed version's blockmap
+   // by swapping the version in this path, while public names stay versionless.
+   const url = `https://github.com/NoomStuff/AttaCut/releases/download/${tag}/${encodeURIComponent(publishedName(version, name))}`;
    if (info.path !== undefined) {
       if (info.path !== name) throw new Error(`${channel} has an unexpected legacy path.`);
       info.path = url;

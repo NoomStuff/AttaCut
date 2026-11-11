@@ -3,12 +3,11 @@ import { join } from "node:path";
 import { z } from "zod";
 import { candidateIdentity, manifestSchema, packCandidate, sha256, targets, verifyCandidate } from "./ci-candidate";
 import type { CandidateManifest } from "./ci-candidate";
-import { releaseDownloads } from "./release-downloads";
+import { feeds, releaseDownloads } from "./release-downloads";
 import { verifyUnixPayloads } from "./verify-unix-payloads";
 import { execFileSync } from "node:child_process";
 
 const folders = ["release", "out", "resources/media", "build"];
-const feeds = ["latest.yml", "latest-linux.yml", "latest-linux-arm64.yml"];
 export const receiptSchema = manifestSchema.extend({ candidateSha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 
 export async function snapshotFiles(root: string): Promise<Record<string, string>> {

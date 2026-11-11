@@ -44,7 +44,7 @@ Packages include FFmpeg and `ffprobe`. Windows can use FFmpeg on PATH. macOS nee
 
 macOS signing and notarization require Apple credentials configured for electron-builder. Without them, the build is for local testing and is not notarized. See [electron-builder's macOS signing guide](https://www.electron.build/v26/docs/features/code-signing/code-signing-mac/) before distributing.
 
-Build commands do not publish artifacts. The release workflow publishes packages to GitHub Releases and update feeds to the `updates` branch. Open a pull request for a version change so CI can check all supported platforms before merging.
+Build commands do not publish artifacts. The release workflow publishes one GitHub release per version with the app downloads under versionless names, such as `AttaCut-windows-x64-setup.exe`, and the updater feeds. Open a pull request for a version change so CI can check all supported platforms before merging.
 
 ## License
 
