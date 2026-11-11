@@ -1,0 +1,113 @@
+{
+   "note": "Every input of AttaCut's FFmpeg build. tarSha256 hashes the decompressed tar, so a recompressed copy of the same files still matches.",
+   "sources": [
+      {
+         "name": "ffmpeg",
+         "version": "8.1.3",
+         "file": "ffmpeg-8.1.3.tar.xz",
+         "url": "https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz",
+         "tarSha256": "0e249d0a4f31c0f35b81431c0b6db1c05ce5657d38f21454f781d089f3cb3007",
+         "license": "GPL-2.0-or-later as configured with --enable-gpl",
+         "licenseFiles": ["COPYING.GPLv2", "COPYING.LGPLv2.1", "LICENSE.md"]
+      },
+      {
+         "name": "x264",
+         "version": "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee",
+         "file": "x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz",
+         "url": "https://code.videolan.org/videolan/x264/-/archive/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz",
+         "tarSha256": "5686546d663e7520bd05cd47a31d615d0dc707c089cfcb5924a1bcfd3aea7be5",
+         "license": "GPL-2.0-or-later",
+         "licenseFiles": ["COPYING"]
+      },
+      {
+         "name": "x265",
+         "version": "4.2",
+         "file": "x265_4.2.tar.gz",
+         "url": "https://bitbucket.org/multicoreware/x265_git/downloads/x265_4.2.tar.gz",
+         "tarSha256": "436ab4acde02466fe6a0f2c865af110cd5599f6889e8ef29f82980144de5d261",
+         "license": "GPL-2.0-or-later",
+         "licenseFiles": ["COPYING"]
+      },
+      {
+         "name": "libvpx",
+         "version": "1.17.0",
+         "file": "libvpx-1.17.0.tar.gz",
+         "url": "https://codeload.github.com/webmproject/libvpx/tar.gz/refs/tags/v1.17.0",
+         "tarSha256": "294c81ca3ba7fd7e03839d9abff21b4b04190d20a77ef0be8de1b4f75a62c9cd",
+         "license": "BSD-3-Clause",
+         "licenseFiles": ["LICENSE", "PATENTS"]
+      },
+      {
+         "name": "libaom",
+         "version": "3.15.3",
+         "file": "libaom-3.15.3.tar.gz",
+         "url": "https://storage.googleapis.com/aom-releases/libaom-3.15.3.tar.gz",
+         "tarSha256": "42846e158a104d710c1f0463b676e24e563cab4ae29dc4ae2982625665ff6c1d",
+         "license": "BSD-2-Clause",
+         "licenseFiles": ["LICENSE", "PATENTS"]
+      },
+      {
+         "name": "dav1d",
+         "version": "1.5.4",
+         "file": "dav1d-1.5.4.tar.xz",
+         "url": "https://downloads.videolan.org/pub/videolan/dav1d/1.5.4/dav1d-1.5.4.tar.xz",
+         "tarSha256": "2f905e339269df19b80d3d0dd71a34cc0b8db4a20100ca3f38f1c15872dfc21a",
+         "license": "BSD-2-Clause",
+         "licenseFiles": ["COPYING"]
+      },
+      {
+         "name": "zimg",
+         "version": "3.0.6",
+         "file": "zimg-3.0.6.tar.gz",
+         "url": "https://codeload.github.com/sekrit-twc/zimg/tar.gz/refs/tags/release-3.0.6",
+         "tarSha256": "ef5c76184dd27252dd62c19f1eb315182d6cb150f45b5eeada82e368511f4d7c",
+         "license": "WTFPL",
+         "licenseFiles": ["COPYING"]
+      },
+      {
+         "name": "zlib",
+         "version": "1.4",
+         "file": "zlib-1.4.tar.gz",
+         "url": "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.gz",
+         "tarSha256": "2d4ada0995d1df98cb430f384c9aa928b1ff45cf3a0903fb09fe6b9efc7b7bd6",
+         "license": "Zlib",
+         "licenseFiles": ["LICENSE"]
+      },
+      {
+         "name": "opus",
+         "version": "1.5.2",
+         "file": "opus-1.5.2.tar.gz",
+         "url": "https://github.com/xiph/opus/releases/download/v1.5.2/opus-1.5.2.tar.gz",
+         "tarSha256": "999f112862c4136d7052422f5ed69930d8691dc24f693fcde27efc07d015e418",
+         "license": "BSD-3-Clause",
+         "licenseFiles": ["COPYING"]
+      },
+      {
+         "name": "libogg",
+         "version": "1.3.6",
+         "file": "libogg-1.3.6.tar.xz",
+         "url": "https://github.com/xiph/ogg/releases/download/v1.3.6/libogg-1.3.6.tar.xz",
+         "tarSha256": "cd52c5dfacc14379184d43453c1ae4a38a977c3787b252d732f02c836dec72de",
+         "license": "BSD-3-Clause",
+         "licenseFiles": ["COPYING"]
+      },
+      {
+         "name": "libvorbis",
+         "version": "1.3.7",
+         "file": "libvorbis-1.3.7.tar.xz",
+         "url": "https://github.com/xiph/vorbis/releases/download/v1.3.7/libvorbis-1.3.7.tar.xz",
+         "tarSha256": "ecebbab8bcb1fd4f6ffc607d6da4edf0fe40817e8a0f799518f155aa14e2ff3a",
+         "license": "BSD-3-Clause",
+         "licenseFiles": ["COPYING"]
+      },
+      {
+         "name": "lame",
+         "version": "3.100",
+         "file": "lame-3.100.tar.gz",
+         "url": "https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz",
+         "tarSha256": "6373da7d063f0954921bc52cfbf2e44b6545df3d721071bc1f93114802fbeac5",
+         "license": "LGPL-2.0-or-later",
+         "licenseFiles": ["COPYING", "LICENSE"]
+      }
+   ]
+}
