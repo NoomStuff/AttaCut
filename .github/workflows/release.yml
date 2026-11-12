@@ -255,7 +255,9 @@ jobs:
    publish:
       name: Publish release
       needs: [prepare, check]
-      if: needs.prepare.outputs.publish == 'true' && needs.check.result == 'success'
+      # A version-only release skips app-checks, and a skipped job anywhere upstream makes the
+      # implicit success() false. The Check gate already requires every expected job.
+      if: ${{ !cancelled() && needs.prepare.outputs.publish == 'true' && needs.check.result == 'success' }}
       permissions:
          contents: write
       runs-on: ubuntu-latest
