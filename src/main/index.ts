@@ -1,8 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, session } from "electron";
-import { basename, dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
 import { SourceSession } from "./source-session.ts";
 import { SourceProbe } from "./source-probe";
 import { pruneWaveforms } from "./media/waveform-cache";
@@ -15,6 +13,7 @@ import { IpcEvents } from "../shared/ipc.ts";
 import { installMenu } from "./menu.ts";
 import { RecentFiles } from "./recent.ts";
 import { windowIcon, registerWindowsIdentity, isPackagedApp } from "./identity.ts";
+import { fadeForExit, launcherPath, releaseSplash } from "./splash.ts";
 import { registerIpc } from "./ipc.ts";
 import { fileArgument } from "./launch-file";
 import { IpcTestAdapter } from "./ipc-test-adapter";
@@ -123,16 +122,13 @@ async function start(): Promise<void> {
       testing ? (signal) => testing.invoke("test:export-item", () => undefined, signal) : undefined
    );
    if (process.platform === "win32" && icon) {
-      // Taskbar relaunches must show the splash too, so they go through the launcher
-      // whenever it fronts the renamed Electron executable.
-      const launcherExe = join(dirname(process.execPath), "AttaCut.exe");
-      const relaunchExe = basename(process.execPath) === "AttaCut-app.exe" && existsSync(launcherExe) ? launcherExe : process.execPath;
+      // Taskbar relaunches must show the splash too, so they go through the launcher.
       window.setAppDetails({
          appId: "dev.attacut.app",
          appIconPath: icon,
          appIconIndex: 0,
          relaunchDisplayName: "AttaCut",
-         relaunchCommand: isPackagedApp() ? `"${relaunchExe}"` : `"${process.execPath}" "${app.getAppPath()}"`,
+         relaunchCommand: isPackagedApp() ? `"${launcherPath()}"` : `"${process.execPath}" "${app.getAppPath()}"`,
       });
    }
    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -154,9 +150,8 @@ async function start(): Promise<void> {
          }
       }
       registerWindowsIdentity();
-      // The dev launcher's native splash watches for this file and closes itself.
-      const splashSignal = process.env["ATTACUT_SPLASH_SIGNAL"];
-      if (splashSignal) void writeFile(splashSignal, "1").catch(() => undefined);
+      // The launcher's native splash gives way to the app's own startup screen.
+      releaseSplash();
    };
    ipcMain.on(IpcEvents.rendererReady, (event) => {
       if (event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame) presentWindow();
@@ -268,10 +263,15 @@ async function start(): Promise<void> {
                cancelId: 0,
             });
             if (response !== 1) return;
+         }
+         // The renderer may still ask about an unsaved project, so it stays visible until then.
+         if (!(await flushRenderer())) return;
+         if (exportsService.running) {
+            // Closing feels instant: the window fades to a spinner while the export stops.
+            await fadeForExit(window);
             exportsService.cancel();
             await exportsService.waitForIdle();
          }
-         if (!(await flushRenderer())) return;
          await storage.flush();
          confirmedClose = true;
          window.close();

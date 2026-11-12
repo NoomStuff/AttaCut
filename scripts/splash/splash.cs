@@ -1,12 +1,17 @@
-// Minimal native boot splash for AttaCut launches, shown while Electron is still
-// starting. Compiled with the .NET Framework csc.exe that ships with Windows, so the
-// source must stay C# 5 compatible.
+// Native splash for AcroClip, AttaCut and Deduup. This file is shared line for line;
+// identity.cs beside it holds the app's name, colours and runtime executable. Both are
+// compiled with the .NET Framework csc.exe that ships with Windows, so they must stay
+// C# 5 compatible.
+//
+// The packaged product executable is this launcher. It shows the splash at once, starts
+// the Electron runtime beside it and closes when the app reports its own window ready.
 //
 // Usage:
-//   attacut-splash.exe <iconPath> <signalPath>            Wait for the signal file, then close.
-//   attacut-splash.exe <iconPath> <signalPath> --launch <appExe>
-//                                                         Also start the app, pass the signal
-//                                                         path to it, and forward its exit code.
+//   <App>.exe [app arguments]                 Launcher: show the splash, start <App>-app.exe.
+//   <App>.exe --update <iconPath>             Update: shown while an update installs, from a
+//                                             temporary copy. Closes when the updated app's
+//                                             launcher starts, which draws the same splash.
+//   <App>.exe <iconPath> <signalPath>         Wait: show until the signal file exists.
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -17,9 +22,9 @@ using System.Windows.Forms;
 using System.Reflection;
 using System.Text;
 
-[assembly: AssemblyTitle("AttaCut")]
-[assembly: AssemblyDescription("AttaCut")]
-[assembly: AssemblyProduct("AttaCut")]
+[assembly: AssemblyTitle(Identity.Name)]
+[assembly: AssemblyDescription(Identity.Name)]
+[assembly: AssemblyProduct(Identity.Name)]
 [assembly: AssemblyCompany("NoomStuff")]
 
 internal sealed class Splash : Form
@@ -33,15 +38,17 @@ internal sealed class Splash : Form
     private readonly float scale;
     private readonly Bitmap logo;
     private readonly string signalPath;
+    private readonly string handoverPath;
     private readonly Process child;
     private readonly bool isLauncher;
     private readonly Timer spinTimer;
     private float angle;
     private int childExitCode;
 
-    internal Splash(string iconPath, string signalPath, string childArguments, string launchExe)
+    internal Splash(string iconPath, string signalPath, string handoverPath, string childArguments, string launchExe)
     {
         this.signalPath = signalPath;
+        this.handoverPath = handoverPath;
         using (Graphics measure = CreateGraphics()) scale = measure.DpiX / 96f;
 
         FormBorderStyle = FormBorderStyle.None;
@@ -49,7 +56,7 @@ internal sealed class Splash : Form
         ShowInTaskbar = false;
         TopMost = true;
         DoubleBuffered = true;
-        BackColor = Color.FromArgb(23, 25, 28);
+        BackColor = Identity.Background;
         Size = new Size(Scaled(216), Scaled(148));
         // The portable stub's extraction window centers on the screen bounds; matching it
         // exactly makes the handover from static image to animated splash seamless.
@@ -76,7 +83,7 @@ internal sealed class Splash : Form
         Timer lifetime = new Timer();
         lifetime.Interval = LifetimeMs;
         lifetime.Tick += delegate { Close(); };
-        if (child == null) lifetime.Start(); // Only for the orphan-prone wait-only mode.
+        if (child == null) lifetime.Start(); // Only for the orphan-prone wait and update modes.
 
         Timer doneTimer = new Timer();
         doneTimer.Interval = 40;
@@ -104,20 +111,35 @@ internal sealed class Splash : Form
         spinTimer.Start();
     }
 
-    private static Process Launch(string appExe, string signalPath, string childArguments)
+    // The launcher draws over an update splash at the same spot, then tells it to go.
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        if (handoverPath == null) return;
+        try
+        {
+            File.WriteAllText(handoverPath, "1");
+        }
+        catch
+        {
+            // Without the handover the update splash still times out.
+        }
+    }
+
+    internal static Process Launch(string appExe, string signalPath, string childArguments)
     {
         NativeLaunch.ProcessInformation created = new NativeLaunch.ProcessInformation();
         bool resumed = false;
-        string previousSignal = Environment.GetEnvironmentVariable("ATTACUT_SPLASH_SIGNAL");
+        string previousSignal = Environment.GetEnvironmentVariable(Identity.SignalVariable);
         try
         {
             string full = Path.GetFullPath(appExe);
             NativeLaunch.StartupInfo startup = new NativeLaunch.StartupInfo();
             startup.Size = Marshal.SizeOf(typeof(NativeLaunch.StartupInfo));
-            Environment.SetEnvironmentVariable("ATTACUT_SPLASH_SIGNAL", signalPath ?? "");
+            Environment.SetEnvironmentVariable(Identity.SignalVariable, signalPath ?? "");
             // Explorer gives this launcher foreground permission. Transfer it before
             // Electron runs, including before its single-instance notification grants
-            // that permission to an already-running AttaCut process.
+            // that permission to an already-running instance.
             StringBuilder command = new StringBuilder("\"" + full + "\" " + (childArguments ?? ""));
             if (!NativeLaunch.CreateProcess(full, command, IntPtr.Zero, IntPtr.Zero, false,
                 NativeLaunch.CreateSuspended, IntPtr.Zero, Path.GetDirectoryName(full), ref startup, out created)) return null;
@@ -140,7 +162,7 @@ internal sealed class Splash : Form
         }
         finally
         {
-            Environment.SetEnvironmentVariable("ATTACUT_SPLASH_SIGNAL", previousSignal);
+            Environment.SetEnvironmentVariable(Identity.SignalVariable, previousSignal);
             if (created.Thread != IntPtr.Zero)
             {
                 // A failed resume must not leave a suspended runtime behind.
@@ -192,7 +214,7 @@ internal sealed class Splash : Form
         Graphics graphics = e.Graphics;
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         using (GraphicsPath frame = RoundedPath(new Rectangle(Point.Empty, Size), Scaled(Radius)))
-        using (Pen border = new Pen(Color.FromArgb(42, 47, 54)))
+        using (Pen border = new Pen(Identity.Border))
         {
             graphics.DrawPath(border, frame);
         }
@@ -205,7 +227,7 @@ internal sealed class Splash : Form
         {
             graphics.DrawArc(track, spin, 0f, 360f);
         }
-        using (Pen arc = new Pen(Color.FromArgb(155, 201, 240), 3f * scale))
+        using (Pen arc = new Pen(Identity.Accent, 3f * scale))
         {
             arc.StartCap = LineCap.Round;
             arc.EndCap = LineCap.Round;
@@ -280,11 +302,10 @@ internal static class Program
     [DllImport("user32.dll")]
     private static extern bool SetProcessDPIAware();
 
-    // Wait-only mode takes explicit icon and signal paths. Launcher mode is picked when a
-    // sibling AttaCut-app.exe exists: the splash shows immediately, the real app starts
-    // with a fresh signal path in its environment, all command-line arguments are
-    // forwarded untouched, and the process waits for the app so packaging wrappers that
-    // ExecWait this launcher see its real exit code.
+    // Launcher mode is picked when the sibling runtime exists: the splash shows at once,
+    // the app starts with a fresh signal path in its environment, every command-line
+    // argument is forwarded untouched, and the process waits for the app so packaging
+    // wrappers that ExecWait this launcher see its real exit code.
     [STAThread]
     private static int Main(string[] args)
     {
@@ -293,17 +314,41 @@ internal static class Program
         Application.SetCompatibleTextRenderingDefault(false);
 
         string selfDir = Path.GetDirectoryName(Application.ExecutablePath);
-        string appExe = Path.Combine(selfDir, "AttaCut-app.exe");
-        bool launcherMode = File.Exists(appExe);
+        string appExe = Path.Combine(selfDir, Identity.RuntimeExe);
+        // One fixed path per app: an update splash waits for it, the next launcher writes it.
+        string handover = Path.Combine(Path.GetTempPath(), Identity.Slug + "-update-splash.signal");
 
         string icon;
         string signal;
         string launch = null;
-        if (launcherMode)
+        string handoverToWrite = null;
+        if (args.Length == 2 && args[0] == "--update")
         {
+            icon = args[1];
+            signal = handover;
+            try
+            {
+                if (File.Exists(handover)) File.Delete(handover);
+            }
+            catch
+            {
+                // A stale handover only shortens this splash.
+            }
+        }
+        else if (File.Exists(appExe))
+        {
+            // Command invocations, like saving a clip from a hotkey tool, start without a splash.
+            if (Array.Exists(args, delegate(string argument) { return Array.IndexOf(Identity.QuietArguments, argument) >= 0; }))
+            {
+                Process quiet = Splash.Launch(appExe, null, JoinQuoted(args));
+                if (quiet == null) return 1;
+                quiet.WaitForExit();
+                return quiet.ExitCode;
+            }
             icon = Path.Combine(selfDir, "resources", "icons", "icon.png");
-            signal = Path.Combine(Path.GetTempPath(), "attacut-splash-" + Guid.NewGuid().ToString("N") + ".signal");
+            signal = Path.Combine(Path.GetTempPath(), Identity.Slug + "-splash-" + Guid.NewGuid().ToString("N") + ".signal");
             launch = appExe;
+            handoverToWrite = handover;
         }
         else
         {
@@ -311,7 +356,7 @@ internal static class Program
             signal = args.Length > 1 ? args[1] : null;
         }
 
-        Splash splash = new Splash(icon, signal, launcherMode ? JoinQuoted(args) : null, launch);
+        Splash splash = new Splash(icon, signal, handoverToWrite, launch != null ? JoinQuoted(args) : null, launch);
         Application.Run(splash);
         int exitCode = splash.ChildExitCode;
         if (launch != null && splash.Child != null && !splash.Child.HasExited)

@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { AppUpdater } from "electron-updater";
 import type { AvailableUpdate, UpdateStatus } from "../shared/types.ts";
 import { isPackagedApp } from "./identity.ts";
+import { showUpdateSplash } from "./splash.ts";
 
 // App block: the only lines that differ between the apps.
 const product = "AttaCut";
@@ -250,6 +251,8 @@ export class UpdateManager {
       }
       this.installFailed = failed;
       this.log(`updater: restarting from ${app.getVersion()} to install ${version}`);
+      // The splash covers the seconds the silent installer runs with no app on screen.
+      showUpdateSplash();
       // Silent, then relaunch: the NSIS installer receives --updated /S --force-run.
       updater.quitAndInstall(true, true);
    }
