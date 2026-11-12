@@ -49,7 +49,9 @@ it.each([
       const gh = vi.fn((...args: string[]): string => {
          if (args[0] === "release" && args[1] === "create") {
             expect(args).toContain("--notes");
-            expect(args[args.indexOf("--notes") + 1]).toContain("AttaCut-sources.zip");
+            expect(args[args.indexOf("--notes") + 1]).toBe(
+               "- Fix the export (ddddddd)\n\nSource code for the FFmpeg build bundled with AttaCut is in AttaCut-sources.zip."
+            );
             expect(args).not.toContain("--notes-file");
             releases = [
                {
@@ -75,6 +77,10 @@ it.each([
          }
          if (path.endsWith("git/ref/heads/main"))
             return JSON.stringify({ object: { sha: scenario === "stale" || (scenario === "superseded upload" && mainReads++ > 0) ? "b".repeat(40) : sha } });
+         // Release notes: the previous release and the commits since.
+         if (path.endsWith("releases?per_page=100")) return JSON.stringify([{ tag_name: "v0.24.0", draft: false, prerelease: false }]);
+         if (path.includes("/compare/v0.24.0..."))
+            return JSON.stringify({ commits: [{ sha: "d".repeat(40), parents: [{}], commit: { message: "Fix the export\n\nBody." } }] });
          if (path.includes("releases?")) {
             if (scenario === "lookup failure") throw new Error("Unauthorized");
             const page = Number(new URL("https://api.github.com/" + path).searchParams.get("page"));

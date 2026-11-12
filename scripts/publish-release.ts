@@ -4,6 +4,10 @@ import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { publishedAssets } from "./release-downloads";
+// @ts-expect-error The shared notes script is plain JavaScript without declarations.
+import { releaseNotes } from "./release-notes.mjs";
+
+const sourceNote = "Source code for the FFmpeg build bundled with AttaCut is in AttaCut-sources.zip.";
 
 interface Asset {
    name: string;
@@ -87,7 +91,8 @@ export async function publishRelease(candidate: Candidate, gh: Gh, directory = "
       "--title",
       `AttaCut ${tag.slice(1)}`,
       "--notes",
-      "Source code for the FFmpeg build bundled with AttaCut is in AttaCut-sources.zip.",
+      // The included commits, then where the bundled FFmpeg's sources are.
+      [(await releaseNotes({ tag, commit: sha, api: async (path: string) => api(path) })) as string, sourceNote].filter(Boolean).join("\n\n"),
       ...(tag.includes("-") ? ["--prerelease"] : [])
    );
    assertCurrent();
