@@ -189,10 +189,6 @@
 .fullscreen-controls .play-button[data-playing] {
    color: var(--accent);
 }
-.fullscreen-controls .volume-slider {
-   width: 76px;
-   margin: 0 7px;
-}
 .fullscreen-controls .volume-slider:hover > i {
    background: #fff;
 }

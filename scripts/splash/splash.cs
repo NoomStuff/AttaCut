@@ -40,6 +40,7 @@ internal sealed class Splash : Form
     private readonly string signalPath;
     private readonly string handoverPath;
     private readonly Process child;
+    private readonly string launchExe;
     private readonly bool isLauncher;
     private readonly Timer spinTimer;
     private float angle;
@@ -76,6 +77,7 @@ internal sealed class Splash : Form
         if (launchExe != null)
         {
             isLauncher = true;
+            this.launchExe = launchExe;
             child = Launch(launchExe, signalPath, childArguments);
             if (child == null) childExitCode = 1;
         }
@@ -95,6 +97,11 @@ internal sealed class Splash : Form
             // so a broken install fails fast instead of showing a splash forever.
             if (!signalled && !exited && (child != null || !isLauncher)) return;
             if (exited) childExitCode = child.ExitCode;
+            // A runtime that exits cleanly before its window is ready handed the arguments to
+            // the instance already running. Explorer gave this launcher the right to take the
+            // foreground, and by the time the request reaches the running window Windows can
+            // refuse it there and only flash its taskbar button. So the launcher raises it.
+            if (exited && !signalled && childExitCode == 0) Foreground.RaiseRunning(launchExe, child.Id);
             Close();
         };
         doneTimer.Start();
@@ -255,6 +262,84 @@ internal sealed class Splash : Form
     public Process Child
     {
         get { return child; }
+    }
+}
+
+internal static class Foreground
+{
+    private const int Restore = 9;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint thread, uint otherThread, bool attach);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr window, int command);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr window);
+
+    // Raises the window of the runtime that is already running from the same install, never
+    // one from another install or the runtime that just handed off.
+    internal static void RaiseRunning(string runtimeExe, int handedOffFrom)
+    {
+        IntPtr window = IntPtr.Zero;
+        try
+        {
+            string path = Path.GetFullPath(runtimeExe);
+            foreach (Process process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(path)))
+            {
+                using (process)
+                {
+                    try
+                    {
+                        if (window != IntPtr.Zero || process.Id == handedOffFrom || process.MainWindowHandle == IntPtr.Zero) continue;
+                        if (!String.Equals(process.MainModule.FileName, path, StringComparison.OrdinalIgnoreCase)) continue;
+                        window = process.MainWindowHandle;
+                    }
+                    catch
+                    {
+                        // Processes that exit or deny access while listed are not candidates.
+                    }
+                }
+            }
+        }
+        catch
+        {
+            return;
+        }
+        if (window == IntPtr.Zero) return;
+        if (IsIconic(window)) ShowWindow(window, Restore);
+        if (SetForegroundWindow(window)) return;
+        // Joining the foreground thread's input queue lets the activation through when the
+        // grant from Explorer has already lapsed. The queues are separated straight after.
+        uint ignored;
+        uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out ignored);
+        uint thread = GetCurrentThreadId();
+        bool attached = foregroundThread != 0 && foregroundThread != thread && AttachThreadInput(thread, foregroundThread, true);
+        try
+        {
+            BringWindowToTop(window);
+            SetForegroundWindow(window);
+        }
+        finally
+        {
+            if (attached) AttachThreadInput(thread, foregroundThread, false);
+        }
     }
 }
 

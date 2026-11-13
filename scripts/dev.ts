@@ -12,7 +12,9 @@ import { windowsDevExecutable } from "./windows-dev-identity";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const splashFolder = join(root, "work", "splash");
-const splashSource = join(root, "scripts", "splash", "attacut-splash.cs");
+// The shared splash plus this app's identity, compiled the same way packaging does. With no
+// runtime beside it, the helper runs in wait mode: it shows until the signal file exists.
+const splashSources = ["splash.cs", "identity.cs"].map((name) => join(root, "scripts", "splash", name));
 const splashExe = join(splashFolder, "attacut-splash.exe");
 const iconPath = join(root, "build", "icon.png");
 const signalPath = join(splashFolder, "signal.txt");
@@ -34,9 +36,9 @@ function run(command: string, args: string[]): Promise<boolean> {
 async function compileSplash(): Promise<string | null> {
    if (process.platform !== "win32" || !frameworkCsc) return null;
    await mkdir(splashFolder, { recursive: true });
-   const signature = createHash("sha1")
-      .update(await readFile(splashSource))
-      .digest("hex");
+   const hash = createHash("sha1");
+   for (const source of splashSources) hash.update(await readFile(source));
+   const signature = hash.digest("hex");
    const cachePath = join(splashFolder, ".built-hash");
    const cached = existsSync(splashExe) && (await readFile(cachePath, "utf8").catch(() => null)) === signature;
    if (!cached) {
@@ -47,7 +49,7 @@ async function compileSplash(): Promise<string | null> {
          `/win32icon:${join(root, "build", "icon.ico")}`,
          "/r:System.Windows.Forms.dll",
          "/r:System.Drawing.dll",
-         splashSource,
+         ...splashSources,
       ]);
       if (!built) return null;
       await writeFile(cachePath, signature);

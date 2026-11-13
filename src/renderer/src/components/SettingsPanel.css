@@ -128,8 +128,8 @@
    font-size: 12px;
 }
 
-/* Same in-field warning as the export panel: a danger triangle inside the box, with the
-   reason on hover or focus. */
+/* Same in-field indicator as the export panel: a danger triangle or warning circle inside
+   the box, with the reason on hover or focus. */
 .pattern-warning-icon {
    position: absolute;
    top: 50%;
@@ -141,6 +141,9 @@
    color: var(--danger);
    font-size: 12px;
    cursor: help;
+}
+.pattern-warning-icon[data-tone="warning"] {
+   color: var(--warning);
 }
 
 .pattern-warning-icon .pattern-warning-tooltip {

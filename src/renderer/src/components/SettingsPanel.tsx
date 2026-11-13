@@ -8,6 +8,7 @@ import {
    faPlus,
    faXmark,
    faTriangleExclamation,
+   faCircleExclamation,
    faPalette,
    faDroplet,
    faClockRotateLeft,
@@ -23,7 +24,7 @@ import {
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { Clip, MediaSource, Preferences } from "../../../shared/types";
-import { applyNamePattern, duplicateNames, hasNameToken, nameTokens } from "../../../shared/filename";
+import { applyNamePattern, duplicateNames, filenameError, filenameWarning, hasNameToken, nameTokens } from "../../../shared/filename";
 import type { NamePatternContext } from "../../../shared/filename";
 import { commandDefinitions, bindingsFor, displayBinding, bindingFromEvent } from "../editor/commands";
 import type { CommandId } from "../editor/commands";
@@ -161,11 +162,14 @@ function PatternEditor({
          : [];
    const collision = duplicateNames(names).size > 0 || duplicateNames(everyClipName).size > 0;
    const overwritten = stem !== null && names.some((name) => name.toLowerCase() === stem.toLowerCase());
-   const warning = collision
-      ? "This pattern gives several clips the same file name."
-      : overwritten
-        ? "This pattern names an output exactly like the source video."
-        : null;
+   // Same levels as the export fields: a name that cannot be written or that collides will
+   // block export, so it reads as an error; a usable but surprising name is a warning.
+   const invalid = names.map((name) => filenameError(name)).find((message) => message !== null) ?? null;
+   const error = invalid ?? (collision ? "This pattern gives several clips the same file name." : null);
+   const warning =
+      error ??
+      (overwritten ? "This pattern names an output exactly like the source video." : (names.map(filenameWarning).find((message) => message !== null) ?? null));
+   const tone = error ? "danger" : "warning";
    const preset = presets.find((entry) => entry.value === value);
    return (
       <div className="pattern-editor">
@@ -185,13 +189,13 @@ function PatternEditor({
                ref={input}
                aria-label={ariaLabel}
                defaultValue={value}
-               aria-invalid={warning ? true : undefined}
+               aria-invalid={error ? true : undefined}
                aria-describedby={warning ? `${ariaLabel}-warning` : undefined}
                onInput={(event) => onChange(event.currentTarget.value)}
             />
             {warning && (
-               <span className="pattern-warning-icon" role="img" aria-label={warning} tabIndex={0}>
-                  <FontAwesomeIcon icon={faTriangleExclamation} />
+               <span className="pattern-warning-icon" data-tone={tone} role="img" aria-label={warning} tabIndex={0}>
+                  <FontAwesomeIcon icon={error ? faTriangleExclamation : faCircleExclamation} />
                   <span className="pattern-warning-tooltip" role="tooltip" id={`${ariaLabel}-warning`}>
                      {warning}
                   </span>

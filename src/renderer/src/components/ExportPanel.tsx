@@ -6,7 +6,7 @@ import { containerNames } from "../../../shared/export-format";
 import type { ContainerChoice } from "../../../shared/export-format";
 import type { MediaStream } from "../../../shared/types";
 import { formatTime } from "../../../shared/time";
-import { sanitizeName } from "../../../shared/filename";
+import { normalizeFilename } from "../../../shared/filename";
 import { faArrowUpFromBracket, faChevronDown, faCircleExclamation, faCircleInfo, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
 import { OutputDirectoryField } from "./OutputDirectoryField";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -78,6 +78,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
       dangers,
       collisions,
       nameErrors,
+      nameWarnings,
       request,
       error,
       setError,
@@ -297,7 +298,7 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                                     onChange={(event) => setName(event.target.value)}
                                  />
                                  <ConflictIndicator
-                                    message={nameErrors.get("combined") ?? conflicts.get("combined") ?? null}
+                                    message={nameErrors.get("combined") ?? conflicts.get("combined") ?? nameWarnings.get("combined") ?? null}
                                     tone={nameErrors.has("combined") || dangers.get("combined") ? "danger" : "warning"}
                                  />
                               </span>
@@ -360,10 +361,14 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                         const widened = Math.abs(range.end - range.start - (row.clip.end - row.clip.start)) > 0.0005;
                         // A batch collision outranks a disk conflict: it must be fixed before
                         // Export unlocks, while a replace can still be confirmed.
-                        const collides = mode === "separate" && row.included && collisions.has(sanitizeName(row.name).toLowerCase());
+                        const collides = mode === "separate" && row.included && collisions.has(normalizeFilename(row.name).toLowerCase());
                         const conflict =
                            nameErrors.get(row.clip.id) ??
-                           (collides ? "Another clip exports to this name" : mode === "separate" && row.included ? (conflicts.get(row.clip.id) ?? null) : null);
+                           (collides
+                              ? "Another clip exports to this name"
+                              : mode === "separate" && row.included
+                                ? (conflicts.get(row.clip.id) ?? nameWarnings.get(row.clip.id) ?? null)
+                                : null);
                         const tone = nameErrors.has(row.clip.id) || collides || dangers.get(row.clip.id) ? "danger" : "warning";
                         return (
                            <div key={row.clip.id} className="export-clip-entry" data-included={row.included}>

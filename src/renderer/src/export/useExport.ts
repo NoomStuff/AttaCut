@@ -1,7 +1,7 @@
 import { audioStreams } from "../../../shared/media";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { substantialEncoding } from "../../../shared/export-policy";
-import { applyNamePattern, duplicateNames, filenameError } from "../../../shared/filename";
+import { applyNamePattern, duplicateNames, filenameError, filenameWarning, normalizeFilename } from "../../../shared/filename";
 import { containerChoices, exportExtensionFor } from "../../../shared/export-format";
 import type { ContainerChoice } from "../../../shared/export-format";
 import type { Clip, ExportJob, ExportPlan, CutReport, MediaSource, MediaStream, Preferences } from "../../../shared/types";
@@ -186,15 +186,19 @@ export function useExport({
       if (!singleTarget) onPreferences((current) => (current.exportMode === mode ? current : { ...current, exportMode: mode }));
    }, [singleTarget, mode, onPreferences]);
    const [confirmation, setConfirmation] = useState<ExportPlan | null>(null);
-   // Only an empty field hands the name back to its template on blur.
-   // Invalid names stay visible until the user corrects them.
+   // On blur an empty field hands the name back to its template, and the field shows the
+   // name as it will be written, without the spaces and trailing dots export drops anyway.
+   // Anything visible that is invalid stays until the user corrects it.
    const normalizeName = (index?: number) => {
       if (index === undefined) {
          if (name.trim() === "") setCombinedNameState(null);
+         else if (combinedName !== null && normalizeFilename(name) !== name) setCombinedNameState(normalizeFilename(name) || name);
          return;
       }
       const row = rows[index];
-      if (row && row.name.trim() === "") updateRow(row.clip.id, { name: null });
+      if (!row) return;
+      if (row.name.trim() === "") updateRow(row.clip.id, { name: null });
+      else if (row.altered && normalizeFilename(row.name) !== row.name) updateRow(row.clip.id, { name: normalizeFilename(row.name) || row.name });
    };
    const [replaceSourceChecked, setReplaceSourceChecked] = useState(false);
    const [conflicts, setConflicts] = useState<Map<string, string | null>>(() => new Map());
@@ -240,16 +244,17 @@ export function useExport({
    const combinedExtension = container === "auto" ? source.exportExtension : container;
    // The format for all clips reads as mixed once a clip has its own.
    const sharedContainer = rows.every((row) => row.container === container) ? container : null;
+   // Errors block export; warnings only explain. Invisible slips are repaired silently.
    const nameErrors = new Map<string, string>();
-   if (effectiveMode === "combined") {
-      const message = filenameError(name, combinedExtension);
-      if (message) nameErrors.set("combined", message);
-   } else {
-      for (const row of includedRows) {
-         const message = filenameError(row.name, extensionFor(row.clip, row.container));
-         if (message) nameErrors.set(row.clip.id, message);
-      }
-   }
+   const nameWarnings = new Map<string, string>();
+   const checkName = (key: string, value: string, extension: string) => {
+      const message = filenameError(value, extension);
+      if (message) nameErrors.set(key, message);
+      const warning = filenameWarning(value);
+      if (warning) nameWarnings.set(key, warning);
+   };
+   if (effectiveMode === "combined") checkName("combined", name, combinedExtension);
+   else for (const row of includedRows) checkName(row.clip.id, row.name, extensionFor(row.clip, row.container));
    const selectedKey = JSON.stringify(includedRows.map((row) => ({ clip: row.clip, container: row.container })));
    // Typing a filename must not restart media analysis, so the ranges are compared by value.
    const selectedClips = useMemo(() => JSON.parse(selectedKey) as { clip: Clip; container: ContainerChoice }[], [selectedKey]);
@@ -397,6 +402,7 @@ export function useExport({
       dangers,
       collisions,
       nameErrors,
+      nameWarnings,
       request,
       error,
       setError,

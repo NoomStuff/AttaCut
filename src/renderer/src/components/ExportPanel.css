@@ -1,6 +1,3 @@
-.export-mode {
-   margin-bottom: 16px;
-}
 /* Where it goes and what it carries share one card above the clips. */
 .export-card {
    padding: 2px 16px 16px;
@@ -110,8 +107,10 @@
    opacity: 1;
    transform: none;
    animation: export-advanced-grow 220ms;
+   /* The box grows on a front-loaded curve, so the options fade on the same one. A delayed
+      fade let the empty box open first and the options pop in after it. */
    transition:
-      opacity 180ms ease-out 40ms,
+      opacity 160ms var(--advanced-ease),
       transform 220ms var(--advanced-ease),
       visibility 0s;
 }
@@ -146,12 +145,6 @@
       transition: none;
       animation: none;
    }
-}
-.export-fields + .export-list {
-   margin-top: 6px;
-}
-.export-list + .export-advanced {
-   margin-top: 12px;
 }
 .folder-field {
    display: flex;
@@ -237,7 +230,6 @@
 }
 /* The clips are one card with the column labels as its header strip. */
 .export-list {
-   margin-top: 12px;
    padding: 0 14px;
    border-radius: var(--radius-card);
    background: var(--card);
@@ -322,6 +314,15 @@
    min-height: 0;
    overflow: auto;
    scrollbar-gutter: stable;
+}
+/* Every section after the first is spaced from whatever precedes it, so an optional one
+   (the clip list, an error) never leaves its neighbours touching. The body stays in block
+   flow: a grid parent breaks the Advanced section's 0fr to 1fr open animation. */
+.export-modal .modal-body > * + * {
+   margin-top: 12px;
+}
+.export-modal .modal-body > .export-mode + * {
+   margin-top: 16px;
 }
 .export-modal .modal-header,
 .export-modal .modal-footer {

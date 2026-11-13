@@ -1,19 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { applyNamePattern, duplicateNames, filenameError, hasNameToken, nameTokens, patternTime, sanitizeName } from "./filename";
+import {
+   applyNamePattern,
+   duplicateNames,
+   filenameError,
+   filenameWarning,
+   hasNameToken,
+   nameTokens,
+   normalizeFilename,
+   outputFilename,
+   patternTime,
+   sanitizeName,
+} from "./filename";
 
 describe("filenameError", () => {
-   it.each(["clip: test", "a/b", "a\\b", "a?b", "a*b", 'a"b', "a<b", "a>b", "a|b", "a\u0000b", "a\nb", "clip.", "clip ", "CON", "nul.txt", "COM¹", "..", ""])(
+   it.each(["clip: test", "a/b", "a\\b", "a?b", "a*b", 'a"b', "a<b", "a>b", "a|b", "CON", "nul.txt", " COM¹. ", "..", "  ", ""])(
       "rejects an unusable name without rewriting it: %j",
       (name) => {
          expect(filenameError(name, ".mp4")).not.toBeNull();
       }
    );
+   it("accepts names whose only problems are invisible", () => {
+      for (const name of ["clip.", "clip ", " clip", "clip. . ", "a\u0000b", "a\tb", "twinkrin2-01 (Trim) "]) expect(filenameError(name, ".mp4")).toBeNull();
+   });
    it("measures the complete filename in bytes as well as UTF-16 units", () => {
       expect(filenameError("a".repeat(251), ".mp4")).toBeNull();
       expect(filenameError(`${"a".repeat(251)}.MP4`, ".mp4")).toBeNull();
       expect(filenameError("a".repeat(252), ".mp4")).toMatch(/too long/);
       expect(filenameError("猫".repeat(84), ".mp4")).toMatch(/too long/);
       expect(filenameError("Summer's clip (2) 猫", ".mkv")).toBeNull();
+   });
+});
+
+describe("normalizeFilename", () => {
+   it("drops edge whitespace and trailing dots, and turns control characters into spaces", () => {
+      expect(normalizeFilename("  my clip (Trim) ")).toBe("my clip (Trim)");
+      expect(normalizeFilename("clip. . .")).toBe("clip");
+      expect(normalizeFilename("a\tb\u0000")).toBe("a b");
+      expect(normalizeFilename("a: b?")).toBe("a: b?");
+   });
+   it("writes the normalized name with the extension added once", () => {
+      expect(outputFilename("clip ", ".mp4")).toBe("clip.mp4");
+      expect(outputFilename("clip.MP4.", ".mp4")).toBe("clip.MP4");
+   });
+});
+
+describe("filenameWarning", () => {
+   it("warns about hidden names without blocking them", () => {
+      expect(filenameWarning(" .clip")).toMatch(/hidden/);
+      expect(filenameError(".clip", ".mp4")).toBeNull();
+      expect(filenameWarning("clip")).toBeNull();
    });
 });
 
@@ -50,9 +85,13 @@ describe("applyNamePattern", () => {
       expect(applyNamePattern("{source} ({date})", context)).toBe("recording (2026-10-03)");
    });
 
-   it("leaves unknown braces for the user to see and sanitizes the result", () => {
+   it("leaves unknown braces and typed characters for the user to see", () => {
       expect(applyNamePattern("{source} {clip}", context)).toBe("recording {clip}");
-      expect(applyNamePattern("{source}: {n}", context)).toBe("recording_ 2");
+      expect(applyNamePattern("{source}: {n} ", context)).toBe("recording: 2");
+   });
+
+   it("sanitizes the source name, which the user did not type", () => {
+      expect(applyNamePattern("{source} ({n})", { ...context, source: "game: round?" })).toBe("game_ round_ (2)");
    });
 
    it("documents every token the pattern understands", () => {
@@ -70,8 +109,8 @@ describe("duplicateNames", () => {
       expect(duplicateNames([])).toEqual(new Set());
    });
 
-   it("compares sanitized names, since that is what reaches the disk", () => {
-      expect(duplicateNames(["my: clip", "my_ clip"])).toEqual(new Set(["my_ clip"]));
+   it("compares names as they are written to disk", () => {
+      expect(duplicateNames(["my: clip", "my_ clip"])).toEqual(new Set());
       expect(duplicateNames(["a", "a ", "a."])).toEqual(new Set(["a"]));
    });
 });

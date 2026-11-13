@@ -23,7 +23,7 @@ import type { CutAnalysis } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import { protectSource } from "./media/publish.ts";
 import { exportCombined } from "./media/combine.ts";
-import { duplicateNames, filenameError } from "../shared/filename";
+import { duplicateNames, filenameError, outputFilename } from "../shared/filename";
 import { substantialEncoding } from "../shared/export-policy";
 import { waitForWork } from "./media/shared-work";
 import { appFailure } from "./failure";
@@ -436,7 +436,7 @@ function outputNames(source: ProbedSource, request: ReturnType<typeof planReques
    const outputName = (value: string, extension: string): string => {
       const error = filenameError(value, extension);
       if (error) throw new Error(error);
-      return value.toLowerCase().endsWith(extension.toLowerCase()) ? value : `${value}${extension}`;
+      return outputFilename(value, extension);
    };
    if (request.mode === "combined") {
       const extension = request.container === "auto" ? source.exportExtension : request.container;
