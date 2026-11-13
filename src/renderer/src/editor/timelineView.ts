@@ -12,11 +12,22 @@ export function constrainViewStart(start: number, length: number, duration: numb
    return clamp(start, minimum, maximum);
 }
 
+/** The closest the timeline zooms in: half a second, or the whole recording when shorter. */
+export function minimumViewLength(duration: number): number {
+   return Math.min(0.5, duration);
+}
+
+/** Whether a zoom step would still change the view, so the buttons can disable at a limit. */
+export function canZoom(length: number, duration: number, direction: 1 | -1): boolean {
+   if (!(duration > 0 && length > 0)) return false;
+   return direction > 0 ? length > minimumViewLength(duration) * 1.0001 : length < duration * 0.9999;
+}
+
 export function zoomLength(length: number, duration: number, direction: number): number {
    if (direction === 0) return duration;
    const percent = (100 * duration) / length;
    const next = direction > 0 ? zoomLevels.find((level) => level > percent + 0.001) : zoomLevels.findLast((level) => level < percent - 0.001);
-   return clamp((100 * duration) / (next ?? (direction > 0 ? zoomLevels.at(-1)! : 100)), Math.min(0.5, duration), duration);
+   return clamp((100 * duration) / (next ?? (direction > 0 ? zoomLevels.at(-1)! : 100)), minimumViewLength(duration), duration);
 }
 
 export function visibleKeyframes(points: readonly number[], start: number, length: number, pxPerSecond: number): { ticks: number[]; opacity: number } {

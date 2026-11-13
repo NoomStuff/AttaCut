@@ -188,9 +188,10 @@ test("cut results scroll without moving actions in a small light window", async 
 });
 
 const clipboard = (app) => app.evaluate(({ clipboard }) => clipboard.readText());
+// The copy commands are out of the menus but stay bindable, so tests send them directly.
+const runCommand = (app, id) => app.evaluate(({ BrowserWindow }, command) => BrowserWindow.getAllWindows()[0].webContents.send("app:command", command), id);
 const copyCsv = async (page, app) => {
-   await page.getByRole("button", { name: "Edit", exact: true }).click();
-   await page.getByRole("menuitem", { name: "Copy clip times as CSV" }).click();
+   await runCommand(app, "copyCsv");
    await expect(page.getByText(/^Copied \d+ clip times? as CSV\.$/)).toBeVisible();
    const [header, ...rows] = (await clipboard(app)).trim().split("\n");
    expect(header).toBe("start,end,duration");
@@ -247,8 +248,7 @@ test("silence and black frames remove parts of clips, with excluded ranges kept"
    expectClips(await copyCsv(page, app), [[0.52, 3]]);
 
    // The first clip no longer starts at zero, so chapters follow the combined export.
-   await page.getByRole("button", { name: "Edit", exact: true }).click();
-   await page.getByRole("menuitem", { name: "Copy clip times as YouTube chapters (combined export)" }).click();
+   await runCommand(app, "copyChapters");
    await expect(page.getByText("Copied 1 chapter timed for the combined export. YouTube needs at least 3, each 10 seconds or longer.")).toBeVisible();
    expect(await clipboard(app)).toBe("0:00 Clip 1\n");
 });
@@ -272,8 +272,7 @@ test("chapters split clips and are offered only when the source has them", async
       [1, 2],
       [2, 3],
    ]);
-   await page.getByRole("button", { name: "Edit", exact: true }).click();
-   await page.getByRole("menuitem", { name: "Copy clip times as YouTube chapters", exact: true }).click();
+   await runCommand(app, "copyChapters");
    await expect(page.getByText("Copied 3 chapters. YouTube needs at least 3, each 10 seconds or longer.")).toBeVisible();
    expect(await clipboard(app)).toBe("0:00 Clip 1\n0:01 Clip 2\n0:02 Clip 3\n");
 });

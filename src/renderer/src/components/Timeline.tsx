@@ -1,4 +1,4 @@
-import { constrainViewStart, frameLevelActive, quantizeToFrame, visibleKeyframes, zoomLength } from "../editor/timelineView";
+import { constrainViewStart, frameLevelActive, minimumViewLength, quantizeToFrame, visibleKeyframes, zoomLength } from "../editor/timelineView";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { EditDocument } from "../editor/model";
@@ -218,7 +218,7 @@ export function Timeline({
          }
          // Focus: put the handles at 10% and 90% of the view. The zoom clamp (a half-second
          // floor, like the wheel) and the timeline ends decide how close that can get.
-         const length = clamp((end - start) / 0.8, Math.min(0.5, duration), duration);
+         const length = clamp((end - start) / 0.8, minimumViewLength(duration), duration);
          return { length, start: constrainViewStart(start - length * 0.1, length, duration, latest.current.playing ? clock.get() : undefined) };
       });
    }, [viewRequest, duration, clock]);
@@ -302,7 +302,7 @@ export function Timeline({
                  ? Math.sign(delta) * 0.15 * Math.min(magnitude / 100, 3)
                  : Math.sign(delta) * Math.min(magnitude * 0.008, 0.1);
             setView((current) => {
-               const length = clamp(current.length * Math.exp(exponent), Math.min(0.5, total), total);
+               const length = clamp(current.length * Math.exp(exponent), minimumViewLength(total), total);
                return {
                   length,
                   start: constrainViewStart(focus - fraction * length, length, total, running ? clock.get() : undefined),
