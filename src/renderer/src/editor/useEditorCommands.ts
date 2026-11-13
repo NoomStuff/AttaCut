@@ -2,7 +2,7 @@ import { useRef } from "react";
 import type { ExportJob } from "../../../shared/types";
 import { clipLimit } from "../../../shared/defaults";
 import { adjacentBoundary, neighboringKeyframe, splitTargetAt } from "./navigation";
-import { frameLevelActive } from "./timelineView";
+import { canZoom, frameLevelActive } from "./timelineView";
 import { playbackSpeeds } from "../playback/speed";
 import { nextKeptTime } from "../playback/ranges";
 import { mergePair, mergeClips, addGap, canSplit, clipGaps, deleteClip, gapAt, invertClips, minClipLength, selectedClip, splitClip } from "./model";
@@ -325,8 +325,8 @@ export function useEditorCommands({
          },
       },
       fit: { enabled: available, run: view.fit },
-      zoomIn: { enabled: available, run: () => view.zoom(1) },
-      zoomOut: { enabled: available, run: () => view.zoom(-1) },
+      zoomIn: { enabled: () => available() && canZoom((source!.duration * 100) / zoom, source!.duration, 1), run: () => view.zoom(1) },
+      zoomOut: { enabled: () => available() && canZoom((source!.duration * 100) / zoom, source!.duration, -1), run: () => view.zoom(-1) },
       focusClip: {
          enabled: () => available() && !!clip,
          run: () => {

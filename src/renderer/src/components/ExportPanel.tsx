@@ -1,7 +1,7 @@
 import { useExport, type ExportOptions } from "../export/useExport";
 import { substantialEncoding } from "../../../shared/export-policy";
 import type { HelpTab } from "./HelpPanel";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { containerNames } from "../../../shared/export-format";
 import type { ContainerChoice } from "../../../shared/export-format";
 import type { MediaStream } from "../../../shared/types";
@@ -411,62 +411,46 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                      })}
                   </div>
                )}
-               <div className="export-advanced" data-open={advanced}>
-                  <button
-                     type="button"
-                     className="export-advanced-toggle"
-                     aria-expanded={advanced}
-                     aria-controls="export-advanced-options"
-                     onClick={() => setAdvanced(!advanced)}
-                  >
-                     <span>Advanced</span>
-                     {/* Hidden options still change the output, so the closed header names the ones that are on. */}
-                     {advancedSummary && !advanced && <span className="export-advanced-summary">{advancedSummary}</span>}
-                     <FontAwesomeIcon className="export-advanced-chevron" icon={faChevronDown} />
-                  </button>
-                  <div className="export-advanced-panel">
-                     <div className="export-advanced-body" id="export-advanced-options" inert={!advanced}>
-                        <Toggle
-                           label="Force lossless export"
-                           description="Never re-encode. Clips widen to the keyframes around them, and the result is checked against the source."
-                           checked={lossless}
+               <AdvancedSection open={advanced} summary={advancedSummary} onToggle={() => setAdvanced(!advanced)}>
+                  <Toggle
+                     label="Force lossless export"
+                     description="Never re-encode. Clips widen to the keyframes around them, and the result is checked against the source."
+                     checked={lossless}
+                     disabled={starting}
+                     onChange={setLossless}
+                  />
+                  {mode === "combined" && !singleTarget && (
+                     <Toggle
+                        label="Chapter for each clip"
+                        description="Replaces the source chapters."
+                        checked={clipChapters}
+                        disabled={starting}
+                        onChange={setClipChapters}
+                     />
+                  )}
+                  {otherStreams.length > 0 && (
+                     <div className="export-advanced-field">
+                        <span className="field-label">Other tracks</span>
+                        <DropdownSelect
+                           label="Other tracks to export"
+                           options={otherStreams.map((stream, index) => ({ value: String(stream.index), label: streamLabel(stream, index) }))}
+                           value={keptOther.map((stream) => String(stream.index))}
+                           multiple
                            disabled={starting}
-                           onChange={setLossless}
+                           onChange={(values) =>
+                              setExcludedStreams(otherStreams.filter((stream) => !values.includes(String(stream.index))).map((stream) => stream.index))
+                           }
+                           trigger={
+                              keptOther.length === otherStreams.length
+                                 ? "All kept"
+                                 : keptOther.length === 0
+                                   ? "None"
+                                   : `${keptOther.length} of ${otherStreams.length} kept`
+                           }
                         />
-                        {mode === "combined" && !singleTarget && (
-                           <Toggle
-                              label="Chapter for each clip"
-                              description="Replaces the source chapters."
-                              checked={clipChapters}
-                              disabled={starting}
-                              onChange={setClipChapters}
-                           />
-                        )}
-                        {otherStreams.length > 0 && (
-                           <div className="export-advanced-field">
-                              <span className="field-label">Other tracks</span>
-                              <DropdownSelect
-                                 label="Other tracks to export"
-                                 options={otherStreams.map((stream, index) => ({ value: String(stream.index), label: streamLabel(stream, index) }))}
-                                 value={keptOther.map((stream) => String(stream.index))}
-                                 multiple
-                                 disabled={starting}
-                                 onChange={(values) =>
-                                    setExcludedStreams(otherStreams.filter((stream) => !values.includes(String(stream.index))).map((stream) => stream.index))
-                                 }
-                                 trigger={
-                                    keptOther.length === otherStreams.length
-                                       ? "All kept"
-                                       : keptOther.length === 0
-                                         ? "None"
-                                         : `${keptOther.length} of ${otherStreams.length} kept`
-                                 }
-                              />
-                           </div>
-                        )}
                      </div>
-                  </div>
-               </div>
+                  )}
+               </AdvancedSection>
                {error && (
                   <div className="inline-error" role="alert">
                      {error}
@@ -538,4 +522,67 @@ function ConflictIndicator({ message, tone = "warning" }: { message: string | nu
          )}
       </span>
    );
+}
+
+/** Keep in step with `--advanced-duration` in ExportPanel.css. */
+const advancedDuration = 280;
+
+/**
+ * The options are always rendered and visible inside a box whose height animates between
+ * 0 and its content's real height, so unfolding uncovers them instead of fading them in.
+ * The box clips only while it moves: once open, a dropdown inside can spill past it.
+ */
+function AdvancedSection({ open, summary, onToggle, children }: { open: boolean; summary: string; onToggle: () => void; children: ReactNode }) {
+   const section = useRef<HTMLDivElement>(null);
+   const [settled, setSettled] = useState(true);
+   const settle = useRef<number | undefined>(undefined);
+   useEffect(() => () => window.clearTimeout(settle.current), []);
+   return (
+      <div className="export-advanced" ref={section} data-open={open} data-settled={settled}>
+         <button
+            type="button"
+            className="export-advanced-toggle"
+            aria-expanded={open}
+            aria-controls="export-advanced-options"
+            onClick={() => {
+               window.clearTimeout(settle.current);
+               setSettled(false);
+               settle.current = window.setTimeout(() => setSettled(true), advancedDuration + 40);
+               if (!open && section.current) keepGrowingSectionInView(section.current);
+               onToggle();
+            }}
+         >
+            <span>Advanced</span>
+            {/* Hidden options still change the output, so the closed header names the ones that are on. */}
+            {summary && (
+               <span className="export-advanced-summary" aria-hidden={open || undefined}>
+                  {summary}
+               </span>
+            )}
+            <FontAwesomeIcon className="export-advanced-chevron" icon={faChevronDown} />
+         </button>
+         {/* Folded options stay out of the tab order once the fold finishes; while it moves they stay live. */}
+         <div className="export-advanced-content" id="export-advanced-options" inert={!open && settled}>
+            <div className="export-advanced-body">{children}</div>
+         </div>
+      </div>
+   );
+}
+
+/** The Advanced section sits at the bottom of the scrolling body, so opening it would grow
+    the new options below the fold. This follows the growth frame by frame until it settles,
+    without ever pushing the section's header above the top. */
+function keepGrowingSectionInView(section: HTMLElement) {
+   const scroller = section.closest<HTMLElement>(".modal-body");
+   if (!scroller) return;
+   const margin = 12;
+   const start = performance.now();
+   const step = () => {
+      const area = scroller.getBoundingClientRect();
+      const box = section.getBoundingClientRect();
+      const shift = Math.min(box.bottom - (area.bottom - margin), box.top - (area.top + margin));
+      if (shift > 0) scroller.scrollTop += shift;
+      if (performance.now() - start < advancedDuration + 80) requestAnimationFrame(step);
+   };
+   requestAnimationFrame(step);
 }

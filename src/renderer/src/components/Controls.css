@@ -347,11 +347,13 @@
 :is(.toggle-row, .setting-row) > .row-icon {
    margin-right: -4px;
 }
-.toggle-row input {
+/* The invisible checkbox covers the whole switch, so the thumb can be grabbed from either end.
+   The type selector outranks the global checkbox size. */
+.toggle-row input[type="checkbox"] {
    position: absolute;
    right: 0;
    opacity: 0;
-   width: 36px;
+   width: 40px;
    height: var(--control-height);
    margin: 0;
 }
@@ -361,7 +363,7 @@
    width: 40px;
    height: 24px;
    border-radius: 12px;
-   background: var(--slot);
+   background: var(--switch-track);
    box-shadow: inset 0 0 0 1px var(--slot-ring);
    padding: 3px;
    pointer-events: none;
@@ -373,25 +375,42 @@
    width: 18px;
    height: 18px;
    border-radius: 50%;
-   background: var(--muted);
-   box-shadow: 0 1px 3px #0005;
+   background: var(--switch-thumb);
+   box-shadow: var(--switch-thumb-shadow);
    transition:
       transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1),
       background-color 150ms ease-out;
 }
-.toggle-row:hover:not(:has(input:disabled)) .switch {
-   background: var(--slot-hover);
+.toggle-row:hover:not([data-dragging], :has(input:disabled)) .switch {
+   background: var(--switch-track-hover);
 }
-.toggle-row input:checked + .switch {
+.toggle-row:not([data-dragging]) input:checked + .switch {
    background: var(--accent);
    box-shadow: none;
 }
-.toggle-row:hover:not(:has(input:disabled)) input:checked + .switch {
+.toggle-row:hover:not([data-dragging], :has(input:disabled)) input:checked + .switch {
    background: var(--accent-hover);
 }
-.toggle-row input:checked + .switch::before {
+.toggle-row:not([data-dragging]) input:checked + .switch::before {
    transform: translateX(16px);
    background: var(--accent-text);
+}
+/* While dragged, the thumb sits under the pointer and the colors preview the side it would
+   land on. Releasing drops the inline position, so the usual spring carries it home. */
+.toggle-row[data-dragging] .switch::before {
+   transform: translateX(var(--thumb-x));
+   transition: background-color 150ms ease-out;
+}
+.toggle-row[data-intent="on"] .switch {
+   background: var(--accent);
+   box-shadow: none;
+}
+.toggle-row[data-intent="on"] .switch::before {
+   background: var(--accent-text);
+}
+.toggle-row input:not(:disabled) {
+   cursor: pointer;
+   touch-action: pan-y;
 }
 .toggle-row input:focus-visible + .switch {
    outline: 2px solid var(--accent);

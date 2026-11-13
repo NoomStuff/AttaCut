@@ -16,6 +16,7 @@ export function DropdownSelect({
    value,
    onChange,
    multiple = false,
+   soloClick = false,
    required = false,
    disabled = false,
    placement = "down",
@@ -28,6 +29,9 @@ export function DropdownSelect({
    value: string[];
    onChange: (value: string[]) => void;
    multiple?: boolean;
+   /** With `multiple`: a plain click picks only that option and closes, while Shift-click or
+       right-click adds or removes it. Suits lists where one choice is the usual case. */
+   soloClick?: boolean;
    required?: boolean;
    disabled?: boolean;
    placement?: "up" | "down";
@@ -150,6 +154,10 @@ export function DropdownSelect({
                {options.map((option) => {
                   const selected = value.includes(option.value);
                   const cannotClear = multiple && required && selected && value.length === 1;
+                  const toggle = () => {
+                     if (cannotClear) return;
+                     onChange(selected ? value.filter((item) => item !== option.value) : [...value, option.value]);
+                  };
                   return (
                      <button
                         type="button"
@@ -157,16 +165,23 @@ export function DropdownSelect({
                         role="option"
                         tabIndex={-1}
                         aria-selected={selected}
-                        aria-disabled={cannotClear || undefined}
+                        aria-disabled={(cannotClear && !soloClick) || undefined}
                         data-press-ignore
-                        onClick={() => {
-                           if (cannotClear) return;
-                           if (multiple) onChange(selected ? value.filter((item) => item !== option.value) : [...value, option.value]);
+                        onClick={(event) => {
+                           if (multiple && (!soloClick || event.shiftKey)) toggle();
                            else {
                               onChange([option.value]);
                               close();
                            }
                         }}
+                        onContextMenu={
+                           soloClick
+                              ? (event) => {
+                                   event.preventDefault();
+                                   toggle();
+                                }
+                              : undefined
+                        }
                      >
                         <span>{option.label}</span>
                         <span className="select-check" aria-hidden="true">

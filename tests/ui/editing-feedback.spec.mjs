@@ -64,15 +64,27 @@ test("invalid times restore the accepted cut and picker keys do not seek or edit
    const first = page.getByRole("option").nth(0);
    const second = page.getByRole("option").nth(1);
    await expect(first).toBeFocused();
-   await first.press("Enter");
+   // Shift toggles a track and keeps the list open; the only playing track cannot be cleared.
+   await first.press("Shift+Enter");
    await expect(first).toHaveAttribute("aria-selected", "true");
    await first.press("ArrowDown");
    await expect(second).toBeFocused();
    await expect(page.locator(".timeline-time time").first()).toHaveText(time);
    await page.keyboard.press("s");
    await expect(page.locator(".clip-range:not(.exiting)")).toHaveCount(1);
-   await second.press("Enter");
+   await second.press("Shift+Enter");
    await expect(second).toHaveAttribute("aria-selected", "true");
+   await expect(first).toHaveAttribute("aria-selected", "true");
+   await second.click({ button: "right" });
+   await expect(second).toHaveAttribute("aria-selected", "false");
+   await second.click({ button: "right" });
+   await expect(second).toHaveAttribute("aria-selected", "true");
+   // A plain pick plays only that track and closes the list.
+   await second.press("Enter");
+   await expect(page.getByRole("listbox")).toHaveCount(0);
+   await page.getByRole("button", { name: "Preview audio tracks", exact: true }).click();
+   await expect(page.getByRole("option").nth(0)).toHaveAttribute("aria-selected", "false");
+   await expect(page.getByRole("option").nth(1)).toHaveAttribute("aria-selected", "true");
    await page.keyboard.press("Escape");
    await expect(page.getByRole("listbox")).toHaveCount(0);
 });

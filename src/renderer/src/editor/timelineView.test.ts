@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { constrainViewStart, frameLevelActive, quantizeToFrame, visibleKeyframes, zoomLength } from "./timelineView";
+import { canZoom, constrainViewStart, frameLevelActive, quantizeToFrame, visibleKeyframes, zoomLength } from "./timelineView";
 
 it("constrains pointer-centered zooms to playback margins before and during the tween", () => {
    expect(constrainViewStart(1, 4, 18, 8)).toBeCloseTo(4.4);
@@ -54,4 +54,20 @@ it("quantizes picks onto the frame grid without leaving the timeline", () => {
    expect(quantizeToFrame(0.507, frame, 0, 18)).toBeCloseTo(0.5, 12);
    expect(quantizeToFrame(17.999, frame, 0, 18)).toBe(18);
    expect(quantizeToFrame(-0.2, frame, 0, 18)).toBe(0);
+});
+
+it("reports a zoom limit once a step would no longer change the view", () => {
+   expect(canZoom(60, 60, -1)).toBe(false);
+   expect(canZoom(60, 60, 1)).toBe(true);
+   expect(canZoom(0.5, 60, 1)).toBe(false);
+   expect(canZoom(0.5, 60, -1)).toBe(true);
+   // Every step from fit lands on a limit eventually, in both directions.
+   let length = 60;
+   for (let step = 0; step < 100 && canZoom(length, 60, 1); step++) length = zoomLength(length, 60, 1);
+   expect(length).toBeCloseTo(0.5);
+   for (let step = 0; step < 100 && canZoom(length, 60, -1); step++) length = zoomLength(length, 60, -1);
+   expect(length).toBeCloseTo(60);
+   // A recording shorter than the floor is already fully zoomed at fit.
+   expect(canZoom(0.3, 0.3, 1)).toBe(false);
+   expect(canZoom(0, 0, 1)).toBe(false);
 });

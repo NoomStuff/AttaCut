@@ -47,6 +47,12 @@
    --card-hover: color-mix(in srgb, var(--surface-raised) 70%, var(--surface-hover));
    --card-line: #ffffff0c;
    --radius-card: 10px;
+   --switch-track: var(--slot);
+   --switch-track-hover: var(--slot-hover);
+   --switch-thumb: var(--muted);
+   --switch-thumb-shadow: 0 1px 3px #0005;
+   --shadow-menu: 0 12px 32px #0007, 0 2px 6px #0004;
+   --shadow-thumb: 0 1px 3px #0004;
    --control-height: 36px;
    --control-height-compact: 30px;
    --radius-control: 6px;
@@ -73,41 +79,51 @@
    --clip-3: #e7be87;
    --clip-4: #de9994;
 }
-/* Light mode is built from neutral cool grays with the accent reserved for interactive
-   elements. The preview stage stays dark in both themes: video reads correctly against it
-   and the player controls are designed for a dark surface. */
+/* Light mode mirrors the dark theme's layering on a cool gray sheet: panels are a soft gray,
+   grouped settings sit on white cards, and fields are recessed gray slots inside them. The
+   accents are the dark theme's hues, deepened enough to carry white text instead of pushed
+   to full saturation. The preview stage stays dark in both themes: video reads correctly
+   against it and the player controls are designed for a dark surface. */
 :root[data-theme="light"] {
    color-scheme: light;
-   --background: #f2f4f7;
-   --preview-background: #212429;
-   --surface: #fbfcfd;
-   --panel-background: color-mix(in srgb, var(--surface) 90%, transparent);
+   --background: #e8ebef;
+   --preview-background: #1d2025;
+   --surface: #f3f5f7;
+   /* Nearly opaque: a lighter glass picks up the video behind it as a pastel wash. */
+   --panel-background: color-mix(in srgb, var(--surface) 97%, transparent);
    --surface-raised: #ffffff;
-   --surface-hover: #edf0f4;
-   --text: #22262d;
-   --muted: #5f6773;
-   --faint: #646c78;
-   --line: #dfe3e9;
-   --field-border: #b8c0cc;
-   --slot: #e4e8ee;
-   --slot-hover: #dce1e8;
-   --slot-ring: #1d273314;
+   --surface-hover: #e4e8ed;
+   --text: #1d2229;
+   --muted: #57606c;
+   --faint: #69717d;
+   --line: #d6dbe2;
+   --field-border: #b4bcc8;
+   --slot: #ebeef2;
+   --slot-hover: #e2e6eb;
+   --slot-ring: #1d27331a;
    --card: #ffffff;
-   --card-hover: #f7f9fb;
-   --card-line: #1d27330f;
+   --card-hover: #f7f9fa;
+   --card-line: #1d273314;
+   --switch-track: #d3d9e0;
+   --switch-track-hover: #c8cfd8;
+   --switch-thumb: #ffffff;
+   --switch-thumb-shadow: 0 1px 2px #1d273333, 0 0 0 0.5px #1d27331f;
    --accent-text: #ffffff;
-   --accent-hover: color-mix(in srgb, var(--accent) 86%, black);
-   --backdrop: #22262d45;
-   --modal-shadow: 0 8px 24px -8px #1d27331a, 0 24px 72px -16px #1d27332b;
-   --shadow-pop: 0 3px 10px -3px #1d273314, 0 10px 24px -8px #1d273324;
-   --warning: #8a6400;
-   --danger: #d13438;
-   --success: #217a46;
-   --clip-0: #0b6bcd;
-   --clip-1: #9a2fb5;
-   --clip-2: #17854a;
-   --clip-3: #a05e00;
-   --clip-4: #c73831;
+   --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+   --accent-hover: color-mix(in srgb, var(--accent) 88%, black);
+   --backdrop: #1d22293d;
+   --modal-shadow: 0 0 0 1px #1d273314, 0 8px 24px -8px #1d27331f, 0 24px 64px -16px #1d273333;
+   --shadow-pop: 0 0 0 1px #1d273312, 0 3px 10px -3px #1d273314, 0 10px 24px -8px #1d273324;
+   --shadow-thumb: 0 1px 2px #1d273329, 0 0 0 0.5px #1d27331a;
+   --shadow-menu: 0 0 0 1px #1d273314, 0 10px 28px -6px #1d273333, 0 2px 6px #1d27331a;
+   --warning: #8a6100;
+   --danger: #c8373d;
+   --success: #2a7a4b;
+   --clip-0: #2a6cb3;
+   --clip-1: #8d42ab;
+   --clip-2: #26804f;
+   --clip-3: #985d10;
+   --clip-4: #bf4139;
 }
 * {
    box-sizing: border-box;
@@ -198,7 +214,9 @@ select {
    border-radius: var(--radius-control);
    padding: 8px 11px;
    min-width: 0;
-   transition: background-color 150ms ease-out;
+   transition:
+      background-color 150ms ease-out,
+      box-shadow 150ms ease-out;
 }
 :where(input:not([type="range"], [type="checkbox"]), select) {
    min-height: var(--control-height);
@@ -207,11 +225,13 @@ input:not([type="range"], [type="checkbox"]):hover:not(:disabled, :focus),
 select:hover:not(:disabled, :focus) {
    background: var(--slot-hover);
 }
-/* Focus lifts the slot to the raised surface instead of drawing a border; keyboard focus
-   adds a ring drawn inside the slot so cards and scroll areas never clip it. */
-input:not([type="range"], [type="checkbox"]):focus,
-select:focus {
-   background: var(--surface-raised);
+/* A focused field stays a slot so its text keeps full contrast against the card, and a
+   thin accent ring inside marks where typing goes. Keyboard focus thickens the ring; both
+   sit inside the slot so cards and scroll areas never clip them. */
+/* Low specificity on purpose: components such as the shortcut search can opt out. */
+:where(input:not([type="range"], [type="checkbox"]), select):focus {
+   background: var(--slot);
+   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent);
    outline: none;
 }
 :root[data-keyboard] input:not([type="range"], [type="checkbox"]):focus-visible,

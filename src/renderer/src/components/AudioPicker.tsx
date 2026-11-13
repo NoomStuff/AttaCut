@@ -21,6 +21,7 @@ export function AudioPicker({ tracks, selected, onSelect }: { tracks: MediaStrea
          options={tracks.map((track, index) => ({ value: String(track.index), label: audioTrackLabel(track, index) }))}
          value={selected.map(String)}
          multiple
+         soloClick
          required
          placement="up"
          disabled={tracks.length <= 1}

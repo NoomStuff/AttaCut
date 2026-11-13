@@ -238,15 +238,21 @@ test("inverted clips export losslessly, and advanced options stay named while co
    await page.getByLabel("Save to", { exact: true }).fill(profile + "/advanced");
    const advanced = page.locator(".export-advanced-toggle");
    const lossless = page.getByRole("switch", { name: "Force lossless export", exact: true });
+   // The options stay rendered while folded: the box around them is closed and out of the tab order.
+   const options = page.locator("#export-advanced-options");
+   const folded = async () => {
+      await expect(options).toHaveCSS("height", "0px");
+      await expect(options).toHaveJSProperty("inert", true);
+   };
    await expect(advanced).toHaveAttribute("aria-expanded", "false");
-   await expect(lossless).toBeHidden();
+   await folded();
    await advanced.click();
    await lossless.check();
    const note = page.locator(".export-note");
    await expect(note.locator(".export-note-change")).toContainText("Staying lossless adds");
    await expect(note).not.toContainText("re-encoded");
    await advanced.click();
-   await expect(lossless).toBeHidden();
+   await folded();
    await expect(page.locator(".export-advanced-summary")).toHaveText("Force lossless");
    await page.getByRole("button", { name: "Export format", exact: true }).click();
    await page.getByRole("option", { name: "MKV (.mkv)", exact: true }).click();

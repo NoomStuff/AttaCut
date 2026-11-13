@@ -28,7 +28,10 @@
    margin-top: 0;
 }
 .export-advanced {
-   --advanced-ease: cubic-bezier(0.22, 1, 0.36, 1);
+   /* Eases out without the steep start of an expo curve: those finish most of the growth in
+      the first two frames, which reads as the options popping in rather than opening. */
+   --advanced-ease: cubic-bezier(0.3, 0.6, 0.2, 1);
+   --advanced-duration: 280ms;
    border-radius: var(--radius-card);
    background: var(--card);
 }
@@ -66,6 +69,10 @@
    text-overflow: ellipsis;
    white-space: nowrap;
    animation: export-summary-in 180ms ease-out;
+   transition: opacity 140ms ease-out;
+}
+.export-advanced[data-open="true"] .export-advanced-summary {
+   opacity: 0;
 }
 .export-advanced-chevron {
    margin-left: auto;
@@ -79,40 +86,22 @@
 .export-advanced[data-open="true"] .export-advanced-chevron {
    transform: rotate(180deg);
 }
-/* The options stay mounted so opening can grow the box to its real height. */
-.export-advanced-panel {
-   display: grid;
-   grid-template-rows: 0fr;
-   transition: grid-template-rows 220ms var(--advanced-ease);
+/* The options are always rendered; only the box around them grows, from 0 to its content's
+   real height. It clips while it moves and lets a dropdown inside spill out once open. */
+.export-advanced-content {
+   interpolate-size: allow-keywords;
+   height: 0;
+   overflow: hidden;
+   transition: height var(--advanced-duration) var(--advanced-ease);
 }
-.export-advanced[data-open="true"] .export-advanced-panel {
-   grid-template-rows: 1fr;
+.export-advanced[data-open="true"] .export-advanced-content {
+   height: auto;
+}
+.export-advanced[data-open="true"][data-settled="true"] .export-advanced-content {
+   overflow: visible;
 }
 .export-advanced-body {
-   min-height: 0;
-   overflow: hidden;
    padding: 0 16px;
-   visibility: hidden;
-   opacity: 0;
-   transform: translateY(-6px);
-   transition:
-      opacity 120ms ease-in,
-      transform 220ms var(--advanced-ease),
-      visibility 0s linear 220ms;
-}
-/* Once open, the dropdown inside may spill past the box, so clipping only lasts while it grows. */
-.export-advanced[data-open="true"] .export-advanced-body {
-   overflow: visible;
-   visibility: visible;
-   opacity: 1;
-   transform: none;
-   animation: export-advanced-grow 220ms;
-   /* The box grows on a front-loaded curve, so the options fade on the same one. A delayed
-      fade let the empty box open first and the options pop in after it. */
-   transition:
-      opacity 160ms var(--advanced-ease),
-      transform 220ms var(--advanced-ease),
-      visibility 0s;
 }
 .export-advanced-body > :first-child {
    border-top: 1px solid var(--card-line);
@@ -126,21 +115,14 @@
 .export-advanced-field .field-label {
    margin-top: 0;
 }
-@keyframes export-advanced-grow {
-   from,
-   to {
-      overflow: hidden;
-   }
-}
 @keyframes export-summary-in {
    from {
       opacity: 0;
    }
 }
 @media (prefers-reduced-motion: reduce) {
-   .export-advanced-panel,
-   .export-advanced-body,
-   .export-advanced[data-open="true"] .export-advanced-body,
+   .export-advanced-content,
+   .export-advanced-summary,
    .export-advanced-chevron {
       transition: none;
       animation: none;
