@@ -417,11 +417,18 @@ export function ExportPanel(props: ExportOptions & { onHelp?: (topic: HelpTab) =
                      className="export-advanced-toggle"
                      aria-expanded={advanced}
                      aria-controls="export-advanced-options"
-                     onClick={() => setAdvanced(!advanced)}
+                     onClick={(event) => {
+                        if (!advanced && event.currentTarget.parentElement) keepGrowingSectionInView(event.currentTarget.parentElement);
+                        setAdvanced(!advanced);
+                     }}
                   >
                      <span>Advanced</span>
                      {/* Hidden options still change the output, so the closed header names the ones that are on. */}
-                     {advancedSummary && !advanced && <span className="export-advanced-summary">{advancedSummary}</span>}
+                     {advancedSummary && (
+                        <span className="export-advanced-summary" aria-hidden={advanced || undefined}>
+                           {advancedSummary}
+                        </span>
+                     )}
                      <FontAwesomeIcon className="export-advanced-chevron" icon={faChevronDown} />
                   </button>
                   <div className="export-advanced-panel">
@@ -538,4 +545,22 @@ function ConflictIndicator({ message, tone = "warning" }: { message: string | nu
          )}
       </span>
    );
+}
+
+/** The Advanced section sits at the bottom of the scrolling body, so opening it would grow
+    the new options below the fold. This follows the growth frame by frame until it settles,
+    without ever pushing the section's header above the top. */
+function keepGrowingSectionInView(section: HTMLElement) {
+   const scroller = section.closest<HTMLElement>(".modal-body");
+   if (!scroller) return;
+   const margin = 12;
+   const start = performance.now();
+   const step = () => {
+      const area = scroller.getBoundingClientRect();
+      const box = section.getBoundingClientRect();
+      const shift = Math.min(box.bottom - (area.bottom - margin), box.top - (area.top + margin));
+      if (shift > 0) scroller.scrollTop += shift;
+      if (performance.now() - start < 360) requestAnimationFrame(step);
+   };
+   requestAnimationFrame(step);
 }

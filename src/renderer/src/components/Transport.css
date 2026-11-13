@@ -378,6 +378,8 @@
    padding: 3px 8px 3px 4px;
    border: 0;
    background: transparent;
+   /* The wrapper draws the focus ring. */
+   box-shadow: none;
 }
 .clip-duration {
    margin-left: 4px;

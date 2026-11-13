@@ -14,7 +14,7 @@
    width: calc((100% - 6px) / var(--segment-count));
    transform: translateX(calc(var(--segment-index) * 100%));
    background: var(--surface-raised);
-   box-shadow: 0 1px 3px #0004;
+   box-shadow: var(--shadow-thumb);
    border-radius: 6px;
    transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
    pointer-events: none;

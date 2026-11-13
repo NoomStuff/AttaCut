@@ -361,7 +361,7 @@
    width: 40px;
    height: 24px;
    border-radius: 12px;
-   background: var(--slot);
+   background: var(--switch-track);
    box-shadow: inset 0 0 0 1px var(--slot-ring);
    padding: 3px;
    pointer-events: none;
@@ -373,14 +373,14 @@
    width: 18px;
    height: 18px;
    border-radius: 50%;
-   background: var(--muted);
-   box-shadow: 0 1px 3px #0005;
+   background: var(--switch-thumb);
+   box-shadow: var(--switch-thumb-shadow);
    transition:
       transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1),
       background-color 150ms ease-out;
 }
 .toggle-row:hover:not(:has(input:disabled)) .switch {
-   background: var(--slot-hover);
+   background: var(--switch-track-hover);
 }
 .toggle-row input:checked + .switch {
    background: var(--accent);
