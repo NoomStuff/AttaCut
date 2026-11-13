@@ -68,7 +68,15 @@ test("export workflow", async ({ launchApp, profile }) => {
    await waitForTime(9);
    const originalUrl = await page.locator("video").getAttribute("src");
    await page.getByRole("button", { name: "Preview audio tracks", exact: true }).click();
-   await page.getByRole("option").nth(1).click();
+   // A mix of tracks needs a remuxed preview; Shift keeps the menu open to build one.
+   await page
+      .getByRole("option")
+      .nth(1)
+      .click({ modifiers: ["Shift"] });
+   await page
+      .getByRole("option")
+      .nth(0)
+      .click({ modifiers: ["Shift"] });
    await expect(page.getByText(/preparing a playable preview|compatible preview/i)).toHaveCount(0);
    await expect(page.locator("video")).not.toHaveAttribute("src", originalUrl);
    await page.getByRole("button", { name: "Snap to keyframes", exact: true }).click();

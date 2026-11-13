@@ -47,3 +47,35 @@ test("menus and pickers leave on Tab and restore their trigger on Escape", async
    await page.getByRole("menuitem", { name: "Settings…", exact: false }).click();
    await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
 });
+
+test("switches follow a dragged thumb and land on the side it is released past", async ({ launchApp, profile }) => {
+   const app = await launchApp(profile, "");
+   const page = await app.firstWindow();
+   await expect(page.locator(".loading-overlay")).toHaveCount(0);
+   await page.keyboard.press("ControlOrMeta+,");
+   const toggle = page.getByRole("switch", { name: "Autoplay opened videos", exact: true });
+   await expect(toggle).not.toBeChecked();
+   const track = await page.locator(".toggle-row", { has: toggle }).locator(".switch").boundingBox();
+   const y = track.y + track.height / 2;
+   const off = track.x + 12;
+   const on = track.x + track.width - 12;
+   const drag = async (from, to) => {
+      await page.mouse.move(from, y);
+      await page.mouse.down();
+      await page.mouse.move(to, y, { steps: 6 });
+      await page.mouse.up();
+   };
+   await drag(off, on);
+   await expect(toggle).toBeChecked();
+   // Released short of halfway, the switch keeps its state instead of toggling on the click.
+   await drag(on, on - 5);
+   await expect(toggle).toBeChecked();
+   // The thumb keeps following past the row edge.
+   await drag(on, track.x - 60);
+   await expect(toggle).not.toBeChecked();
+   await drag(off, on);
+   await drag(on, off);
+   await expect(toggle).not.toBeChecked();
+   await toggle.click();
+   await expect(toggle).toBeChecked();
+});

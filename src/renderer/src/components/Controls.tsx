@@ -183,6 +183,9 @@ export function Modal({
       </dialog>
    );
 }
+/** How far the switch thumb travels between off and on, in px. Matches Controls.css. */
+const switchTravel = 16;
+
 export function Toggle({
    label,
    checked,
@@ -199,8 +202,28 @@ export function Toggle({
    icon?: IconDefinition;
 }) {
    const descriptionId = useId();
+   const row = useRef<HTMLLabelElement>(null);
+   const drag = useRef<{ pointer: number; startX: number; from: number; position: number; moved: boolean } | null>(null);
+   // The click that follows a drag release would flip the switch a second time.
+   const swallowClick = useRef(false);
+   const place = (position: number) => {
+      const element = row.current;
+      if (!element) return;
+      element.dataset["dragging"] = "";
+      element.dataset["intent"] = position > switchTravel / 2 ? "on" : "off";
+      element.style.setProperty("--thumb-x", `${position}px`);
+   };
+   const release = () => {
+      const element = row.current;
+      if (element) {
+         delete element.dataset["dragging"];
+         delete element.dataset["intent"];
+         element.style.removeProperty("--thumb-x");
+      }
+      drag.current = null;
+   };
    return (
-      <label className="toggle-row">
+      <label className="toggle-row" ref={row}>
          {icon && <FontAwesomeIcon className="row-icon" icon={icon} />}
          <span>
             {label}
@@ -213,7 +236,42 @@ export function Toggle({
             aria-describedby={description ? descriptionId : undefined}
             checked={checked}
             disabled={disabled}
-            onChange={(event) => onChange(event.target.checked)}
+            // React reports a checkbox change even for a prevented click, so the click that
+            // ends a drag is ignored here and React restores the controlled value.
+            onChange={(event) => {
+               if (!swallowClick.current) onChange(event.target.checked);
+            }}
+            // Dragging the thumb sets whichever side it is released past; a plain press still toggles.
+            onPointerDown={(event) => {
+               if (disabled || event.button !== 0) return;
+               swallowClick.current = false;
+               event.currentTarget.setPointerCapture(event.pointerId);
+               const from = checked ? switchTravel : 0;
+               drag.current = { pointer: event.pointerId, startX: event.clientX, from, position: from, moved: false };
+            }}
+            onPointerMove={(event) => {
+               const current = drag.current;
+               if (!current || current.pointer !== event.pointerId) return;
+               const offset = event.clientX - current.startX;
+               if (!current.moved && Math.abs(offset) < 3) return;
+               current.moved = true;
+               current.position = Math.min(switchTravel, Math.max(0, current.from + offset));
+               place(current.position);
+            }}
+            onPointerUp={(event) => {
+               const current = drag.current;
+               if (!current || current.pointer !== event.pointerId) return;
+               release();
+               if (!current.moved) return;
+               swallowClick.current = true;
+               // Applied once the click that follows has been ignored.
+               const next = current.position > switchTravel / 2;
+               window.setTimeout(() => {
+                  swallowClick.current = false;
+                  if (next !== checked) onChange(next);
+               });
+            }}
+            onPointerCancel={release}
          />
          <span className="switch" aria-hidden="true" />
       </label>

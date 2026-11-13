@@ -336,8 +336,10 @@
    padding: 7px 11px;
    font-size: 12px;
 }
+/* The search takes focus when the tab opens, so only keyboard focus draws a ring on it. */
 .shortcut-search:focus-visible {
    outline: none;
+   box-shadow: none;
 }
 :root[data-keyboard] .shortcut-search:focus-visible {
    border-color: var(--accent);

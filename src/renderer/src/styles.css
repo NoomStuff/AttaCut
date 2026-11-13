@@ -228,8 +228,8 @@ select:hover:not(:disabled, :focus) {
 /* A focused field stays a slot so its text keeps full contrast against the card, and a
    thin accent ring inside marks where typing goes. Keyboard focus thickens the ring; both
    sit inside the slot so cards and scroll areas never clip them. */
-input:not([type="range"], [type="checkbox"]):focus,
-select:focus {
+/* Low specificity on purpose: components such as the shortcut search can opt out. */
+:where(input:not([type="range"], [type="checkbox"]), select):focus {
    background: var(--slot);
    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent);
    outline: none;
