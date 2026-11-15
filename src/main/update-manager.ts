@@ -201,7 +201,7 @@ export class UpdateManager {
                const failed = this.installFailed;
                this.installFailed = null;
                if (failed) {
-                  failed("Could not apply the update. Open the release to update manually.");
+                  failed("Couldn't install the update. Download it from the release page.");
                   return;
                }
                this.emit({
@@ -209,8 +209,8 @@ export class UpdateManager {
                   version: this.automaticVersion ?? update.version,
                   percent: null,
                   message: this.isReady
-                     ? "Could not apply the update. Open the release to update manually."
-                     : "Could not download the update. Open the release to update manually.",
+                     ? "Couldn't install the update. Download it from the release page."
+                     : "Couldn't download the update. Get it from the release page.",
                });
             });
          }
@@ -222,11 +222,11 @@ export class UpdateManager {
                phase: "error",
                version: update.version,
                percent: null,
-               message: "The update package is not available yet. Open the release to update manually.",
+               message: "The update isn't available for this system yet. Get it from the release page.",
             });
       } catch (error) {
          this.log(`updater error: ${error instanceof Error ? error.message : String(error)}`);
-         this.emit({ phase: "error", version: update.version, percent: null, message: "Could not download the update. Open the release to update manually." });
+         this.emit({ phase: "error", version: update.version, percent: null, message: "Couldn't download the update. Get it from the release page." });
       } finally {
          this.automaticRunning = false;
          // A newer release can be offered while the previous package is downloading.
@@ -241,7 +241,7 @@ export class UpdateManager {
    install(failed: (message: string) => void = () => undefined): void {
       const updater = this.updater;
       const version = this.readyVersion;
-      if (!this.isReady || updater === null || version === null) throw new Error("The update is not ready yet.");
+      if (!this.isReady || updater === null || version === null) throw new Error("The update isn't ready yet.");
       // A missing package makes electron-updater open the installer interactively
       // (its ENOENT fallback). Refuse instead, so the update never asks for clicks.
       const installer = (updater as unknown as { installerPath?: string | null }).installerPath;
@@ -259,7 +259,7 @@ export class UpdateManager {
 
    async downloadPortable(version: string): Promise<void> {
       if (this.busy || this.current?.mode !== "download" || this.current.version !== version || !/^\d+\.\d+\.\d+$/.test(version))
-         throw new Error("This download is not available.");
+         throw new Error("This download isn't available.");
       this.busy = true;
       let temporary: string | null = null;
       let temporaryOwned = false;
@@ -270,7 +270,7 @@ export class UpdateManager {
          new Promise<T>((resolve, reject) => {
             const timer = setTimeout(() => {
                abort.abort();
-               reject(new Error("The download stalled and was cancelled."));
+               reject(new Error("The download stalled and was canceled."));
             }, 30000);
             work.then(
                (value) => {
@@ -291,14 +291,14 @@ export class UpdateManager {
                signal: abort.signal,
             })
          );
-         if (!releaseResponse.ok) throw new Error("Could not find that release.");
+         if (!releaseResponse.ok) throw new Error("Couldn't find that release.");
          const release = z
             .object({ assets: z.array(z.object({ name: z.string(), browser_download_url: z.url(), digest: z.string().nullable().optional() })) })
             .parse(await guarded(releaseResponse.json()));
          const asset = release.assets.find((entry) => entry.name === name);
          if (!asset) throw new Error("The matching download is missing from this release.");
          const expectedHash = asset.digest?.startsWith("sha256:") ? asset.digest.slice(7) : null;
-         if (!expectedHash || !/^[0-9a-f]{64}$/i.test(expectedHash)) throw new Error("The download could not be verified.");
+         if (!expectedHash || !/^[0-9a-f]{64}$/i.test(expectedHash)) throw new Error("Couldn't verify the download.");
          const directory = app.getPath("downloads");
          // The saved copy keeps the version, so several portable downloads stay apart.
          const stem = `${product}-${version}-windows-${process.arch}-portable`;
@@ -330,7 +330,7 @@ export class UpdateManager {
          } finally {
             await file.close();
          }
-         if (hash.digest("hex").toLowerCase() !== expectedHash.toLowerCase()) throw new Error("The download did not pass verification.");
+         if (hash.digest("hex").toLowerCase() !== expectedHash.toLowerCase()) throw new Error("The download was damaged. Download it again.");
          // Publish without overwriting a file created while the download was in flight.
          // Downloads can live on a filesystem without hard links; both methods refuse an existing file.
          try {
