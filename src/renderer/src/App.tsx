@@ -133,6 +133,8 @@ export default function App() {
       scrubber,
       preparePreview,
       changeAudio,
+      feedback,
+      stepVolume,
    } = session.player;
    const fullscreen = useFullscreen(!!source);
    const { setFullscreen } = fullscreen;
@@ -219,7 +221,11 @@ export default function App() {
       preferences.shortcuts,
       mac,
       !!menu,
-      preferences.holdToSnap === "none" ? false : preferences.holdToSnap === "Control" ? (mac ? "Ctrl" : "Mod") : preferences.holdToSnap
+      preferences.holdToSnap === "none" ? false : preferences.holdToSnap === "Control" ? (mac ? "Ctrl" : "Mod") : preferences.holdToSnap,
+      // Space shows the play or pause mark over the video. The transport's own button doesn't.
+      (id) => {
+         if (id === "play") feedback.show({ kind: "play", playing: playback.get().intent !== "paused" });
+      }
    );
    return (
       <CommandContext.Provider value={{ commands, overrides: preferences.shortcuts, mac, holdToSnap: preferences.holdToSnap }}>
@@ -314,6 +320,8 @@ export default function App() {
                            void preparePreview(source, audioIndices, true, requested);
                         }}
                         trimming={trimming}
+                        feedback={feedback}
+                        onStepVolume={stepVolume}
                      />
                   ) : (
                      <EmptyState onImport={() => void choose()} loading={loading} mac={mac} recent={recent} onOpenRecent={(path) => void openPath(path)} />

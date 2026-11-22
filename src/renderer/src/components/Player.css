@@ -95,13 +95,26 @@
    visibility: hidden;
    pointer-events: none;
 }
+/* Controls float over the picture, so a tall scrim keeps them readable on bright footage. It
+   takes no clicks: the picture behind it still plays, pauses and holds for double speed. */
+.fullscreen-controls::before {
+   content: "";
+   position: absolute;
+   left: 0;
+   right: 0;
+   bottom: 0;
+   height: 168px;
+   background: linear-gradient(to top, #000000e6 0%, #000000b3 30%, #00000052 62%, #0000 100%);
+   pointer-events: none;
+}
 .fullscreen-bar {
+   position: relative;
    flex: 1;
    display: flex;
    flex-direction: column;
    gap: 9px;
    padding: 10px 14px 12px;
-   background: linear-gradient(to top, #06090bd0, #06090b00);
+   text-shadow: 0 1px 2px #000a;
 }
 .fullscreen-row {
    display: flex;
@@ -223,6 +236,103 @@
    top: auto;
    bottom: calc(100% + 10px);
 }
+/* What a click, key or wheel just did, over the video: play or pause in the middle, skips at
+   the sides, and volume or double speed along the top. They sit over the picture in either
+   theme, so they keep dark-surface colors. */
+.player-flash,
+.player-skip,
+.player-badge {
+   position: absolute;
+   z-index: 11;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   color: #fff;
+   background: #000000a6;
+   pointer-events: none;
+}
+.player-flash {
+   width: 64px;
+   height: 64px;
+   border-radius: 50%;
+   font-size: 24px;
+   animation: player-flash 520ms ease-out both;
+}
+.player-flash > svg {
+   filter: drop-shadow(0 1px 2px #0006);
+}
+@keyframes player-flash {
+   from {
+      opacity: 0.9;
+      transform: scale(0.85);
+   }
+   to {
+      opacity: 0;
+      transform: scale(1.45);
+   }
+}
+.player-skip {
+   top: 50%;
+   flex-direction: column;
+   gap: 4px;
+   width: 76px;
+   height: 76px;
+   margin-top: -38px;
+   border-radius: 50%;
+   font-size: 12px;
+   font-weight: 650;
+   font-variant-numeric: tabular-nums;
+   transition: opacity 200ms ease-out;
+}
+.player-skip[data-side="back"] {
+   left: 9%;
+}
+.player-skip[data-side="forward"] {
+   right: 9%;
+}
+.player-skip > svg {
+   font-size: 17px;
+   animation: player-skip-arrow 300ms cubic-bezier(0.22, 1.7, 0.36, 1) both;
+}
+.player-skip[data-side="back"] > svg {
+   --nudge: -6px;
+}
+.player-skip[data-side="forward"] > svg {
+   --nudge: 6px;
+}
+@keyframes player-skip-arrow {
+   from {
+      transform: translateX(var(--nudge));
+   }
+}
+.player-badge {
+   top: 14px;
+   left: 50%;
+   gap: 7px;
+   height: 30px;
+   padding: 0 12px;
+   border-radius: 15px;
+   font-size: 12px;
+   font-weight: 650;
+   font-variant-numeric: tabular-nums;
+   transform: translateX(-50%);
+   transition:
+      opacity 200ms ease-out,
+      transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.player-skip.closing,
+.player-badge.closing {
+   opacity: 0;
+}
+@starting-style {
+   .player-skip {
+      opacity: 0;
+   }
+   .player-badge {
+      opacity: 0;
+      transform: translate(-50%, -6px);
+   }
+}
 .player-excluded {
    position: absolute;
    left: 16px;
@@ -286,12 +396,18 @@
 @media (prefers-reduced-motion: reduce) {
    .preview-loading.delayed,
    .preview-held-frame,
+   .player-skip,
+   .player-badge,
    .player-stage,
    .player-stage video {
       transition: none;
    }
    .player-stage.fullscreen,
-   .player-stage.fullscreen-returning {
+   .player-stage.fullscreen-returning,
+   .player-skip > svg {
       animation: none;
+   }
+   .player-flash {
+      animation-duration: 1ms;
    }
 }

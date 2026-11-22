@@ -1,5 +1,6 @@
 import { createContext, useEffect, useRef } from "react";
 import { pressRipple } from "../lib/motion";
+import { keyboardMode, markShortcut } from "../lib/keyboardMode";
 export const commandDefinitions = {
    open: { label: "Open file…", bindings: ["Mod+O"], group: "File" },
    saveProject: { label: "Save project", bindings: ["Mod+S"], group: "File" },
@@ -15,6 +16,8 @@ export const commandDefinitions = {
    speedUp: { label: "Faster playback", bindings: ["]"], group: "Playback", repeat: true },
    speedReset: { label: "Normal playback speed", bindings: ["\\"], group: "Playback" },
    mute: { label: "Toggle mute playback", bindings: ["M"], group: "Playback" },
+   volumeUp: { label: "Volume up", bindings: ["ArrowUp"], group: "Playback", repeat: true },
+   volumeDown: { label: "Volume down", bindings: ["ArrowDown"], group: "Playback", repeat: true },
    snap: { label: "Snap to keyframes", bindings: ["C"], group: "Clips" },
    merge: { label: "Merge at playhead", bindings: ["E"], group: "Clips" },
    toggleClip: { label: "Toggle clip at playhead", bindings: ["W"], group: "Clips" },
@@ -112,7 +115,9 @@ export function displayBinding(binding: string, mac: boolean): string {
    return binding
       .replace("Mod", mac ? "⌘" : "Ctrl")
       .replaceAll("ArrowLeft", "←")
-      .replaceAll("ArrowRight", "→");
+      .replaceAll("ArrowRight", "→")
+      .replaceAll("ArrowUp", "↑")
+      .replaceAll("ArrowDown", "↓");
 }
 export function bindingFromEvent(event: KeyboardEvent, mac: boolean): string {
    // Shift changes these keys to < and > on many layouts. Keep the frame-key identity.
@@ -130,15 +135,13 @@ export function useCommands(
    overrides: Record<string, string[]>,
    mac: boolean,
    blocked: boolean,
-   temporaryModifier: string | false = "Alt"
+   temporaryModifier: string | false = "Alt",
+   /** Told about each command a key press ran, after it ran. Menus and buttons don't count. */
+   onShortcut?: (id: CommandId) => void
 ): void {
-   const latest = useRef({ commands, overrides, mac, blocked, temporaryModifier });
-   latest.current = { commands, overrides, mac, blocked, temporaryModifier };
+   const latest = useRef({ commands, overrides, mac, blocked, temporaryModifier, onShortcut });
+   latest.current = { commands, overrides, mac, blocked, temporaryModifier, onShortcut };
    useEffect(() => {
-      let keyboardFocus = false;
-      const pointer = () => {
-         keyboardFocus = false;
-      };
       // A shortcut press should read like a real click: the shared ripple, fired from the
       // button's center, expanding and fading in one brief pass.
       const flashPress = (button: HTMLElement) => {
@@ -166,7 +169,6 @@ export function useCommands(
          }
       };
       const handler = (event: KeyboardEvent) => {
-         if (event.key === "Tab") keyboardFocus = true;
          const target = event.target;
          if (
             latest.current.blocked ||
@@ -184,6 +186,18 @@ export function useCommands(
             !event.metaKey
          )
             return;
+         // A control reached by keyboard keeps the keys it answers itself: Enter and Space press a
+         // focused button, and menus, lists and tabs keep their navigation keys. A button focused by
+         // a click gives them up, so Space still plays after clicking a control.
+         if (
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey &&
+            target instanceof HTMLElement &&
+            ((keyboardMode() && target.closest('button, a[href], [role="button"]') && (event.key === "Enter" || event.key === " ")) ||
+               target.closest('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="radio"], [role="tab"]'))
+         )
+            return;
          const binding = bindingFromEvent(event, latest.current.mac);
          const id = commandForBinding(binding, latest.current.overrides, latest.current.temporaryModifier);
          if (!id) return;
@@ -191,18 +205,18 @@ export function useCommands(
          const action = command.resolve ? command.resolve() : command.enabled() ? command.run : undefined;
          if (!action) return;
          event.preventDefault();
+         markShortcut(event);
          // App shortcuts should not turn a mouse-focused button into a keyboard target.
-         if (!keyboardFocus && target instanceof HTMLElement && target.closest("button")) target.blur();
+         if (!keyboardMode() && target instanceof HTMLElement && target.closest("button")) target.blur();
          const definition = commandDefinitions[id];
          if (event.repeat && !("repeat" in definition && definition.repeat)) return;
          execute(id, action);
+         latest.current.onShortcut?.(id);
       };
       window.addEventListener("keydown", handler);
-      window.addEventListener("pointerdown", pointer);
       const unsubscribe = window.desktop.onCommand(execute);
       return () => {
          window.removeEventListener("keydown", handler);
-         window.removeEventListener("pointerdown", pointer);
          unsubscribe();
       };
    }, []);
