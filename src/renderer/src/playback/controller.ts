@@ -13,6 +13,8 @@ export class PlaybackController {
    private holdHandler: (() => void) | null = null;
    /** Kept-range end the current preview play should stop at; null plays freely. */
    previewEnd: number | null = null;
+   /** Playback stopped by reaching the end, not by a pause. Moving the playhead from there may play again. */
+   reachedEnd = false;
    get = (): PlaybackState => this.state;
    subscribe = (listener: () => void): (() => void) => {
       this.listeners.add(listener);
@@ -34,6 +36,7 @@ export class PlaybackController {
    invalidate(): void {
       this.sequence++;
       this.previewEnd = null;
+      this.reachedEnd = false;
       this.pause();
    }
    suspend(): void {
@@ -44,9 +47,11 @@ export class PlaybackController {
    source(source: MediaSource): void {
       this.sequence++;
       this.previewEnd = null;
+      this.reachedEnd = false;
       this.set({ phase: "source", sourceId: source.id, url: source.url, transcode: false, intent: "paused", showWait: false });
    }
    request(showWait: boolean): void {
+      this.reachedEnd = false;
       if (this.state.intent === "requested" && (!showWait || this.state.showWait)) return;
       this.set({ ...this.state, intent: "requested", showWait: this.state.showWait || showWait });
    }

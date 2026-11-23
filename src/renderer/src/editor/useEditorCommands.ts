@@ -13,6 +13,8 @@ import type { Commands } from "./commands";
 import type { EditorSession } from "./useEditorSession";
 import type { EditorInteraction } from "./useEditorInteraction";
 import { errorText } from "../lib/errors";
+import { clamp } from "../../../shared/time";
+import { minimumSkip } from "../playback/feedback";
 
 export type EditorPanel = "export" | "frame" | "scenes" | "settings" | "shortcuts" | "help" | "about" | null;
 const releasesUrl = "https://github.com/NoomStuff/AttaCut/releases";
@@ -69,7 +71,7 @@ export function useEditorCommands({
       confirmProject,
       closeProject,
    } = session;
-   const { muted, setMuted, playback, pause, videoRef, clock, seeker } = session.player;
+   const { muted, setMuted, playback, pause, videoRef, clock, seeker, feedback, stepVolume } = session.player;
    const { clip, trimming, trimmingRef, remember, commit, seek, currentClip, deleteTarget, frameStep, animateTrim, setBoundary } = editing;
    const showError = onError;
    const togglePlay = () => {
@@ -122,6 +124,14 @@ export function useEditorCommands({
          (value: unknown) => showError(errorText(value))
       );
    };
+   // The indicator says how far the playhead actually went, and nothing when it couldn't move,
+   // like back at 0:00. The clock already holds where a pending seek is headed.
+   const skip = (seconds: number) => {
+      const from = clock.get();
+      const moved = clamp(from + seconds, 0, source!.duration) - from;
+      seek(from + seconds, false, true);
+      if (Math.abs(moved) >= minimumSkip) feedback.show({ kind: "skip", seconds: moved });
+   };
    const joinAtPlayhead = () => mergePair(editor.document, clock.get(), frameStep, frameStep / 2);
    const navigate = (resolveTime: () => number | null) =>
       resolvedCommand(() => {
@@ -155,6 +165,8 @@ export function useEditorCommands({
             if (preferences.volume === 0) setPreferences({ ...preferences, volume: 0.7 });
          },
       },
+      volumeUp: { enabled: available, run: () => stepVolume(1) },
+      volumeDown: { enabled: available, run: () => stepVolume(-1) },
       snap: {
          enabled: () => available() && (preferences.snapping || !readingKeys),
          run: () => setPreferences((current) => ({ ...current, snapping: !current.snapping })),
@@ -223,10 +235,10 @@ export function useEditorCommands({
             playback.request(true);
          },
       },
-      back: { enabled: available, run: () => seek(clock.get() - 1, false, true) },
-      forward: { enabled: available, run: () => seek(clock.get() + 1, false, true) },
-      backFast: { enabled: available, run: () => seek(clock.get() - 5, false, true) },
-      forwardFast: { enabled: available, run: () => seek(clock.get() + 5, false, true) },
+      back: { enabled: available, run: () => skip(-1) },
+      forward: { enabled: available, run: () => skip(1) },
+      backFast: { enabled: available, run: () => skip(-5) },
+      forwardFast: { enabled: available, run: () => skip(5) },
       previousKeyframe: navigate(() => neighboringKeyframe(clock.get(), -1, keyframes)),
       nextKeyframe: navigate(() => neighboringKeyframe(clock.get(), 1, keyframes)),
       previous: navigate(() => adjacentBoundary(editor.document.clips, clock.get(), -1)),

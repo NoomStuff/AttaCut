@@ -143,7 +143,8 @@ export function pressRipple(button: HTMLButtonElement, x: number, y: number): vo
 /**
  * Delegated press feedback: a soft circle expands from the click point on every button
  * except drag surfaces, which need their pointer events uninterrupted. Buttons also release
- * focus after pointer use so keyboard highlights only ever follow keyboard navigation.
+ * focus after pointer use, so playback shortcuts keep working after a click. Keyboard mode
+ * itself lives in keyboardMode.ts.
  */
 export function usePressFeedback(): void {
    useEffect(() => {
@@ -155,12 +156,6 @@ export function usePressFeedback(): void {
          // aria-disabled buttons have no action to acknowledge, so they stay still too.
          if (!button || button.disabled || button.getAttribute("aria-disabled") === "true" || button.closest("[data-press-ignore]")) return null;
          return button;
-      };
-      const navigation = (event: KeyboardEvent) => {
-         if (event.key === "Tab") document.documentElement.dataset["keyboard"] = "true";
-      };
-      const pointerMode = () => {
-         delete document.documentElement.dataset["keyboard"];
       };
       let pressed: { button: HTMLButtonElement; pointerId: number } | null = null;
       const finishPress = () => {
@@ -186,16 +181,12 @@ export function usePressFeedback(): void {
       const settle = (event: AnimationEvent) => {
          if (event.animationName === "press-release" && event.target instanceof Element) event.target.classList.remove("pressing", "releasing");
       };
-      document.addEventListener("keydown", navigation, true);
-      document.addEventListener("pointerdown", pointerMode, true);
       document.addEventListener("pointerdown", press);
       window.addEventListener("pointerup", release, true);
       window.addEventListener("pointercancel", release, true);
       window.addEventListener("blur", finishPress);
       document.addEventListener("animationend", settle, true);
       return () => {
-         document.removeEventListener("keydown", navigation, true);
-         document.removeEventListener("pointerdown", pointerMode, true);
          document.removeEventListener("pointerdown", press);
          window.removeEventListener("pointerup", release, true);
          window.removeEventListener("pointercancel", release, true);

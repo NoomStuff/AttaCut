@@ -95,13 +95,26 @@
    visibility: hidden;
    pointer-events: none;
 }
+/* Controls float over the picture, so a tall scrim keeps them readable on bright footage. It
+   takes no clicks: the picture behind it still plays, pauses and holds for double speed. */
+.fullscreen-controls::before {
+   content: "";
+   position: absolute;
+   left: 0;
+   right: 0;
+   bottom: 0;
+   height: 168px;
+   background: linear-gradient(to top, #000000e6 0%, #000000b3 30%, #00000052 62%, #0000 100%);
+   pointer-events: none;
+}
 .fullscreen-bar {
+   position: relative;
    flex: 1;
    display: flex;
    flex-direction: column;
    gap: 9px;
    padding: 10px 14px 12px;
-   background: linear-gradient(to top, #06090bd0, #06090b00);
+   text-shadow: 0 1px 2px #000a;
 }
 .fullscreen-row {
    display: flex;
@@ -223,6 +236,196 @@
    top: auto;
    bottom: calc(100% + 10px);
 }
+/* What a click, key or wheel just did, over the video. Everything shares the play flash's
+   look: white on a dark disc or pill, so it reads over any picture in either theme. Skips sit
+   at the side they moved toward, volume and double speed along the top. */
+.player-flash,
+.player-skip-mark,
+.player-pill {
+   color: #fff;
+   background: #000000a6;
+}
+.player-flash,
+.player-skip,
+.player-pill {
+   position: absolute;
+   z-index: 11;
+   pointer-events: none;
+}
+.player-flash {
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   width: 64px;
+   height: 64px;
+   border-radius: 50%;
+   font-size: 24px;
+   animation: player-flash 520ms ease-out both;
+}
+.player-flash > svg,
+.player-skip-mark > svg {
+   filter: drop-shadow(0 1px 2px #0006);
+}
+@keyframes player-flash {
+   from {
+      opacity: 0.9;
+      transform: scale(0.85);
+   }
+   to {
+      opacity: 0;
+      transform: scale(1.45);
+   }
+}
+/* The mark pops in once per run of skips. Each skip nudges its arrows toward the move and
+   bumps the total, so a held key reads as one count climbing. */
+.player-skip {
+   top: 50%;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   gap: 8px;
+   /* The disc centers on the play flash's line; the amount hangs below it. */
+   transform: translate(-50%, -32px);
+}
+.player-skip[data-side="back"] {
+   left: 20%;
+   --nudge: -7px;
+}
+.player-skip[data-side="forward"] {
+   left: 80%;
+   --nudge: 7px;
+}
+.player-skip-mark {
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   width: 64px;
+   height: 64px;
+   border-radius: 50%;
+   font-size: 22px;
+   animation: player-skip-in 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.player-skip-mark > svg {
+   animation: player-skip-nudge 280ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.player-skip-amount {
+   color: #fff;
+   font-size: 14px;
+   font-weight: 700;
+   font-variant-numeric: tabular-nums;
+   text-shadow:
+      0 1px 3px #000c,
+      0 0 12px #0009;
+   animation: player-skip-bump 220ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+/* Leaving, the mark grows and fades the way the play flash does. */
+.player-skip.closing .player-skip-mark {
+   animation: player-skip-out 320ms ease-out forwards;
+}
+.player-skip.closing .player-skip-amount {
+   opacity: 0;
+   transition: opacity 180ms ease-out;
+}
+@keyframes player-skip-in {
+   from {
+      opacity: 0;
+      transform: scale(0.8);
+   }
+}
+@keyframes player-skip-out {
+   to {
+      opacity: 0;
+      transform: scale(1.35);
+   }
+}
+@keyframes player-skip-nudge {
+   from {
+      opacity: 0.4;
+      transform: translateX(var(--nudge));
+   }
+}
+@keyframes player-skip-bump {
+   from {
+      opacity: 0.6;
+      transform: scale(1.18);
+   }
+}
+.player-pill {
+   top: 16px;
+   left: 50%;
+   display: flex;
+   align-items: center;
+   gap: 9px;
+   height: 32px;
+   padding: 0 13px;
+   border-radius: 16px;
+   font-size: 12px;
+   font-weight: 700;
+   font-variant-numeric: tabular-nums;
+   transform: translateX(-50%);
+   animation: player-pill-in 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.player-pill.closing {
+   animation: player-pill-out 200ms ease-in forwards;
+}
+@keyframes player-pill-in {
+   from {
+      opacity: 0;
+      transform: translate(-50%, -8px) scale(0.94);
+   }
+}
+@keyframes player-pill-out {
+   to {
+      opacity: 0;
+      transform: translate(-50%, -4px) scale(0.97);
+   }
+}
+/* The level slides along a short track, so each step shows how far it went, not just a number. */
+.player-level-track {
+   position: relative;
+   width: 72px;
+   height: 4px;
+   border-radius: 2px;
+   overflow: hidden;
+   background: #ffffff3d;
+}
+.player-level-track > i {
+   position: absolute;
+   inset: 0;
+   border-radius: inherit;
+   background: #fff;
+   transform-origin: left;
+   transition: transform 150ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.player-level-value {
+   min-width: 4ch;
+   text-align: right;
+}
+/* Holding runs two arrows in turn, like a fast-forward that stays on until release. */
+.player-boost {
+   gap: 7px;
+   font-size: 13px;
+}
+.player-boost-arrows {
+   display: flex;
+   font-size: 9px;
+}
+.player-boost-arrows > svg {
+   animation: player-boost-run 900ms ease-in-out infinite;
+}
+.player-boost-arrows > svg:last-child {
+   margin-left: -1px;
+   animation-delay: 150ms;
+}
+@keyframes player-boost-run {
+   0%,
+   100% {
+      opacity: 0.35;
+   }
+   40% {
+      opacity: 1;
+   }
+}
 .player-excluded {
    position: absolute;
    left: 16px;
@@ -287,11 +490,31 @@
    .preview-loading.delayed,
    .preview-held-frame,
    .player-stage,
-   .player-stage video {
+   .player-stage video,
+   .player-level-track > i {
       transition: none;
    }
    .player-stage.fullscreen,
-   .player-stage.fullscreen-returning {
+   .player-stage.fullscreen-returning,
+   .player-skip-mark,
+   .player-skip-mark > svg,
+   .player-skip-amount,
+   .player-pill,
+   .player-boost-arrows > svg {
       animation: none;
+   }
+   /* Cues still appear and leave, just without moving. */
+   .player-flash {
+      animation: player-flash-still 520ms steps(1, end) both;
+   }
+   .player-skip.closing .player-skip-mark,
+   .player-pill.closing {
+      animation: none;
+      opacity: 0;
+   }
+}
+@keyframes player-flash-still {
+   to {
+      opacity: 0;
    }
 }

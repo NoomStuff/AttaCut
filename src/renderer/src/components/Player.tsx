@@ -1,6 +1,6 @@
 import { audioStreams } from "../../../shared/media";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { CSSProperties, RefObject } from "react";
+import type { CSSProperties, RefObject, WheelEvent as ReactWheelEvent } from "react";
 import type { Clip, MediaSource } from "../../../shared/types";
 import type { PlaybackClock } from "../playback/clock";
 import { useClock, useFrameTime } from "../playback/clock";
@@ -19,7 +19,31 @@ import { SpeedPicker } from "./SpeedPicker";
 import type { PlaybackSpeed } from "../playback/speed";
 import { AudioPicker } from "./AudioPicker";
 import { VolumeControl } from "./VolumeControl";
-import { faPlay, faPause, faBackwardStep, faForwardStep, faCompress } from "@fortawesome/free-solid-svg-icons";
+import type { PlayerFeedback } from "../playback/feedback";
+import { continuesStreak, formatSkip } from "../playback/feedback";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+   faPlay,
+   faPause,
+   faBackwardStep,
+   faForwardStep,
+   faCompress,
+   faBackward,
+   faForward,
+   faVolumeHigh,
+   faVolumeLow,
+   faVolumeOff,
+   faVolumeXmark,
+} from "@fortawesome/free-solid-svg-icons";
+
+/** How long a press on the video waits before it counts as holding, which plays at double speed. */
+const holdMs = 350;
+/** Wheel travel per volume step: one notch of a mouse wheel. */
+const wheelStep = 100;
+/** A pause in wheel input this long starts a new gesture, so trackpad leftovers don't step later. */
+const wheelGestureMs = 400;
+/** How long a skip or volume indicator stays up after its last change. */
+const cueMs = 650;
 
 export function Player({
    source,
@@ -47,6 +71,8 @@ export function Player({
    onSetFullscreen,
    onTogglePlay,
    trimming,
+   feedback,
+   onStepVolume,
 }: {
    source: MediaSource;
    state: PlaybackState;
@@ -73,6 +99,8 @@ export function Player({
    onSetFullscreen: (value: boolean) => void;
    onTogglePlay: () => void;
    trimming: boolean;
+   feedback: PlayerFeedback;
+   onStepVolume: (direction: -1 | 1) => void;
 }) {
    const { url, intent, phase, showWait: waitForPlay } = state;
    const preparing = phase === "preparing";
@@ -207,8 +235,10 @@ export function Player({
                playback.previewEnd = null;
             } else if (playback.previewEnd === null && latest.current.keptOnly && latest.current.clips.length) {
                const next = nextKeptTime(latest.current.clips, video.currentTime);
-               if (next === null) seeker.seek(latest.current.clips.at(-1)!.end);
-               else if (next !== video.currentTime) seeker.seek(next, true);
+               if (next === null) {
+                  seeker.seek(latest.current.clips.at(-1)!.end);
+                  playback.reachedEnd = true;
+               } else if (next !== video.currentTime) seeker.seek(next, true);
             }
          }
          if (!video.paused && video.readyState > 0 && !video.seeking && !seeker.pending) clock.set(video.currentTime);
@@ -246,6 +276,82 @@ export function Player({
    useEffect(() => {
       if (videoRef.current && audioIndices.length === 1) selectNativeAudio(videoRef.current, source, audioIndices);
    }, [source, audioIndices, videoRef]);
+   // Cues over the video for what a click, key or wheel just did. Skips and volume steps that
+   // arrive while one shows update it in place, so a held key reads as one climbing number.
+   const [flash, setFlash] = useState<{ id: number; playing: boolean } | null>(null);
+   const [skip, setSkip] = useState<{ streak: number; pulse: number; seconds: number } | null>(null);
+   const [level, setLevel] = useState<{ streak: number; percent: number } | null>(null);
+   // The skip mark leaves like the play flash, growing as it fades, which takes a little longer.
+   const skipPresence = useExitValue(skip, 320);
+   const levelPresence = useExitValue(level, 200);
+   useEffect(() => {
+      let streak: { id: number; seconds: number; at: number } | null = null;
+      let skipTimer = 0;
+      let levelTimer = 0;
+      let levelStreak = 0;
+      const unsubscribe = feedback.subscribe((cue) => {
+         const now = performance.now();
+         if (cue.kind === "play") {
+            setFlash({ id: now, playing: cue.playing });
+         } else if (cue.kind === "skip") {
+            streak = continuesStreak(streak, cue.seconds, now)
+               ? { id: streak!.id, seconds: streak!.seconds + cue.seconds, at: now }
+               : { id: now, seconds: cue.seconds, at: now };
+            const current = streak;
+            setSkip({ streak: current.id, pulse: now, seconds: current.seconds });
+            window.clearTimeout(skipTimer);
+            skipTimer = window.setTimeout(() => setSkip(null), cueMs);
+         } else {
+            if (!levelTimer) levelStreak = now;
+            const id = levelStreak;
+            setLevel({ streak: id, percent: cue.percent });
+            window.clearTimeout(levelTimer);
+            levelTimer = window.setTimeout(() => {
+               levelTimer = 0;
+               setLevel(null);
+            }, cueMs);
+         }
+      });
+      return () => {
+         unsubscribe();
+         window.clearTimeout(skipTimer);
+         window.clearTimeout(levelTimer);
+      };
+   }, [feedback]);
+   // Holding the video plays at double speed until release. The release is not a click.
+   const [boosted, setBoosted] = useState(false);
+   const boostPresence = useExitValue(boosted ? Math.max(2, speed) : null, 200);
+   const hold = useRef<{ timer: number; boosted: boolean; swallowClick: boolean }>({ timer: 0, boosted: false, swallowClick: false });
+   const speedRef = useRef(speed);
+   speedRef.current = speed;
+   const endHold = useCallback(() => {
+      window.clearTimeout(hold.current.timer);
+      hold.current.timer = 0;
+      if (!hold.current.boosted) return false;
+      hold.current.boosted = false;
+      setBoosted(false);
+      if (videoRef.current) videoRef.current.playbackRate = speedRef.current;
+      return true;
+   }, [videoRef]);
+   useEffect(() => () => void endHold(), [endHold, url]);
+   // The second click of a double-click that started somewhere else, like the file that opened
+   // this video, isn't meant for the player.
+   const press = useRef({ at: 0, paired: false });
+   const wheel = useRef({ travel: 0, at: 0 });
+   const wheelVolume = (event: ReactWheelEvent<HTMLDivElement>) => {
+      if (event.ctrlKey || event.metaKey || !event.deltaY || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      if (event.target instanceof Element && event.target.closest(".fullscreen-bar")) return;
+      const delta = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * 33 : event.deltaY;
+      const now = performance.now();
+      // Reversing direction or pausing starts over, so a step never needs undoing first.
+      if (now - wheel.current.at > wheelGestureMs || Math.sign(wheel.current.travel) !== Math.sign(delta)) wheel.current.travel = 0;
+      wheel.current.at = now;
+      wheel.current.travel += delta;
+      while (Math.abs(wheel.current.travel) >= wheelStep) {
+         onStepVolume(wheel.current.travel < 0 ? 1 : -1);
+         wheel.current.travel -= Math.sign(wheel.current.travel) * wheelStep;
+      }
+   };
    const stageClass = [
       "player-stage",
       !frameReady && !frameHeld && !failed ? "pending" : "",
@@ -263,12 +369,45 @@ export function Player({
             if (event.target === event.currentTarget && event.animationName === "fullscreen-return") onFullscreenReturnEnd();
          }}
          onPointerMove={inFullscreen ? wake : undefined}
-         onClick={() => {
+         // The whole stage answers, letterboxing included: a click plays or pauses, a double-click
+         // toggles fullscreen, and holding plays at double speed until released.
+         onPointerDown={(event) => {
+            if (event.button !== 0 || (event.target instanceof Element && event.target.closest(".fullscreen-bar"))) return;
+            const now = performance.now();
+            press.current = { at: now, paired: now - press.current.at < 500 };
+            hold.current.swallowClick = false;
+            const video = videoRef.current;
+            if (!video || video.paused) return;
+            window.clearTimeout(hold.current.timer);
+            hold.current.timer = window.setTimeout(() => {
+               hold.current.timer = 0;
+               if (video.paused) return;
+               hold.current.boosted = true;
+               video.playbackRate = Math.max(2, speedRef.current);
+               setBoosted(true);
+            }, holdMs);
+         }}
+         onPointerUp={() => {
+            if (endHold()) hold.current.swallowClick = true;
+         }}
+         onPointerCancel={endHold}
+         onPointerLeave={endHold}
+         onDragStart={endHold}
+         onWheel={wheelVolume}
+         onClick={(event) => {
             if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            if (hold.current.swallowClick) {
+               hold.current.swallowClick = false;
+               return;
+            }
+            if (event.detail > 1 && !press.current.paired) return;
             onTogglePlay();
+            feedback.show({ kind: "play", playing: playback.get().intent !== "paused" });
             if (inFullscreen) wake();
          }}
-         onDoubleClick={inFullscreen ? () => onSetFullscreen(false) : () => onSetFullscreen(true)}
+         onDoubleClick={() => {
+            if (press.current.paired) onSetFullscreen(!inFullscreen);
+         }}
       >
          <video
             ref={videoRef}
@@ -293,6 +432,7 @@ export function Player({
             onEnded={() => {
                onPlaying(false);
                setWaitingForPlayback(false);
+               if (playback.previewEnd === null) playback.reachedEnd = true;
             }}
             onLoadedData={() => {
                setWaitingForPlayback(false);
@@ -337,6 +477,59 @@ export function Player({
                <span className="spinner" aria-hidden="true" />
                <span>{blockedPresence.value}</span>
             </div>
+         )}
+         {flash && (
+            <span key={flash.id} className="player-flash" aria-hidden="true" onAnimationEnd={() => setFlash(null)}>
+               <FontAwesomeIcon icon={flash.playing ? faPlay : faPause} />
+            </span>
+         )}
+         {skipPresence.value && (
+            <span
+               key={skipPresence.value.streak}
+               className={`player-skip${skipPresence.closing ? " closing" : ""}`}
+               data-side={skipPresence.value.seconds < 0 ? "back" : "forward"}
+               aria-hidden="true"
+            >
+               <span className="player-skip-mark">
+                  <FontAwesomeIcon key={skipPresence.value.pulse} icon={skipPresence.value.seconds < 0 ? faBackward : faForward} />
+               </span>
+               <span key={skipPresence.value.pulse} className="player-skip-amount">
+                  {formatSkip(skipPresence.value.seconds)}
+               </span>
+            </span>
+         )}
+         {levelPresence.value && !boostPresence.value && (
+            <span key={levelPresence.value.streak} className={`player-pill${levelPresence.closing ? " closing" : ""}`} aria-hidden="true">
+               <FontAwesomeIcon
+                  icon={
+                     levelPresence.value.percent === 0
+                        ? faVolumeXmark
+                        : levelPresence.value.percent < 33
+                          ? faVolumeOff
+                          : levelPresence.value.percent < 67
+                            ? faVolumeLow
+                            : faVolumeHigh
+                  }
+                  fixedWidth
+               />
+               <span className="player-level-track">
+                  <i style={{ transform: `scaleX(${levelPresence.value.percent / 100})` }} />
+               </span>
+               <span className="player-level-value">{levelPresence.value.percent}%</span>
+            </span>
+         )}
+         {boostPresence.value && (
+            <span
+               className={`player-pill player-boost${boostPresence.closing ? " closing" : ""}`}
+               role="status"
+               aria-label={`Playing at ${boostPresence.value}× speed`}
+            >
+               <span className="player-boost-arrows" aria-hidden="true">
+                  <FontAwesomeIcon icon={faPlay} />
+                  <FontAwesomeIcon icon={faPlay} />
+               </span>
+               {boostPresence.value}×
+            </span>
          )}
          {inFullscreen && (
             <div className={`fullscreen-controls${controlsShown ? "" : " hidden"}`}>

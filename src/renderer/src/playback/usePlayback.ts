@@ -9,6 +9,7 @@ import { PlaybackSeeker } from "./seeker";
 import { AudioScrubber } from "./scrubber";
 import { PlaybackController } from "./controller";
 import { PlaybackClock } from "./clock";
+import { PlayerFeedback, steppedVolume } from "./feedback";
 import { errorText, isCancellation } from "../lib/errors";
 import { afterIdle } from "../lib/prefetch";
 import { PreviewStream, streamingSupported } from "./stream";
@@ -51,6 +52,19 @@ export function usePlayback({
       videoRef.current?.pause();
    };
    const [scrubber] = useState(() => new AudioScrubber());
+   const [feedback] = useState(() => new PlayerFeedback());
+   // Read from a ref, so steps faster than a render, like a held key, each build on the last.
+   const level = useRef({ volume: preferences.volume, muted });
+   level.current = { volume: preferences.volume, muted };
+   /** Steps volume by 5% from a key or the wheel, and shows the new level over the video. */
+   const stepVolume = (direction: -1 | 1) => {
+      const next = steppedVolume(level.current, direction);
+      if (!next) return;
+      level.current = next;
+      setMuted(next.muted);
+      setPreferences((current) => ({ ...current, volume: next.volume }));
+      feedback.show({ kind: "volume", percent: next.muted ? 0 : Math.round(next.volume * 100) });
+   };
    // Each source/selection owns a small PCM working set. Old identities are cleared immediately.
    useEffect(() => {
       scrubber.configure(
@@ -204,6 +218,8 @@ export function usePlayback({
       getPreviewTime: () => clock.previewTime(videoRef.current, seeker.pending),
       seeker,
       scrubber,
+      feedback,
+      stepVolume,
       preparePreview,
       abandonStream,
       changeAudio,

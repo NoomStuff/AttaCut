@@ -3,6 +3,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { flushSync } from "react-dom";
 import type { MediaSource, ExportJob, SavedSession } from "../../../shared/types";
+import type { Clip } from "../../../shared/editing";
 import { defaultPreferences } from "../../../shared/defaults";
 import { encodeSession } from "../../../shared/session-codec";
 import { isProjectPath, projectHasChanges, discardProjectChanges } from "../../../shared/project";
@@ -14,6 +15,18 @@ import { errorText } from "../lib/errors";
 import { usePlayback } from "../playback/usePlayback";
 import { resolveAudioSelection } from "../playback/audioSelection";
 import { nativeAudioCodecs, needsConvertedVideo } from "../playback/codecs";
+
+/**
+ * What the editor will show once a file finishes opening, as far as it is known already. A new
+ * video starts as one clip across the whole of it. A restored session or a project has its cuts.
+ */
+export interface OpeningEditor {
+   name: string;
+   /** The source's length, when a saved session recorded it. */
+   duration: number | null;
+   /** Null while a project's cuts are still being read. */
+   cuts: "whole" | { clips: Clip[]; selectedId: string | null } | null;
+}
 
 export type EditorNotice = { text: string; tone: "error" | "warning" | "info" };
 
@@ -40,6 +53,7 @@ export function useEditorSession({
    const [platform, setPlatform] = useState("win32");
    const [version, setVersion] = useState("");
    const [loading, setLoading] = useState(false);
+   const [opening, setOpening] = useState<OpeningEditor | null>(null);
    const [restore, setRestore] = useState<SavedSession | null>(null);
    const [project, setProject] = useState<SavedSession["project"]>();
    const projectRef = useRef(project);
@@ -126,6 +140,22 @@ export function useEditorSession({
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       const sequence = ++openSequence.current;
       playback.invalidate();
+      const name = path.replaceAll("\\", "/").split("/").at(-1) ?? path;
+      const project = !saved && isProjectPath(path);
+      setOpening({
+         name,
+         duration: saved?.duration ?? null,
+         cuts: saved ? { clips: saved.clips, selectedId: saved.selectedId } : project ? null : "whole",
+      });
+      // Reading a project file is quick next to probing its video, so its cuts show while that runs.
+      if (project)
+         void window.desktop.peekProject(path).then(
+            (outline) => {
+               if (sequence !== openSequence.current) return;
+               setOpening((current) => current && { ...current, duration: outline.duration, cuts: { clips: outline.clips, selectedId: outline.selectedId } });
+            },
+            () => undefined
+         );
       setLoading(true);
       setError(null);
       onWorkspaceReset("open");
@@ -315,6 +345,7 @@ export function useEditorSession({
       projectDirty,
       projectName,
       loading,
+      opening,
       savingProject,
       player,
       openPath,

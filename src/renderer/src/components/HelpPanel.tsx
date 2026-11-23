@@ -72,6 +72,7 @@ const topics: { id: HelpTab; label: string; body: ReactNode }[] = [
                   Play normally runs through the whole recording. The "Play kept clips only" setting skips the gaps, so playback shows only what will be
                   exported. You can also use <Shortcut command="preview" /> to preview only the current clip.
                </li>
+               <li>Hold the video to watch at 2× until you let go. Scrolling over it changes the volume.</li>
                <li>
                   Most actions have a keyboard shortcut and you can rebind all of them. Press <Shortcut command="shortcuts" /> to open the list.
                </li>

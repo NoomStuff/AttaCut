@@ -265,22 +265,15 @@
    inset: 8px 14px;
    display: flex;
    flex-direction: column;
-   gap: 8px;
    background: var(--background);
    z-index: 10;
 }
-.skeleton {
-   background: var(--surface-hover);
-   animation: skeleton-pulse 2s ease-in-out infinite alternate;
-}
-@keyframes skeleton-pulse {
-   to {
-      opacity: 0.85;
-   }
-}
+/* Matches the player while its first frame loads, so the swap to it changes nothing. */
 .loading-preview {
    flex: 1;
    min-height: 0;
+   background: var(--surface-hover);
+   border: 1px solid #ffffff05;
    border-radius: 9px;
    display: grid;
    place-items: center;
@@ -298,7 +291,6 @@
    z-index: 100;
 }
 @media (prefers-reduced-motion: reduce) {
-   .skeleton,
    .spinner {
       animation: none;
    }

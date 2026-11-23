@@ -168,6 +168,10 @@ export function registerIpc({
       remember(source.path, source, "video");
       return source;
    });
+   handle("project:peek", async (path) => {
+      const { session } = await readProject(path);
+      return { clips: session.clips, selectedId: session.selectedId, duration: session.duration ?? null };
+   });
    handle("project:open", async (path) => {
       const sequence = openSequence;
       const ensureCurrent = () => {

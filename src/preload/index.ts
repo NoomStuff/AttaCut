@@ -28,6 +28,7 @@ const api: DesktopApi = {
    chooseSource: () => invoke("source:choose"),
    openSource: (path) => invoke("source:open", path),
    openProject: (path) => invoke("project:open", path),
+   peekProject: (path) => invoke("project:peek", path),
    recentFiles: () => invoke("recent:list"),
    removeRecentFile: (path) => invoke("recent:remove", path),
    clearRecentFiles: () => invoke("recent:clear"),

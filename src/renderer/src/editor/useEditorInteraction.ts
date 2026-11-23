@@ -69,7 +69,12 @@ export function useEditorInteraction({
          refreshPriority();
       }
       playback.previewEnd = null;
+      // With Keep playing on, a seek after playback ran out plays again, like a video site. Every
+      // other seek keeps the current state, so a pause the user made stays paused.
+      const resume = preferences.keepPlaying && playback.reachedEnd && !trimmingRef.current && !!videoRef.current?.paused && target < source.duration - 0.05;
+      playback.reachedEnd = false;
       seeker.seek(target, preferences.keepPlaying, glide, side ? (side === "end" ? -1 : 0) : undefined);
+      if (resume) playback.request(true);
       // Scrub bursts only belong to paused seeking; playing video provides its own audio.
       if (videoRef.current?.paused && preferences.audioScrub) scrubber.scrub(target, muted ? 0 : preferences.volume, side);
    };
@@ -104,6 +109,7 @@ export function useEditorInteraction({
          const actual = next.clips.find((item) => item.id === clip.id)![side];
          if (actual === clip[side]) return actual;
          animateTrim();
+         playback.reachedEnd = false;
          pendingBoundary.current = actual;
          commit(next);
          seeker.seek(actual, preferences.keepPlaying, false, side === "end" ? -1 : 0);

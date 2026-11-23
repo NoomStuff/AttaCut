@@ -101,6 +101,12 @@ test("kept playback", async ({ launchApp, profile }) => {
    await at(11);
    await clickTime(16);
    await at(13 - 1 / 30, 13, true);
+   // Stopped at the end, a seek plays again, like a video site. A pause the user made stays paused.
+   await clickTime(4);
+   await at(6);
+   await page.getByRole("button", { name: "Pause", exact: true }).click();
+   await clickTime(12);
+   await at(11.9, 12.1, true);
 
    // Play can arrive before a queued seek has decoded. It must use the requested position.
    await page.mouse.move(bar.x + (bar.width * 4) / 18, bar.y + 36);
