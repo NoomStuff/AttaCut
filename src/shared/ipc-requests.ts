@@ -25,6 +25,7 @@ export const ipcRequestSchemas = {
    "source:choose": z.void(),
    "source:open": z.string().min(1),
    "project:open": z.string().min(1),
+   "project:peek": z.string().min(1),
    "recent:list": z.void(),
    "recent:remove": z.string().min(1),
    "recent:clear": z.void(),

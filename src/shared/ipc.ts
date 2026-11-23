@@ -12,6 +12,7 @@ interface IpcResponses {
    "source:choose": string | null;
    "source:open": Result<"openSource">;
    "project:open": Result<"openProject">;
+   "project:peek": Result<"peekProject">;
    "recent:list": Result<"recentFiles">;
    "recent:remove": void;
    "recent:clear": void;

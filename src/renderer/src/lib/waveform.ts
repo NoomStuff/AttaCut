@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { MediaSource } from "../../../shared/types";
 import { waveformResolution } from "../../../shared/media";
@@ -6,12 +6,14 @@ import type { PlaybackSeeker } from "../playback/seeker";
 import { WaveformRenderer } from "./waveform-renderer";
 import { afterIdle } from "./prefetch";
 export type Waveform = WaveformRenderer;
+/** Finished waveforms kept per source. A source rarely has more audio tracks to mix than this. */
+const cachedSelections = 6;
 
 /**
  * Audio min/max peaks of the active source for the timeline waveform, following the
  * playback audio selection. Decoding waits for the preview's first frame and then runs in
- * the background, streaming peak ranges back as they are done; results stay cached per
- * source and track selection until they change.
+ * the background, streaming peak ranges back as they are done. Finished waveforms stay in
+ * memory for the open source, so switching back to a track selection shows it at once.
  */
 export function useWaveform({
    source,
@@ -33,11 +35,35 @@ export function useWaveform({
    const [waveformState, setWaveformState] = useState<{ signature: string; value: Waveform } | null>(null);
    const tracks = [...audioIndices].sort((a, b) => a - b).join(",");
    const signature = source && tracks && source.duration > 0 ? `${source.id}:${tracks}:${decodeMediaId}` : null;
+   // The peaks don't depend on what they were decoded from, so a finished waveform answers its
+   // selection even while a new preview prepares.
+   const selection = source && tracks ? `${source.id}:${tracks}` : null;
+   const finished = useRef(new Map<string, WaveformRenderer>());
+   // Peaks can reach tens of megabytes for long recordings: drop them with their source, when
+   // waveforms are turned off, and past a few selections.
+   const sourceId = source?.id;
+   useEffect(() => {
+      const cache = finished.current;
+      const drop = () => {
+         for (const renderer of cache.values()) renderer.dispose();
+         cache.clear();
+      };
+      if (!enabled) drop();
+      return drop;
+   }, [sourceId, enabled]);
    useEffect(() => {
       const setWaveform = (value: Waveform | null) => setWaveformState(value && signature ? { signature, value } : null);
-      if (!signature || !source || !enabled) {
-         // Peaks can reach tens of megabytes for long recordings; drop them once unused.
+      if (!signature || !selection || !source || !enabled) {
          setWaveform(null);
+         return;
+      }
+      const cache = finished.current;
+      const cached = cache.get(selection);
+      if (cached) {
+         // Most recently used last, so eviction takes the oldest.
+         cache.delete(selection);
+         cache.set(selection, cached);
+         setWaveform(cached);
          return;
       }
       // No preview to decode from yet: recordings that need a transcode get their waveform
@@ -67,6 +93,8 @@ export function useWaveform({
          requestRegion(Math.max(0, video.currentTime - 15), Math.min(source.duration, video.currentTime + 15));
       };
       let renderer: WaveformRenderer | null = null;
+      // A finished renderer belongs to the cache, which disposes it.
+      let kept = false;
       const video = videoRef.current;
       let pointerHeld = false;
       let wheelActive = false;
@@ -185,7 +213,16 @@ export function useWaveform({
             const result = await window.desktop.waveformStart({ sourceId: source.id, requestId, streamIndices: tracks.split(",").map(Number), decodeMediaId });
             if (cancelled) return;
             unsubscribe();
-            if (result?.rate === rate && result.buckets === done && done === total) renderer.complete();
+            if (result?.rate === rate && result.buckets === done && done === total) {
+               renderer.complete();
+               cache.set(selection, renderer);
+               kept = true;
+               for (const [key, old] of cache) {
+                  if (cache.size <= cachedSelections) break;
+                  cache.delete(key);
+                  old.dispose();
+               }
+            }
          } catch {
             unsubscribe();
             // A waveform is decoration: a failed decode leaves it partial without an error,
@@ -205,7 +242,7 @@ export function useWaveform({
          cancelled = true;
          unsubscribe();
          cancelIdle();
-         renderer?.dispose();
+         if (!kept) renderer?.dispose();
          unwatchSeek();
          window.clearTimeout(wheelTimer);
          window.clearTimeout(regionTimer);
@@ -228,6 +265,6 @@ export function useWaveform({
          document.removeEventListener("wheel", wheel);
          if (started) void window.desktop.cancelWaveform(requestId).catch(() => undefined);
       };
-   }, [source, enabled, signature, tracks, decodeMediaId, videoRef, seeker]);
+   }, [source, enabled, signature, selection, tracks, decodeMediaId, videoRef, seeker]);
    return enabled && waveformState?.signature === signature ? waveformState.value : null;
 }

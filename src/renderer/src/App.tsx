@@ -383,7 +383,10 @@ export default function App() {
                )}
                {(loading || !ready) && (
                   <div className="loading-overlay" role="status" aria-label={loading ? "Opening video" : "Starting"}>
-                     <LoadingEditor label={loading ? "Opening..." : "Starting..."} />
+                     <LoadingEditor
+                        label={loading ? `Opening ${session.opening?.name ?? "video"}...` : "Starting..."}
+                        opening={loading ? session.opening : null}
+                     />
                   </div>
                )}
             </main>

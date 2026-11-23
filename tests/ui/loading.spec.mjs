@@ -30,7 +30,7 @@ test("opening frame export cancels pending playback while a preview is preparing
    await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
 });
 
-test("opening shows a skeleton, then permits editing while preview loads", async ({ launchApp, profile }) => {
+test("opening shows the editor it will become, then permits editing while preview loads", async ({ launchApp, profile }) => {
    const app = await launchApp(profile, "");
    const page = await app.firstWindow();
    await page.getByRole("button", { name: "Open file", exact: true }).first().waitFor();
@@ -46,6 +46,10 @@ test("opening shows a skeleton, then permits editing while preview loads", async
    await app.evaluate(({ BrowserWindow }, path) => BrowserWindow.getAllWindows()[0].webContents.send("app:open-file", path), resolve("work/fixture.mp4"));
    await expect(page.getByRole("status", { name: "Opening video", exact: true })).toBeVisible();
    await expect(page.locator(".loading-editor-transport .play-button")).toBeVisible();
+   // A new video will be one clip across all of it, so that's what shows while it opens.
+   await expect(page.locator(".loading-preview")).toHaveText("Opening fixture.mp4...");
+   await expect(page.locator(".loading-editor-dock .clip-range.selected")).toHaveCount(1);
+   await expect(page.locator(".loading-editor-dock .selected-clip-label")).toHaveText("Clip");
    await page.screenshot({ path: "test-results/loading-source.png" });
    await expect.poll(() => app.evaluate(() => globalThis.attacutTestIpc.waiting("opening"))).toBe(true);
    await app.evaluate(() => globalThis.attacutTestIpc.release("opening"));

@@ -281,7 +281,8 @@ export function Player({
    const [flash, setFlash] = useState<{ id: number; playing: boolean } | null>(null);
    const [skip, setSkip] = useState<{ streak: number; pulse: number; seconds: number } | null>(null);
    const [level, setLevel] = useState<{ streak: number; percent: number } | null>(null);
-   const skipPresence = useExitValue(skip, 200);
+   // The skip mark leaves like the play flash, growing as it fades, which takes a little longer.
+   const skipPresence = useExitValue(skip, 320);
    const levelPresence = useExitValue(level, 200);
    useEffect(() => {
       let streak: { id: number; seconds: number; at: number } | null = null;
@@ -319,6 +320,7 @@ export function Player({
    }, [feedback]);
    // Holding the video plays at double speed until release. The release is not a click.
    const [boosted, setBoosted] = useState(false);
+   const boostPresence = useExitValue(boosted ? Math.max(2, speed) : null, 200);
    const hold = useRef<{ timer: number; boosted: boolean; swallowClick: boolean }>({ timer: 0, boosted: false, swallowClick: false });
    const speedRef = useRef(speed);
    speedRef.current = speed;
@@ -488,12 +490,16 @@ export function Player({
                data-side={skipPresence.value.seconds < 0 ? "back" : "forward"}
                aria-hidden="true"
             >
-               <FontAwesomeIcon key={skipPresence.value.pulse} icon={skipPresence.value.seconds < 0 ? faBackward : faForward} />
-               <span>{formatSkip(skipPresence.value.seconds)}</span>
+               <span className="player-skip-mark">
+                  <FontAwesomeIcon key={skipPresence.value.pulse} icon={skipPresence.value.seconds < 0 ? faBackward : faForward} />
+               </span>
+               <span key={skipPresence.value.pulse} className="player-skip-amount">
+                  {formatSkip(skipPresence.value.seconds)}
+               </span>
             </span>
          )}
-         {levelPresence.value && !boosted && (
-            <span key={levelPresence.value.streak} className={`player-badge${levelPresence.closing ? " closing" : ""}`} aria-hidden="true">
+         {levelPresence.value && !boostPresence.value && (
+            <span key={levelPresence.value.streak} className={`player-pill${levelPresence.closing ? " closing" : ""}`} aria-hidden="true">
                <FontAwesomeIcon
                   icon={
                      levelPresence.value.percent === 0
@@ -504,14 +510,25 @@ export function Player({
                             ? faVolumeLow
                             : faVolumeHigh
                   }
+                  fixedWidth
                />
-               <span>{levelPresence.value.percent}%</span>
+               <span className="player-level-track">
+                  <i style={{ transform: `scaleX(${levelPresence.value.percent / 100})` }} />
+               </span>
+               <span className="player-level-value">{levelPresence.value.percent}%</span>
             </span>
          )}
-         {boosted && (
-            <span className="player-badge" role="status">
-               <FontAwesomeIcon icon={faForward} />
-               {Math.max(2, speed)}× speed
+         {boostPresence.value && (
+            <span
+               className={`player-pill player-boost${boostPresence.closing ? " closing" : ""}`}
+               role="status"
+               aria-label={`Playing at ${boostPresence.value}× speed`}
+            >
+               <span className="player-boost-arrows" aria-hidden="true">
+                  <FontAwesomeIcon icon={faPlay} />
+                  <FontAwesomeIcon icon={faPlay} />
+               </span>
+               {boostPresence.value}×
             </span>
          )}
          {inFullscreen && (

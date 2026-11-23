@@ -1,6 +1,6 @@
 import type { FrameRequest, WaveformRequest } from "./media-requests";
 import type { Preferences } from "./preferences";
-import type { SavedSession } from "./editing";
+import type { ProjectOutline, SavedSession } from "./editing";
 import type { SessionInput } from "./session-codec";
 import type { DetectedRange, MediaSource, RangeDetection, ScrubAudio } from "./media";
 import type { RecentEntry } from "./recent";
@@ -43,6 +43,8 @@ export interface DesktopApi {
    chooseSource(): Promise<string | null>;
    openSource(path: string): Promise<MediaSource>;
    openProject(path: string): Promise<{ source: MediaSource; session: SavedSession } | null>;
+   /** A project's cuts and length, read without probing its video, for the loading editor. */
+   peekProject(path: string): Promise<ProjectOutline>;
    /** Recently opened videos and projects, newest first, with files that have since moved flagged. */
    recentFiles(): Promise<RecentEntry[]>;
    removeRecentFile(path: string): Promise<void>;

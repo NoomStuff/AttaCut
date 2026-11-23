@@ -12,6 +12,7 @@ export function sessionFor(
       path: source.path,
       size: source.size,
       modified: source.modified,
+      duration: source.duration,
       clips: editor.document.clips,
       selectedId: editor.document.selectedId,
       past: editor.past,

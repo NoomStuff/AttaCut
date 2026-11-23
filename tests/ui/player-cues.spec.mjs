@@ -8,7 +8,7 @@ test("skips, volume steps and play toggles show what actually changed over the v
    await waitForVideo(page);
    const video = page.locator("video");
    const skip = page.locator(".player-skip");
-   const badge = page.locator(".player-badge");
+   const badge = page.locator(".player-pill");
 
    // Back at 0:00 the playhead can't move, so nothing shows.
    await page.keyboard.press("ArrowLeft");
@@ -67,7 +67,7 @@ test("skips, volume steps and play toggles show what actually changed over the v
    await page.mouse.move(stage.x + stage.width / 2, stage.y + stage.height / 2);
    await page.mouse.down();
    await expect(video).toHaveJSProperty("playbackRate", 2);
-   await expect(badge).toHaveText("2× speed");
+   await expect(badge).toHaveText("2×");
    await page.mouse.up();
    await expect(video).toHaveJSProperty("playbackRate", 1);
    await expect(video).toHaveJSProperty("paused", false);

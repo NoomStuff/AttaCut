@@ -25,6 +25,8 @@ export const savedSessionSnapshotSchema = z
       path: z.string(),
       size: z.number(),
       modified: z.number(),
+      /** The source's length, so a loading editor can lay the cuts out before the probe returns. */
+      duration: z.number().finite().positive().optional(),
       ...savedDocumentShape,
       project: z
          .object({
@@ -42,3 +44,10 @@ export const savedSessionSchema = savedSessionSnapshotSchema.safeExtend({
    future: z.array(savedDocumentSchema).max(undoLimit).default([]),
 });
 export type SavedSession = z.infer<typeof savedSessionSchema>;
+/** What a project file says about its timeline, read without opening its video. */
+export interface ProjectOutline {
+   clips: Clip[];
+   selectedId: string | null;
+   /** Null for projects saved before the length was recorded. */
+   duration: number | null;
+}

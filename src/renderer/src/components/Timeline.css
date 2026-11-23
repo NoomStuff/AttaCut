@@ -398,7 +398,8 @@
    left: 50%;
    top: -3px;
    transform: translateX(-50%);
-   z-index: 8;
+   /* Under the playhead, which stays visible when it passes the middle. */
+   z-index: 6;
    display: flex;
    gap: 7px;
    padding: 3px 9px;
