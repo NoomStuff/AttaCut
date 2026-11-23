@@ -10,6 +10,7 @@
    "author": "NoomStuff",
    "scripts": {
       "dev": "bun run build:icons && bun scripts/dev.ts",
+      "app": "bun scripts/agent-app.ts",
       "build": "bun run build:icons && bun run typecheck && electron-vite build",
       "build:icons": "bun scripts/build-icons.ts",
       "typecheck": "tsc --noEmit",
@@ -35,7 +36,8 @@
       "test:native": "bun scripts/native-smoke.ts",
       "test:ui": "bun scripts/desktop-tests.ts ui",
       "test:playback": "bun scripts/desktop-tests.ts playback",
-      "test:all": "bun scripts/desktop-tests.ts all"
+      "test:all": "bun scripts/desktop-tests.ts all",
+      "test:local": "bun scripts/local-desktop-tests.ts"
    },
    "build": {
       "appId": "dev.attacut.app",

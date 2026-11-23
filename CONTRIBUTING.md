@@ -9,7 +9,7 @@ bun install
 bun run dev
 ```
 
-Development and integration tests use the local FFmpeg binaries. Set `FFMPEG_PATH` and `FFPROBE_PATH` if they are not on your PATH.
+`bun run dev` uses FFmpeg from your PATH. `bun run test:media` and `bun run test:local` download a pinned FFmpeg into `work/` on first use. Set `FFMPEG_PATH` and `FFPROBE_PATH` to choose other binaries for either.
 
 ## Common commands
 
@@ -22,6 +22,7 @@ Development and integration tests use the local FFmpeg binaries. Set `FFMPEG_PAT
 | `bun run test:playback`  | Run media tests and packaged playback checks  |
 | `bun run test:all`       | Run unit, media, UI, and playback tests       |
 | `bun run test:native`    | Run the opt-in native interaction smoke test  |
+| `bun run test:local`     | Run UI tests on a private display (Linux)     |
 | `bun run format`         | Format the repository                         |
 | `bun run verify`         | Check formatting, lint, unit tests, and build |
 | `bun run verify:release` | Run the release checks for the current host   |
