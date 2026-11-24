@@ -121,6 +121,7 @@ test("a paused buffering event cannot leave the waveform suspended", async ({ la
 });
 
 test("a paused waveform can be replaced, and old cancellation cannot stop its replacement", async ({ launchApp, profile }) => {
+   await preferences(profile, { waveform: false });
    const app = await launchApp(profile, resolve("work/fixture.mp4"));
    const page = await app.firstWindow();
    await waitForVideo(page);
