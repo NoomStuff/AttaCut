@@ -43,6 +43,8 @@ internal sealed class Splash : Form
     private readonly string launchExe;
     private readonly bool isLauncher;
     private readonly Timer spinTimer;
+    private readonly Timer doneTimer;
+    private readonly Timer lifetime;
     private float angle;
     private int childExitCode;
 
@@ -82,12 +84,12 @@ internal sealed class Splash : Form
             if (child == null) childExitCode = 1;
         }
 
-        Timer lifetime = new Timer();
+        lifetime = new Timer();
         lifetime.Interval = LifetimeMs;
         lifetime.Tick += delegate { Close(); };
         if (child == null) lifetime.Start(); // Only for the orphan-prone wait and update modes.
 
-        Timer doneTimer = new Timer();
+        doneTimer = new Timer();
         doneTimer.Interval = 40;
         doneTimer.Tick += delegate
         {
@@ -178,6 +180,19 @@ internal sealed class Splash : Form
             }
             if (created.Process != IntPtr.Zero) NativeLaunch.CloseHandle(created.Process);
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            // The launcher's STA wait for the app pumps messages, so live timers would tick all session.
+            if (spinTimer != null) spinTimer.Dispose();
+            if (doneTimer != null) doneTimer.Dispose();
+            if (lifetime != null) lifetime.Dispose();
+            if (logo != null) logo.Dispose();
+        }
+        base.Dispose(disposing);
     }
 
     private int Scaled(int value)
