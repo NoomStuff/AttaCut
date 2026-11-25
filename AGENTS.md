@@ -2,13 +2,9 @@
 
 We are building a fast, cross-platform video trimmer for getting clips out of a recording with as little effort as possible.
 
-AttaCut combines accurate cutting with the quick trim experience of Windows Photos while preserving source quality wherever possible.
-
-This app should combine accurate, efficient cutting with a compact interface that feels immediate.
-
 ## What we optimize for
 
-1. **Correctness.** The exported video must match the chosen clips and original video, with working playback and synchronized audio. Preserve the source and as much of its media as possible, including all its content and metadata. A fast export with the wrong content is a failure.
+1. **Correctness.** The exported video must match the chosen clips and original video. Preserve the source and as much of its media as possible, including all its content and metadata.
 2. **Speed.** Opening a recording, finding a moment, trimming, and exporting should be a short visit. Absolutely minimise load times and preload details when needed without blocking the user. Prefer a happy path where silent loads can happen in the background as the user gets instant feedback.
 3. **Polish.** The preview gets the space. Controls are compact, clear, and pleasant to use. Motion should fluent while explaining a change or providing feedback without making editing lag.
 
@@ -20,9 +16,9 @@ This app should combine accurate, efficient cutting with a compact interface tha
 
 ## Scope
 
-The core job is extracting one or more kept ranges (referred to as "Clips") from one source video. Preserve the selected content, timing, audio tracks, color, and applicable metadata. Format support means the result plays correctly and retains those properties, not merely that export finishes.
+The core job is extracting one or more kept ranges (referred to as "Clips") from one source video. Preserve the selected content, timing, audio tracks, color, and applicable metadata.
 
-Multi-source projects, effects, transitions, clip rearrangement, and a general editing suite are outside the current scope. Growth needs a reason tied to the quick trimming workflow. Maintainability matters because improving one interaction should not destabilize another.
+Multi-source projects, effects, transitions, clip rearrangement, and a general editing suite are outside the current scope. Growth needs a reason tied to the quick trimming workflow.
 
 ## Cutting expectations
 
@@ -32,12 +28,12 @@ Re-encoding a small section near a boundary is acceptable when needed for accura
 
 ## Versioning
 
-Pushing to main with a new version number in `package.json` triggers a release via GitHub Actions. Bump it appropriately for the changes made, not every change needs a new version. Follow ups should not bump again unless pushes to main have been made since. Don't blindly push without permission from the user.
-
-Every push to main also builds and verifies all five targets as a private candidate. To release, push the changes first, wait for that commit's `Release candidate` status to pass, then run `bun run release <major|minor|patch>`. It refuses without a passing candidate and pushes a commit that changes only the version, which publishes after building and smoke-testing the packages. A version bump in the same commit as other changes still releases, but runs every suite again.
+Every push to main builds and verifies all five targets as a private candidate. To release, push the changes first, wait for that commit's `Release candidate` status to pass, then run `bun run release <major|minor|patch>`.
 
 Always run `bun run format` and `bun run verify` after a turn with many file edits. For changes to export, playback, packaging, or release workflows, run `bun run verify:release` too. Fix local failures before pushing, then fix isolated check failures before publication.
 
-After a version bump, watch the release through completion on all five targets. If an unpublished release fails, rerun the failed jobs or fix and retry the same version. The release workflow publishes automatically after every required check passes. Release notes and custom attempt counts are not required. Create the final tag only when publishing the verified commit. Public releases and tags are immutable, so fixes after publication require a new version. A release carries the app downloads under versionless names, the updater feeds and the installer blockmap.
+After a version bump, watch the release through completion on all five targets. If an unpublished release fails, rerun the failed jobs or fix and retry the same version. The release workflow publishes automatically after every required check passes.
+
+## Shared files
 
 These files are shared line for line with AcroClip and Deduup, apart from their imports and app blocks: `src/main/update-manager.ts`, `src/main/splash.ts`, `scripts/splash/splash.cs`, `scripts/after-pack.cjs` and `scripts/release-notes.mjs`. Each app keeps its own `scripts/splash/identity.cs`. Make changes to a shared file in all three apps in the same turn.
