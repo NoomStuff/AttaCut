@@ -1,5 +1,6 @@
 import { open } from "node:fs/promises";
 import type { ProbedSource } from "./probe.ts";
+import { readPath } from "./probe.ts";
 
 interface Box {
    type: string;
@@ -40,7 +41,7 @@ export interface SampleTimes {
 /** Read MP4/MOV sample tables without reading or decoding the video payload. */
 export async function indexedSampleTimes(source: ProbedSource, signal?: AbortSignal): Promise<SampleTimes | null> {
    if (![".mp4", ".m4v", ".mov"].includes(source.extension.toLowerCase())) return null;
-   const file = await open(source.path, "r");
+   const file = await open(readPath(source), "r");
    try {
       const header = Buffer.alloc(16);
       let offset = 0;

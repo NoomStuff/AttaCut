@@ -1,5 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, session } from "electron";
-import { join, resolve } from "node:path";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from "electron";
+import { basename, join, resolve } from "node:path";
+import { mkdir, rename } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { SourceSession } from "./source-session.ts";
 import { SourceProbe } from "./source-probe";
@@ -9,6 +11,8 @@ import { Storage } from "./storage.ts";
 import { serveMedia, streamResponse } from "./media/serve.ts";
 import { isProjectPath } from "../shared/project";
 import { prunePreviews } from "./media/preview.ts";
+import { SnapshotStore } from "./media/snapshot.ts";
+import { configureTrash } from "./media/publish.ts";
 import { IpcEvents } from "../shared/ipc.ts";
 import { installMenu } from "./menu.ts";
 import { RecentFiles } from "./recent.ts";
@@ -119,7 +123,18 @@ async function start(): Promise<void> {
          if (!window.isDestroyed()) window.webContents.send(IpcEvents.jobProgress, job);
          onExportProgress?.(job);
       },
-      testing ? (signal) => testing.invoke("test:export-item", () => undefined, signal) : undefined
+      testing ? (signal) => testing.invoke("test:export-item", () => undefined, signal) : undefined,
+      (source) => sourceSession.retainMedia(source)
+   );
+   // Test runs must not fill the real Recycle Bin, so their replaced files land in the profile.
+   configureTrash(
+      testing
+         ? async (path) => {
+              const bin = resolve(app.getPath("userData"), "test-trash");
+              await mkdir(bin, { recursive: true });
+              await rename(path, join(bin, `${randomUUID()}-${basename(path)}`));
+           }
+         : (path) => shell.trashItem(path)
    );
    if (process.platform === "win32" && icon) {
       // Taskbar relaunches must show the splash too, so they go through the launcher.
@@ -166,7 +181,14 @@ async function start(): Promise<void> {
       () => undefined
    );
    void previewCleanup.catch(() => undefined);
-   const sourceSession = new SourceSession(previewFolder, previewCleanup, sourceProbe);
+   const snapshots = new SnapshotStore(resolve(app.getPath("userData"), "snapshots"));
+   void snapshots.sweep();
+   const sourceSession = new SourceSession(previewFolder, previewCleanup, sourceProbe, {
+      snapshots,
+      onStatus: (status) => {
+         if (!window.isDestroyed()) window.webContents.send(IpcEvents.sourceFile, status);
+      },
+   });
    // Deny-by-default for renderer permissions; nothing in the app currently requests any.
    session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
       callback(contents === window.webContents && permission === "fullscreen")

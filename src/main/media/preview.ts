@@ -7,7 +7,7 @@ import type { ProbedSource } from "./probe.ts";
 import type { MediaStream } from "../../shared/types.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
 import type { RunOptions } from "./process.ts";
-import { probeSource } from "./probe.ts";
+import { probeSource, readPath } from "./probe.ts";
 import { isHdrTransfer, tonemapToBt709 } from "./formats.ts";
 import { removeTemporary } from "./publish.ts";
 import { alignedAudioFilters } from "./audio-filter.ts";
@@ -176,7 +176,7 @@ async function preparePreviewFile(
             "-copyts",
             "-start_at_zero",
             "-i",
-            source.path,
+            readPath(source),
             "-map",
             `0:${video.index}`,
             ...(audioIndices.length === 0

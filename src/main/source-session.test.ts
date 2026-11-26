@@ -339,3 +339,47 @@ it("does not write a preview cancelled while startup cache cleanup is pending", 
    expect(preparePreview).not.toHaveBeenCalled();
    session.dispose();
 });
+
+describe("original file", () => {
+   it("edits a snapshot, follows a rename in the same folder, and reports a deleted original", async () => {
+      const { mkdtemp, rename, rm, stat, writeFile, readFile } = await import("node:fs/promises");
+      const { tmpdir } = await import("node:os");
+      const { basename, dirname, join } = await import("node:path");
+      const { SnapshotStore } = await import("./media/snapshot.ts");
+      const folder = await mkdtemp(join(tmpdir(), "attacut-original-"));
+      try {
+         const path = join(folder, "recording.mkv");
+         await writeFile(path, "recorded media");
+         vi.mocked(probeSource).mockImplementationOnce(async (file: string) => {
+            const info = await stat(file);
+            return {
+               id: "recording",
+               path: file,
+               name: basename(file),
+               directory: dirname(file),
+               duration: 10,
+               extension: ".mkv",
+               size: info.size,
+               modified: info.mtimeMs,
+               fileIdentity: { device: info.dev, inode: info.ino },
+            } as ProbedSource;
+         });
+         const statuses: { state: string; name: string; protected: boolean }[] = [];
+         const session = new SourceSession("unused-preview-directory", Promise.resolve(), undefined, {
+            snapshots: new SnapshotStore(join(folder, "snapshots")),
+            onStatus: (status) => statuses.push(status),
+         });
+         const source = (await session.open(path)) as ProbedSource;
+         expect(source.media?.kind).toBe("link");
+         await rename(path, join(folder, "renamed.mkv"));
+         await expect.poll(() => source.name, { timeout: 5000 }).toBe("renamed.mkv");
+         expect(statuses.at(-1)).toMatchObject({ state: "present", name: "renamed.mkv", protected: true });
+         await rm(join(folder, "renamed.mkv"));
+         await expect.poll(() => statuses.at(-1)?.state, { timeout: 5000 }).toBe("missing");
+         expect(await readFile(source.media!.path, "utf8")).toBe("recorded media");
+         session.dispose();
+      } finally {
+         await rm(folder, { recursive: true, force: true });
+      }
+   });
+});

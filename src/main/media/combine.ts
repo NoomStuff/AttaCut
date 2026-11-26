@@ -1,10 +1,10 @@
 import { withTemporaryOutput } from "./transaction";
 import { primaryVideo } from "../../shared/types";
 import { writeFile } from "node:fs/promises";
-import { publishOutput } from "./publish.ts";
+import { exportPublishOptions, publishOutput } from "./publish.ts";
 import { dirname, extname, join } from "node:path";
 import type { ProbedSource } from "./probe.ts";
-import { assertSourceUnchanged } from "./probe.ts";
+import { assertSourceUnchanged, readPath } from "./probe.ts";
 import { exportCut, keepsStream } from "./cut.ts";
 import type { CutAnalysis, CutOptions } from "./cut.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
@@ -126,7 +126,7 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
             "-i",
             list,
             "-i",
-            source.path,
+            readPath(source),
             ...(chapters.length ? ["-f", "ffmetadata", "-i", chapterPath] : []),
             "-map",
             "0",
@@ -146,7 +146,7 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
             ...aspectArguments(video),
             "-map_chapters",
             chapters.length ? "2" : "-1",
-            ...(isMp4Container(extname(destination)) ? containerFlags(video) : []),
+            ...(isMp4Container(extname(destination)) ? containerFlags(video, source.formatTags) : []),
             "-t",
             String(duration),
             output,
@@ -188,6 +188,6 @@ export async function exportCombined(source: ProbedSource, cuts: CutAnalysis[], 
       await assertSourceUnchanged(source);
       options.onStage?.("saving");
       options.onProgress?.(0.99);
-      await publishOutput(output, destination, options.overwrite, source.path, options.replaceSource);
+      await publishOutput(output, destination, options.overwrite, source.path, options.replaceSource, exportPublishOptions(source));
    });
 }

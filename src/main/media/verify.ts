@@ -1,7 +1,7 @@
 import { audioStreams, primaryVideo } from "../../shared/types";
 import type { ProbedSource } from "./probe.ts";
 import { runMedia } from "./process.ts";
-import { probeSource, sourceFrames, ratio } from "./probe.ts";
+import { probeSource, sourceFrames, ratio, readPath } from "./probe.ts";
 import { isLosslessAudio } from "./mux";
 import type { MediaStream } from "../../shared/types";
 
@@ -127,7 +127,7 @@ async function preservedPictureHash(source: ProbedSource, index: number, signal?
    let cache = pictureHashes.get(source);
    const cached = cache?.get(index);
    if (cached) return cached;
-   const hash = await pictureHash(source.path, index, signal);
+   const hash = await pictureHash(readPath(source), index, signal);
    signal?.throwIfAborted();
    if (!cache) {
       cache = new Map();
@@ -180,7 +180,7 @@ async function verifyFrameGroup(source: ProbedSource, output: ProbedSource, star
       // Resolution changes must not reset the one-frame trim counters in each branch.
       args.push(...(seek > 0 ? ["-ss", String(seek)] : []), "-noautorotate", "-reinit_filter", "0", "-i", path);
    };
-   if (sourceChecks.length) input(source.path, sourceChecks[0]!.time);
+   if (sourceChecks.length) input(readPath(source), sourceChecks[0]!.time);
    input(output.path, checks[0]!.time - start);
    const graph: string[] = [];
    const sourceFormat = primaryVideo(source)!.pixelFormat;
@@ -341,7 +341,7 @@ export async function verifyLosslessPackets(
    const original = pairs.map(() => [] as string[]);
    for (const range of ranges) {
       const hashes = await packetHashes(
-         source.path,
+         readPath(source),
          pairs.map((pair) => pair.source),
          "source",
          range,

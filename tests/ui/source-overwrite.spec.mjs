@@ -1,6 +1,6 @@
 import { expect } from "@playwright/test";
 import { test, waitForVideo } from "./app.mjs";
-import { copyFile, readFile, stat } from "node:fs/promises";
+import { copyFile, readdir, readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 test("source replacement is explicit and reopens the exported video", async ({ launchApp, profile }) => {
@@ -60,6 +60,9 @@ test("source replacement is explicit and reopens the exported video", async ({ l
    await waitForVideo(page);
    await expect.poll(() => page.locator("video").evaluate((video) => video.duration)).toBeLessThan(6);
    expect((await stat(source)).size).toBeLessThan(originalSize);
+   const trashed = await readdir(join(profile, "test-trash"));
+   expect(trashed).toHaveLength(1);
+   expect(await readFile(join(profile, "test-trash", trashed[0]))).toEqual(originalContent);
    await expect(page.getByRole("button", { name: "Show in folder", exact: true })).toBeVisible();
    const timeline = await page.locator(".timeline-viewport").boundingBox();
    await page.mouse.click(timeline.x + timeline.width / 2, timeline.y + 36);

@@ -2,7 +2,7 @@ import type { FrameRequest, WaveformRequest } from "./media-requests";
 import type { Preferences } from "./preferences";
 import type { ProjectOutline, SavedSession } from "./editing";
 import type { SessionInput } from "./session-codec";
-import type { DetectedRange, MediaSource, RangeDetection, ScrubAudio } from "./media";
+import type { DetectedRange, MediaSource, RangeDetection, ScrubAudio, SourceFileStatus } from "./media";
 import type { RecentEntry } from "./recent";
 import type { PlanRequest, AnalyzeRequest, ExportApproval, ExportPlan, ExportDestinations, CutReport, ExportJob } from "./export";
 export interface Bootstrap {
@@ -53,6 +53,9 @@ export interface DesktopApi {
    saveProject(session: SessionInput, saveAs?: boolean): Promise<SavedSession | null>;
    confirmProject(session: SessionInput): Promise<"save" | "discard" | "cancel">;
    closeSource(): Promise<void>;
+   /** Ask where the open video's original went. Null when the person cancels. */
+   locateSource(sourceId: string): Promise<SourceFileStatus | null>;
+   onSourceFile(listener: (status: SourceFileStatus) => void): () => void;
    filePath(file: File): string;
    chooseDirectory(current: string): Promise<string | null>;
    savePreferences(value: Preferences): Promise<void>;

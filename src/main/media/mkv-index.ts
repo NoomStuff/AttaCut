@@ -1,6 +1,7 @@
 import { open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import type { ProbedSource } from "./probe.ts";
+import { readPath } from "./probe.ts";
 
 /**
  * Read an MKV/WebM Cues index without touching the media payload, mirroring the MP4
@@ -183,7 +184,7 @@ async function readBody(scanner: Scanner, base: number, element: EbmlElement, li
 
 export async function indexedMkvKeyframes(source: ProbedSource, signal?: AbortSignal): Promise<number[] | null> {
    if (![".mkv", ".webm"].includes(source.extension.toLowerCase())) return null;
-   const handle = await open(source.path, "r");
+   const handle = await open(readPath(source), "r");
    const budget = { remaining: readLimit };
    try {
       const scanner = new Scanner(handle, budget);

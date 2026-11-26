@@ -3,7 +3,7 @@ import { primaryVideo } from "../../shared/types";
 import { publishOutput } from "./publish.ts";
 import { join, resolve } from "node:path";
 import type { FrameRequest } from "../../shared/types.ts";
-import { assertSourceUnchanged } from "./probe.ts";
+import { assertSourceUnchanged, readPath } from "./probe.ts";
 import { frameTimesAround } from "./frame-times";
 import type { ProbedSource } from "./probe.ts";
 import { ffmpegBase, runMedia } from "./process.ts";
@@ -30,7 +30,7 @@ export async function exportFrame(source: ProbedSource, request: FrameRequest, s
             "-copyts",
             ...(time > 5 ? ["-ss", String(time - 5)] : []),
             "-i",
-            source.path,
+            readPath(source),
             "-map",
             `0:${video.index}`,
             "-vf",

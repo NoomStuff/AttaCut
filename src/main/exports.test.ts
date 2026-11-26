@@ -173,6 +173,31 @@ describe("export destination confirmation", () => {
       expect(service.current?.items[0]?.status).toBe("completed");
       expect(await readFile(source.path, "utf8")).toBe("new export");
    });
+   it("replaces existing files last and the source after everything else, holding the source's media throughout", async () => {
+      const { directory, source, request } = await fixture();
+      await writeFile(join(directory, "existing.mp4"), "old export");
+      const held: string[] = [];
+      const service = new ExportService(
+         () => {},
+         undefined,
+         () => {
+            held.push("retain");
+            return () => held.push("release");
+         }
+      );
+      const items = [
+         { name: "source", clip: { id: "a", color: 0, start: 0, end: 2 } },
+         { name: "existing", clip: { id: "b", color: 1, start: 3, end: 5 } },
+         { name: "new", clip: { id: "c", color: 2, start: 6, end: 8 } },
+      ];
+      const plan = await service.plan(source, { ...request, mode: "separate", items });
+      service.start(plan.id, { overwrite: true, replaceSource: true });
+      await service.waitForIdle();
+      expect(service.current?.items.map((item) => item.status)).toEqual(["completed", "completed", "completed"]);
+      expect(vi.mocked(exportCut).mock.calls.map((call) => basename(call[2]))).toEqual(["new.mp4", "existing.mp4", "source.mp4"]);
+      expect(service.current?.items.map((item) => item.name)).toEqual(["source.mp4", "existing.mp4", "new.mp4"]);
+      expect(held).toEqual(["retain", "release"]);
+   });
    it("rejects a hard link alias to the source", async () => {
       const { directory, source, request, service } = await fixture();
       await link(source.path, join(directory, "clip.mp4"));

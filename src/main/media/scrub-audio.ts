@@ -1,4 +1,5 @@
 import type { ProbedSource } from "./probe.ts";
+import { readPath } from "./probe.ts";
 import { runMedia } from "./process.ts";
 import { scrubChunkSeconds, audioStreams } from "../../shared/media";
 import { alignedAudioFilters } from "./audio-filter.ts";
@@ -33,7 +34,7 @@ export async function extractScrubPcm(
          "-ss",
          String(start),
          "-i",
-         source.path,
+         readPath(source),
          "-t",
          String(duration),
          "-vn",

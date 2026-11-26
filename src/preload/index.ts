@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { DesktopApi, ExportJob, UpdateStatus } from "../shared/types";
+import type { DesktopApi, ExportJob, SourceFileStatus, UpdateStatus } from "../shared/types";
 import { IpcEvents, type IpcCalls } from "../shared/ipc";
 import type { IpcResult } from "../shared/failure";
 async function invoke<K extends keyof IpcCalls>(
@@ -36,6 +36,8 @@ const api: DesktopApi = {
    saveProject: (session, saveAs = false) => invoke("project:save", { session, saveAs }),
    confirmProject: (session) => invoke("project:confirm", session),
    closeSource: () => invoke("source:close"),
+   locateSource: (sourceId) => invoke("source:locate", sourceId),
+   onSourceFile: (callback) => listen<SourceFileStatus>(IpcEvents.sourceFile, callback),
    filePath: (file) => webUtils.getPathForFile(file),
    chooseDirectory: (current) => invoke("directory:choose", current),
    savePreferences: (value) => invoke("preferences:save", value),

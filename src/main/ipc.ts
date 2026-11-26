@@ -236,6 +236,22 @@ export function registerIpc({
    handle("recent:remove", (path) => recent.remove(path));
    handle("recent:clear", () => recent.clear());
    handle("project:confirm", confirmProject);
+   handle("source:locate", async (sourceId) => {
+      const source = getSource(sourceId);
+      const result = await dialog.showOpenDialog(window, {
+         title: `Locate "${source.name}"`,
+         defaultPath: source.directory,
+         properties: ["openFile"],
+         filters: [
+            { name: "Video", extensions: [source.extension.slice(1)] },
+            { name: "All files", extensions: ["*"] },
+         ],
+      });
+      if (result.canceled || !result.filePaths[0]) return null;
+      const status = await sourceSession.locate(sourceId, result.filePaths[0]);
+      remember(status.path, source, "video");
+      return status;
+   });
    handle("source:close", () => {
       sourceSession.close();
       forgetSourceWork();

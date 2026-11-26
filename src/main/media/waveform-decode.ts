@@ -78,7 +78,7 @@ export async function decodeWaveform(
          "-start_at_zero",
          ...(from ? ["-ss", String(from)] : []),
          "-i",
-         options.decodePath ?? source.path,
+         options.decodePath ?? source.media?.path ?? source.path,
          ...(options.range ? ["-t", String(duration)] : []),
          "-vn",
          ...filters,

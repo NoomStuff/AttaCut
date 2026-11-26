@@ -1,4 +1,9 @@
-import type { DetectedRange, RangeDetection, ScrubAudio } from "../shared/types.ts";
+import type { DetectedRange, RangeDetection, ScrubAudio, SourceFileStatus } from "../shared/types.ts";
+import type { Stats } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
+import { basename, dirname, extname } from "node:path";
+import { statOrNull } from "./files";
+import type { Snapshot, SnapshotStore } from "./media/snapshot.ts";
 import { resolveFrameTime } from "../shared/frames.ts";
 import { packetsAround, sourceFrames, sourceKeyframes, setSourceLifetime } from "./media/probe.ts";
 import { SourceProbe } from "./source-probe";
@@ -11,6 +16,48 @@ import { extractWaveform } from "./media/waveform.ts";
 import type { WaveformChunk, WaveformResult, WaveformRange } from "./media/waveform-decode.ts";
 import { join } from "node:path";
 import { detectBlack, detectSceneCuts, detectSilence } from "./media/scenes";
+
+/** The session's hold on a source's snapshot, shared with exports that still read it. */
+class Protection {
+   copying: AbortController | null = null;
+   private leases = 1;
+   private releaseSnapshot: (() => void) | null = null;
+   private readonly store: SnapshotStore;
+   constructor(store: SnapshotStore) {
+      this.store = store;
+   }
+   get active(): boolean {
+      return this.leases > 0;
+   }
+   adopt(snapshot: Snapshot): void {
+      this.releaseSnapshot = this.store.retain(snapshot);
+   }
+   lease(): () => void {
+      this.leases++;
+      let done = false;
+      return () => {
+         if (done) return;
+         done = true;
+         this.drop();
+      };
+   }
+   drop(): void {
+      if (--this.leases > 0) return;
+      this.copying?.abort();
+      this.releaseSnapshot?.();
+      this.releaseSnapshot = null;
+   }
+}
+
+function sameFile(info: Stats, source: ProbedSource): boolean {
+   const identity = source.fileIdentity;
+   return (
+      info.isFile() &&
+      info.size === source.size &&
+      info.mtimeMs === source.modified &&
+      (!identity || (info.dev === identity.device && info.ino === identity.inode))
+   );
+}
 
 /** Owns the active source. Export plans retain their own immutable source reference. */
 export class SourceSession {
@@ -36,10 +83,23 @@ export class SourceSession {
    private waveBusy = false;
    private waveRegion: WaveformRange | null = null;
    private waveRegionListener: ((from: number, to: number) => void) | null = null;
-   constructor(previewFolder: string, previewReady: Promise<void> = Promise.resolve(), probe = new SourceProbe()) {
+   private readonly snapshots: SnapshotStore | null;
+   private readonly protections = new WeakMap<ProbedSource, Protection>();
+   private watcher: ReturnType<typeof setInterval> | null = null;
+   private fileStatus: SourceFileStatus | null = null;
+   private checking = false;
+   private readonly onFileStatus: (status: SourceFileStatus) => void;
+   constructor(
+      previewFolder: string,
+      previewReady: Promise<void> = Promise.resolve(),
+      probe = new SourceProbe(),
+      files: { snapshots?: SnapshotStore; onStatus?: (status: SourceFileStatus) => void } = {}
+   ) {
       this.previewFolder = previewFolder;
       this.previewReady = previewReady;
       this.probe = probe;
+      this.snapshots = files.snapshots ?? null;
+      this.onFileStatus = files.onStatus ?? (() => undefined);
    }
    get signal(): AbortSignal {
       return this.lifetime.signal;
@@ -66,6 +126,8 @@ export class SourceSession {
       this.source = source;
       setSourceLifetime(source, this.signal);
       this.mediaPaths.set(source.id, source.path);
+      await this.protect(source);
+      this.watch(source);
       // Warm what the first seek needs: the in-memory frame index for MP4-family sources,
       // the first small packet window for everything else.
       if ([".mp4", ".m4v", ".mov"].includes(source.extension.toLowerCase())) void sourceFrames(source, this.signal).catch(() => undefined);
@@ -269,7 +331,122 @@ export class SourceSession {
    async waitForWaveformIdle(): Promise<void> {
       await Promise.allSettled([...this.waveJobs]);
    }
+   /** Exports keep reading a source after the editor closes it; this keeps its snapshot until they finish. */
+   retainMedia(source: ProbedSource): () => void {
+      const protection = this.protections.get(source);
+      return protection?.active ? protection.lease() : () => undefined;
+   }
+   get status(): SourceFileStatus | null {
+      return this.fileStatus;
+   }
+   /** Point the session at the original after it moved. Only a file with the same contents is accepted. */
+   async locate(id: string, path: string): Promise<SourceFileStatus> {
+      const source = this.get(id);
+      const info = await stat(path);
+      if (extname(path).toLowerCase() !== source.extension.toLowerCase()) throw new Error(`Choose the original ${source.extension} file.`);
+      if (!info.isFile() || info.size !== source.size || info.mtimeMs !== source.modified)
+         throw new Error("That's a different file from the one you're editing. Choose the original video.");
+      this.follow(source, path, info);
+      return this.report(source, "present");
+   }
+   private async protect(source: ProbedSource): Promise<void> {
+      if (!this.snapshots) return;
+      const store = this.snapshots;
+      const protection = new Protection(store);
+      this.protections.set(source, protection);
+      const original = await statOrNull(source.path).catch(() => null);
+      if (!original || !sameFile(original, source)) return;
+      const instant = await store.instant(source.path, original).catch(() => null);
+      if (instant) {
+         this.adopt(source, protection, instant);
+         return;
+      }
+      const copying = new AbortController();
+      protection.copying = copying;
+      void store
+         .copy(source.path, original, copying.signal)
+         .then((snapshot) => {
+            if (!snapshot) return;
+            if (!protection.active) {
+               store.retain(snapshot)();
+               return;
+            }
+            this.adopt(source, protection, snapshot);
+            if (this.source === source) this.report(source, this.fileStatus?.state ?? "present");
+         })
+         .catch(() => undefined)
+         .finally(() => {
+            if (protection.copying === copying) protection.copying = null;
+         });
+   }
+   private adopt(source: ProbedSource, protection: Protection, snapshot: Snapshot): void {
+      protection.adopt(snapshot);
+      source.media = { path: snapshot.path, device: snapshot.device, inode: snapshot.inode, modified: snapshot.modified, kind: snapshot.kind };
+      if (this.mediaPaths.has(source.id)) this.mediaPaths.set(source.id, snapshot.path);
+   }
+   private watch(source: ProbedSource): void {
+      this.report(source, "present", false);
+      this.watcher = setInterval(() => void this.check(source), 2000);
+      this.watcher.unref?.();
+   }
+   private async check(source: ProbedSource): Promise<void> {
+      if (this.checking || this.source !== source) return;
+      this.checking = true;
+      try {
+         const info = await statOrNull(source.path).catch(() => null);
+         if (this.source !== source) return;
+         if (info && sameFile(info, source)) {
+            if (this.fileStatus?.state !== "present") this.report(source, "present");
+            return;
+         }
+         if (this.fileStatus?.state !== "present") return;
+         const renamed = await this.findRenamed(source);
+         if (this.source !== source) return;
+         if (renamed) {
+            this.follow(source, renamed.path, renamed.info);
+            this.report(source, "present");
+         } else this.report(source, info ? "changed" : "missing");
+      } finally {
+         this.checking = false;
+      }
+   }
+   /** A rename inside the same folder keeps the file's identity, so the edit follows it. */
+   private async findRenamed(source: ProbedSource): Promise<{ path: string; info: Stats } | null> {
+      if (!source.fileIdentity) return null;
+      const names = await readdir(source.directory).catch(() => [] as string[]);
+      for (const name of names) {
+         if (extname(name).toLowerCase() !== source.extension.toLowerCase()) continue;
+         const path = join(source.directory, name);
+         const info = await stat(path).catch(() => null);
+         if (info && sameFile(info, source)) return { path, info };
+      }
+      return null;
+   }
+   private follow(source: ProbedSource, path: string, info: Stats): void {
+      source.path = path;
+      source.name = basename(path);
+      source.directory = dirname(path);
+      source.fileIdentity = { device: info.dev, inode: info.ino };
+      if (!source.media) this.mediaPaths.set(source.id, path);
+   }
+   private report(source: ProbedSource, state: SourceFileStatus["state"], emit = true): SourceFileStatus {
+      const status: SourceFileStatus = {
+         sourceId: source.id,
+         state,
+         path: source.path,
+         name: source.name,
+         directory: source.directory,
+         protected: !!source.media && source.media.kind !== "original",
+      };
+      this.fileStatus = status;
+      if (emit) this.onFileStatus(status);
+      return status;
+   }
    private release(): void {
+      if (this.watcher) clearInterval(this.watcher);
+      this.watcher = null;
+      this.fileStatus = null;
+      if (this.source) this.protections.get(this.source)?.drop();
       this.lifetime.abort();
       this.lifetime = new AbortController();
       this.cancelPreview();
