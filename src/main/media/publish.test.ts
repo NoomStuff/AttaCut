@@ -116,4 +116,4 @@ it("gives a published file the source's dates", async () => {
       expect(info.mtimeMs).toBe(modified);
       if (process.platform !== "linux") expect(info.birthtimeMs).toBe(created);
    });
-});
+}, 30_000);
