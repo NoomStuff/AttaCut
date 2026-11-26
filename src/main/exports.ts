@@ -443,19 +443,20 @@ async function assertSpaceFor(source: ProbedSource, item: ExportJob["items"][num
    const needed = (source.size * (item.duration ?? 0)) / source.duration;
    const free = space.bavail * space.bsize;
    const size = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
+   if (needed > free)
+      throw Object.assign(
+         new Error(`There isn't enough free space for "${item.name}". It needs about ${size(needed)}, and the drive has ${size(free)} free.`),
+         {
+            code: "ENOSPC",
+         }
+      );
    if (process.platform === "win32" && needed >= 4 * 1024 ** 3 && (await windowsShell.driveFormat(directory).catch(() => "")).toUpperCase() === "FAT32")
       throw Object.assign(
          new Error(
             `"${item.name}" would be about ${size(needed)}, and this FAT32 drive can't hold files over 4 GB. Export to another drive or export a shorter clip.`
          ),
-         {
-            code: "EFBIG",
-         }
+         { code: "EFBIG" }
       );
-   if (needed <= free) return;
-   throw Object.assign(new Error(`There isn't enough free space for "${item.name}". It needs about ${size(needed)}, and the drive has ${size(free)} free.`), {
-      code: "ENOSPC",
-   });
 }
 function outputSettings(source: ProbedSource, settings: ReturnType<typeof analyzeRequestSchema.parse>): OutputSettings {
    const optional = (stream: ProbedSource["streams"][number]) =>
