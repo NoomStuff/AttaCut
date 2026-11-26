@@ -50,21 +50,25 @@ export function releaseSplash(): void {
 }
 
 /**
- * Shows the splash while a Windows update installs, so the app never seems to vanish.
+ * Shows a progress splash while a Windows update installs, so the app never seems to vanish.
  * It runs from a temporary copy, because the installer replaces every file in the app
- * folder, and closes when the updated app's launcher starts at the same spot.
+ * folder. It follows this runtime quitting and the installer running, and closes when the
+ * updated app's launcher or window shows. The copy keeps its own name, so an installer
+ * that stops the app by executable name leaves it alone.
  */
-export function showUpdateSplash(): void {
+export function showUpdateSplash(installer: string | null): void {
    if (process.platform !== "win32") return;
    const splash = join(process.resourcesPath, "splash.exe");
    const icon = join(process.resourcesPath, "icons", "icon.png");
    if (!existsSync(splash)) return;
    try {
       const folder = join(tmpdir(), `${product.toLowerCase()}-update-splash`);
+      const copy = join(folder, `${product}-update.exe`);
       mkdirSync(folder, { recursive: true });
-      copyFileSync(splash, join(folder, `${product}.exe`));
+      copyFileSync(splash, copy);
       if (existsSync(icon)) copyFileSync(icon, join(folder, "icon.png"));
-      spawn(join(folder, `${product}.exe`), ["--update", join(folder, "icon.png")], { detached: true, stdio: "ignore", windowsHide: false }).unref();
+      const watched = [String(process.pid), process.execPath, ...(installer ? [installer] : [])];
+      spawn(copy, ["--update", join(folder, "icon.png"), ...watched], { detached: true, stdio: "ignore", windowsHide: false }).unref();
    } catch {
       // Without the splash the update still installs.
    }

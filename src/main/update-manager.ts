@@ -252,7 +252,7 @@ export class UpdateManager {
       this.installFailed = failed;
       this.log(`updater: restarting from ${app.getVersion()} to install ${version}`);
       // The splash covers the seconds the silent installer runs with no app on screen.
-      showUpdateSplash();
+      showUpdateSplash(installer ?? null);
       // Silent, then relaunch: the NSIS installer receives --updated /S --force-run.
       updater.quitAndInstall(true, true);
    }

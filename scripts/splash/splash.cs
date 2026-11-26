@@ -8,10 +8,16 @@
 //
 // Usage:
 //   <App>.exe [app arguments]                 Launcher: show the splash, start <App>-app.exe.
-//   <App>.exe --update <iconPath>             Update: shown while an update installs, from a
-//                                             temporary copy. Closes when the updated app's
-//                                             launcher starts, which draws the same splash.
+//                                             After an update (--updated) it shows a near-full bar.
+//   <App>.exe --update <iconPath> [<runtimePid> <runtimePath> [<installerPath>]]
+//                                             Update: a progress bar while an update installs,
+//                                             from a temporary copy. Closes when the updated
+//                                             app's launcher or window shows, or the installer
+//                                             is long gone without either.
 //   <App>.exe <iconPath> <signalPath>         Wait: show until the signal file exists.
+//
+// Every mode starts above other windows, then drops to the top of the normal ones so the
+// user can bring another window over it.
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -33,6 +39,9 @@ internal sealed class Splash : Form
     private const int LogoSize = 64;
     private const int SpinSize = 22;
     private const int Radius = 16;
+    private const int BarWidth = 120;
+    private const int BarHeight = 4;
+    private const float AfterUpdateStart = 0.9f;
     private const int LifetimeMs = 120000;
 
     private readonly float scale;
@@ -45,13 +54,21 @@ internal sealed class Splash : Form
     private readonly Timer spinTimer;
     private readonly Timer doneTimer;
     private readonly Timer lifetime;
+    private readonly Timer watchTimer;
+    private readonly UpdateWatch watch;
+    private readonly bool afterUpdate;
+    private readonly Stopwatch clock = Stopwatch.StartNew();
     private float angle;
+    private float progress;
     private int childExitCode;
 
-    internal Splash(string iconPath, string signalPath, string handoverPath, string childArguments, string launchExe)
+    internal Splash(string iconPath, string signalPath, string handoverPath, string childArguments, string launchExe, UpdateWatch watch, bool afterUpdate)
     {
         this.signalPath = signalPath;
         this.handoverPath = handoverPath;
+        this.watch = watch;
+        this.afterUpdate = afterUpdate;
+        if (afterUpdate) progress = AfterUpdateStart;
         using (Graphics measure = CreateGraphics()) scale = measure.DpiX / 96f;
 
         FormBorderStyle = FormBorderStyle.None;
@@ -104,15 +121,33 @@ internal sealed class Splash : Form
             // foreground, and by the time the request reaches the running window Windows can
             // refuse it there and only flash its taskbar button. So the launcher raises it.
             if (exited && !signalled && childExitCode == 0) Foreground.RaiseRunning(launchExe, child.Id);
+            if (watch != null) watch.Finish(true);
             Close();
         };
         doneTimer.Start();
+
+        // The handover alone can miss, and the update splash must never outstay the app.
+        watchTimer = new Timer();
+        watchTimer.Interval = 250;
+        watchTimer.Tick += delegate
+        {
+            watch.Poll();
+            if (!watch.AppShown && !watch.GaveUp) return;
+            watch.Finish(watch.AppShown);
+            Close();
+        };
+        if (watch != null) watchTimer.Start();
 
         spinTimer = new Timer();
         spinTimer.Interval = 30;
         spinTimer.Tick += delegate
         {
             angle = (angle + 6f) % 360f;
+            if (watch != null || afterUpdate)
+            {
+                float target = watch != null ? watch.Progress : AfterUpdateStart + 0.08f * UpdateWatch.Ease(clock.ElapsedMilliseconds / 3000f);
+                if (target > progress) progress += (target - progress) * 0.18f;
+            }
             // Repaint the whole window: the arc stroke overhangs the spin rect, and a
             // rect-limited invalidate leaves trails of every previous frame behind.
             Invalidate();
@@ -124,6 +159,7 @@ internal sealed class Splash : Form
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        Layering.DropBelowTopmost(Handle);
         if (handoverPath == null) return;
         try
         {
@@ -190,6 +226,8 @@ internal sealed class Splash : Form
             if (spinTimer != null) spinTimer.Dispose();
             if (doneTimer != null) doneTimer.Dispose();
             if (lifetime != null) lifetime.Dispose();
+            if (watchTimer != null) watchTimer.Dispose();
+            if (watch != null) watch.Dispose();
             if (logo != null) logo.Dispose();
         }
         base.Dispose(disposing);
@@ -244,6 +282,11 @@ internal sealed class Splash : Form
         {
             graphics.DrawImage(logo, (Width - logo.Width) / 2, Scaled(LayoutMargin), logo.Width, logo.Height);
         }
+        if (watch != null || afterUpdate)
+        {
+            PaintProgress(graphics);
+            return;
+        }
         Rectangle spin = SpinBounds();
         using (Pen track = new Pen(Color.FromArgb(28, 255, 255, 255), 3f * scale))
         {
@@ -254,6 +297,26 @@ internal sealed class Splash : Form
             arc.StartCap = LineCap.Round;
             arc.EndCap = LineCap.Round;
             graphics.DrawArc(arc, spin, angle, 130f);
+        }
+    }
+
+    private void PaintProgress(Graphics graphics)
+    {
+        int width = Scaled(BarWidth);
+        int height = Math.Max(2, Scaled(BarHeight));
+        Rectangle spin = SpinBounds();
+        Rectangle track = new Rectangle((Width - width) / 2, spin.Top + (spin.Height - height) / 2, width, height);
+        using (GraphicsPath path = RoundedPath(track, height / 2))
+        using (Brush brush = new SolidBrush(Color.FromArgb(28, 255, 255, 255)))
+        {
+            graphics.FillPath(brush, path);
+        }
+        int filled = (int)Math.Round(width * Math.Min(1f, progress));
+        if (filled < height) return;
+        using (GraphicsPath path = RoundedPath(new Rectangle(track.X, track.Y, filled, height), height / 2))
+        using (Brush brush = new SolidBrush(Identity.Accent))
+        {
+            graphics.FillPath(brush, path);
         }
     }
 
@@ -277,6 +340,173 @@ internal sealed class Splash : Form
     public Process Child
     {
         get { return child; }
+    }
+}
+
+// Watches an update from the outside: the old runtime quitting, the installer running and
+// the updated runtime's window. The install time is estimated from the previous update.
+internal sealed class UpdateWatch : IDisposable
+{
+    private const int DefaultInstallMs = 12000;
+    private const int GraceMs = 20000;
+
+    private readonly Process runtime;
+    private readonly int runtimeId;
+    private readonly string runtimePath;
+    private readonly string installerName;
+    private readonly string estimatePath;
+    private readonly int expectedInstallMs;
+    private readonly Stopwatch clock = Stopwatch.StartNew();
+    private long quitAt = -1;
+    private long installedAt = -1;
+    private bool installerSeen;
+    private bool appShown;
+    private bool gaveUp;
+
+    private UpdateWatch(int runtimeId, string runtimePath, string installerPath, string estimatePath)
+    {
+        this.runtimeId = runtimeId;
+        this.runtimePath = runtimePath;
+        this.estimatePath = estimatePath;
+        if (installerPath != null) installerName = Path.GetFileNameWithoutExtension(installerPath);
+        try
+        {
+            if (runtimeId > 0) runtime = Process.GetProcessById(runtimeId);
+        }
+        catch
+        {
+            // Already gone: the install phase starts now.
+        }
+        expectedInstallMs = DefaultInstallMs;
+        try
+        {
+            int saved;
+            if (File.Exists(estimatePath) && Int32.TryParse(File.ReadAllText(estimatePath).Trim(), out saved))
+                expectedInstallMs = Math.Max(2000, Math.Min(60000, saved));
+        }
+        catch
+        {
+            // Without an estimate the bar paces itself on the default.
+        }
+    }
+
+    internal static UpdateWatch From(string[] args)
+    {
+        int id;
+        string estimate = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "install-ms");
+        if (args.Length < 4 || !Int32.TryParse(args[2], out id)) return new UpdateWatch(-1, null, null, estimate);
+        return new UpdateWatch(id, args[3], args.Length > 4 ? args[4] : null, estimate);
+    }
+
+    internal static float Ease(float x)
+    {
+        return 1f - (float)Math.Exp(-x);
+    }
+
+    internal bool AppShown
+    {
+        get { return appShown; }
+    }
+
+    internal bool GaveUp
+    {
+        get { return gaveUp; }
+    }
+
+    internal void Poll()
+    {
+        long now = clock.ElapsedMilliseconds;
+        if (quitAt < 0 && (runtime == null || runtime.HasExited)) quitAt = now;
+        if (quitAt < 0) return;
+        if (installerName != null && installedAt < 0)
+        {
+            bool installing = IsRunning(installerName);
+            if (installing) installerSeen = true;
+            else if (installerSeen) installedAt = now;
+        }
+        if (runtimePath != null && RuntimeWindowShown()) appShown = true;
+        if (installedAt >= 0 && now - installedAt > GraceMs) gaveUp = true;
+    }
+
+    // Real signals anchor the bar: the old app quitting and the installer finishing. Only
+    // the stretch between them is paced on the estimate, slowing down once it runs over.
+    internal float Progress
+    {
+        get
+        {
+            long now = clock.ElapsedMilliseconds;
+            if (quitAt < 0) return 0.08f * Ease(now / 1500f);
+            long end = installedAt >= 0 ? installedAt : now;
+            float done = (end - quitAt) / (float)expectedInstallMs;
+            float value = done <= 1f ? 0.08f + 0.8f * done : 0.88f + 0.06f * Ease(done - 1f);
+            if (installedAt >= 0) value = Math.Max(value, 0.92f + 0.06f * Ease((now - installedAt) / 2000f));
+            return value;
+        }
+    }
+
+    internal void Finish(bool reachedApp)
+    {
+        if (!reachedApp || quitAt < 0) return;
+        long took = (installedAt >= 0 ? installedAt : clock.ElapsedMilliseconds) - quitAt;
+        if (took < 1000 || took > 60000) return;
+        try
+        {
+            File.WriteAllText(estimatePath, took.ToString());
+        }
+        catch
+        {
+            // The next update keeps the previous or default estimate.
+        }
+    }
+
+    private static bool IsRunning(string name)
+    {
+        Process[] found = Process.GetProcessesByName(name);
+        foreach (Process process in found) process.Dispose();
+        return found.Length > 0;
+    }
+
+    private bool RuntimeWindowShown()
+    {
+        bool shown = false;
+        foreach (Process process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(runtimePath)))
+        {
+            using (process)
+            {
+                try
+                {
+                    if (shown || process.Id == runtimeId || process.MainWindowHandle == IntPtr.Zero) continue;
+                    shown = String.Equals(process.MainModule.FileName, runtimePath, StringComparison.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    // Processes that exit or deny access while listed are not the updated app.
+                }
+            }
+        }
+        return shown;
+    }
+
+    public void Dispose()
+    {
+        if (runtime != null) runtime.Dispose();
+    }
+}
+
+internal static class Layering
+{
+    private static readonly IntPtr NotTopmost = new IntPtr(-2);
+    private const uint NoSize = 0x0001;
+    private const uint NoMove = 0x0002;
+    private const uint NoActivate = 0x0010;
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+
+    // Form.TopMost = false would also activate the window and take focus from the user.
+    internal static void DropBelowTopmost(IntPtr window)
+    {
+        SetWindowPos(window, NotTopmost, 0, 0, 0, 0, NoSize | NoMove | NoActivate);
     }
 }
 
@@ -422,10 +652,12 @@ internal static class Program
         string signal;
         string launch = null;
         string handoverToWrite = null;
-        if (args.Length == 2 && args[0] == "--update")
+        UpdateWatch watch = null;
+        if (args.Length >= 2 && args[0] == "--update")
         {
             icon = args[1];
             signal = handover;
+            watch = UpdateWatch.From(args);
             try
             {
                 if (File.Exists(handover)) File.Delete(handover);
@@ -456,7 +688,8 @@ internal static class Program
             signal = args.Length > 1 ? args[1] : null;
         }
 
-        Splash splash = new Splash(icon, signal, handoverToWrite, launch != null ? JoinQuoted(args) : null, launch);
+        bool afterUpdate = launch != null && Array.IndexOf(args, "--updated") >= 0;
+        Splash splash = new Splash(icon, signal, handoverToWrite, launch != null ? JoinQuoted(args) : null, launch, watch, afterUpdate);
         Application.Run(splash);
         int exitCode = splash.ChildExitCode;
         if (launch != null && splash.Child != null && !splash.Child.HasExited)
