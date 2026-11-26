@@ -2,7 +2,7 @@ import { audioStreams } from "../shared/media";
 import type { ContainerChoice } from "../shared/export-format";
 import type { ChapterMark } from "./media/mux.ts";
 import { randomUUID } from "node:crypto";
-import { access, constants, mkdir } from "node:fs/promises";
+import { access, constants, mkdir, statfs } from "node:fs/promises";
 import { statOrNull } from "./files";
 import { join, resolve } from "node:path";
 import type {
@@ -22,7 +22,8 @@ import { analyzeCut, exportCut } from "./media/cut.ts";
 import type { CutAnalysis } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
 import { hasSnapshot } from "./media/probe.ts";
-import { protectSource } from "./media/publish.ts";
+import { protectSource, replacementProblem } from "./media/publish.ts";
+import { windowsShell } from "./windows-shell.ts";
 import { exportCombined } from "./media/combine.ts";
 import { duplicateNames, filenameError, outputFilename } from "../shared/filename";
 import { substantialEncoding } from "../shared/export-policy";
@@ -58,6 +59,7 @@ export class ExportService {
    private readonly emit: (job: ExportJob) => void;
    private readonly beforeItem: ((signal: AbortSignal) => Promise<void>) | undefined;
    private readonly retain: ((source: ProbedSource) => () => void) | undefined;
+   private hold: (() => void) | null = null;
    /** `retain` keeps the source's snapshot alive while a job reads it, even after the editor moves on. */
    constructor(emit: (job: ExportJob) => void, beforeItem?: (signal: AbortSignal) => Promise<void>, retain?: (source: ProbedSource) => () => void) {
       this.emit = emit;
@@ -176,8 +178,11 @@ export class ExportService {
       const directoryPath = resolve(settings.directory);
       const names = outputNames(source, settings);
       const conflictFor = async (path: string): Promise<Omit<DestinationConflict, "clipId">> => {
-         if (await protectSource(source.path, path, true, hasSnapshot(source))) return { conflict: "Will replace the source video", danger: true };
-         return (await exists(path)) ? { conflict: "Will replace an existing file", danger: false } : { conflict: null, danger: false };
+         const replacing = await protectSource(source.path, path, true, hasSnapshot(source));
+         if (!replacing && !(await exists(path))) return { conflict: null, danger: false };
+         const problem = await replacementProblem(path);
+         if (problem) return { conflict: problem.message, danger: true };
+         return replacing ? { conflict: "Will replace the source video", danger: true } : { conflict: "Will replace an existing file", danger: false };
       };
       if (settings.mode === "combined") return { items: [{ clipId: null, ...(await conflictFor(join(directoryPath, names[0]!))) }] };
       const sorted = [...settings.items].sort((a, b) => a.clip.start - b.clip.start);
@@ -187,6 +192,7 @@ export class ExportService {
       return { items };
    }
    async plan(source: ProbedSource, request: PlanRequest): Promise<ExportPlan> {
+      windowsShell.warm();
       const settings = planRequestSchema.parse(request);
       const signal = this.analysisController.signal;
       const output = outputSettings(source, settings);
@@ -279,6 +285,8 @@ export class ExportService {
       if (stored.plan.items.some(substantialEncoding) && !approval.substantialEncoding)
          throw new Error("Confirm re-encoding a substantial part of the video before exporting.");
       if (stored.plan.items.some((item) => item.method === "unsupported")) throw new Error("Some clips cannot be exported with these boundaries.");
+      this.hold?.();
+      this.hold = null;
       this.runningPlan = stored;
       stored.approval = approval;
       this.job = {
@@ -331,11 +339,15 @@ export class ExportService {
       const job = this.job!;
       const stored = this.runningPlan!;
       const signal = this.controller!.signal;
-      const release = this.retain?.(stored.source);
+      this.hold ??= this.retain?.(stored.source) ?? null;
       try {
          await this.runItems(job, stored, signal);
       } finally {
-         release?.();
+         // A retry reads the same snapshot, so it stays while any file can still be retried.
+         if (!job.items.some((item) => item.status !== "completed" && item.failure?.retryable !== false)) {
+            this.hold?.();
+            this.hold = null;
+         }
       }
       job.running = false;
       this.emit(structuredClone(job));
@@ -374,6 +386,12 @@ export class ExportService {
                !!stored.approval?.replaceSource && item.outputPath === stored.plan.sourcePath,
                hasSnapshot(stored.source)
             );
+            // Refuse before encoding anything: these checks fail the same way after minutes of work.
+            if (await exists(item.outputPath)) {
+               const problem = await replacementProblem(item.outputPath);
+               if (problem) throw problem;
+            }
+            await assertSpaceFor(stored.source, item, stored.plan.directory);
             const cuts = stored.analyses.get(item.id)!;
             const options = {
                priority: "export" as const,
@@ -417,6 +435,28 @@ export class ExportService {
          this.emit(structuredClone(job));
       }
    }
+}
+/** Output size follows the source's bit rate closely enough to refuse an export that cannot fit. */
+async function assertSpaceFor(source: ProbedSource, item: ExportJob["items"][number], directory: string): Promise<void> {
+   const space = await statfs(directory).catch(() => null);
+   if (!space || !source.size || !(source.duration > 0)) return;
+   const needed = (source.size * (item.duration ?? 0)) / source.duration;
+   const free = space.bavail * space.bsize;
+   const size = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
+   if (needed > free)
+      throw Object.assign(
+         new Error(`There isn't enough free space for "${item.name}". It needs about ${size(needed)}, and the drive has ${size(free)} free.`),
+         {
+            code: "ENOSPC",
+         }
+      );
+   if (process.platform === "win32" && needed >= 4 * 1024 ** 3 && (await windowsShell.driveFormat(directory).catch(() => "")).toUpperCase() === "FAT32")
+      throw Object.assign(
+         new Error(
+            `"${item.name}" would be about ${size(needed)}, and this FAT32 drive can't hold files over 4 GB. Export to another drive or export a shorter clip.`
+         ),
+         { code: "EFBIG" }
+      );
 }
 function outputSettings(source: ProbedSource, settings: ReturnType<typeof analyzeRequestSchema.parse>): OutputSettings {
    const optional = (stream: ProbedSource["streams"][number]) =>

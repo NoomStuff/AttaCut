@@ -2,7 +2,7 @@ import type { DetectedRange, RangeDetection, ScrubAudio, SourceFileStatus } from
 import type { Stats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname } from "node:path";
-import { statOrNull } from "./files";
+import { samePath, statOrNull } from "./files";
 import { keepPrivate } from "./app-log";
 import type { Snapshot, SnapshotStore } from "./media/snapshot.ts";
 import { resolveFrameTime } from "../shared/frames.ts";
@@ -89,6 +89,7 @@ export class SourceSession {
    private watcher: ReturnType<typeof setInterval> | null = null;
    private fileStatus: SourceFileStatus | null = null;
    private checking = false;
+   private activity = 0;
    private readonly onFileStatus: (status: SourceFileStatus) => void;
    constructor(
       previewFolder: string,
@@ -144,7 +145,12 @@ export class SourceSession {
          });
       return this.keys;
    }
+   /** Playback and scrubbing read the source; a background copy yields to them. */
+   noteActivity(): void {
+      this.activity = performance.now();
+   }
    async frameTime(id: string, time: number, direction: -1 | 0 | 1): Promise<number> {
+      this.noteActivity();
       const source = this.get(id);
       const signal = this.signal;
       const points = await frameTimesAround(source, time, signal);
@@ -236,6 +242,7 @@ export class SourceSession {
    }
    /** A playable stream from `from` onward. It ends with the request or the source. */
    stream(id: string, tracks: number[], from: number, request: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+      this.noteActivity();
       const source = this.get(id);
       if (!Number.isFinite(from) || from < 0 || from > source.duration) throw new Error("Choose a time inside the video.");
       if (tracks.some((track) => !source.streams.some((stream) => stream.type === "audio" && stream.index === track)))
@@ -247,6 +254,7 @@ export class SourceSession {
       this.pcm = null;
    }
    scrubAudio(id: string, tracks: number[], time: number): Promise<ScrubAudio | null> {
+      this.noteActivity();
       const source = this.get(id);
       const start = Math.floor(Math.max(0, Math.min(time, source.duration)) / scrubChunkSeconds) * scrubChunkSeconds;
       const key = `${id}:${tracks.join(",")}:${start}`;
@@ -365,7 +373,7 @@ export class SourceSession {
       const copying = new AbortController();
       protection.copying = copying;
       void store
-         .copy(source.path, original, copying.signal)
+         .copy(source.path, original, copying.signal, () => performance.now() - this.activity < 1500)
          .then((snapshot) => {
             if (!snapshot) return;
             if (!protection.active) {
@@ -411,15 +419,30 @@ export class SourceSession {
          this.checking = false;
       }
    }
-   /** A rename inside the same folder keeps the file's identity, so the edit follows it. */
+   /**
+    * A rename or a move on the same drive keeps the file's identity, so the edit follows it.
+    * Only nearby folders are searched: the source's folder, its parent, and their subfolders.
+    * Hidden and system folders are skipped, which also keeps the Recycle Bin and snapshots out.
+    */
    private async findRenamed(source: ProbedSource): Promise<{ path: string; info: Stats } | null> {
       if (!source.fileIdentity) return null;
-      const names = await readdir(source.directory).catch(() => [] as string[]);
-      for (const name of names) {
-         if (extname(name).toLowerCase() !== source.extension.toLowerCase()) continue;
-         const path = join(source.directory, name);
-         const info = await stat(path).catch(() => null);
-         if (info && sameFile(info, source)) return { path, info };
+      const extension = source.extension.toLowerCase();
+      const visible = (name: string) => !name.startsWith(".") && !name.startsWith("$");
+      const listing = async (folder: string) => (await readdir(folder, { withFileTypes: true }).catch(() => [])).filter((entry) => visible(entry.name));
+      const nearby = [source.directory, dirname(source.directory)].filter((folder, index, all) => all.indexOf(folder) === index);
+      const folders = [...nearby];
+      for (const folder of nearby)
+         for (const entry of await listing(folder)) if (entry.isDirectory() && folders.length < 64) folders.push(join(folder, entry.name));
+      let budget = 5000;
+      for (const folder of [...new Set(folders)]) {
+         for (const entry of await listing(folder)) {
+            if (!entry.isFile() || extname(entry.name).toLowerCase() !== extension) continue;
+            if (--budget < 0) return null;
+            const path = join(folder, entry.name);
+            if (source.media && samePath(path, source.media.path)) continue;
+            const info = await stat(path).catch(() => null);
+            if (info && sameFile(info, source)) return { path, info };
+         }
       }
       return null;
    }

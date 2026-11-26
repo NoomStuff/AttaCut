@@ -13,6 +13,7 @@ import { isProjectPath } from "../shared/project";
 import { prunePreviews } from "./media/preview.ts";
 import { SnapshotStore } from "./media/snapshot.ts";
 import { configureTrash } from "./media/publish.ts";
+import { windowsShell } from "./windows-shell.ts";
 import { IpcEvents } from "../shared/ipc.ts";
 import { installMenu } from "./menu.ts";
 import { RecentFiles } from "./recent.ts";
@@ -38,7 +39,10 @@ process.on("uncaughtExceptionMonitor", (error, origin) => appLog.crashed(`${orig
 process.on("unhandledRejection", (reason) => log(`unhandled rejection: ${errorText(reason)}`, "error"));
 const ownsInstance = app.requestSingleInstanceLock();
 const sourceProbe = new SourceProbe();
-app.on("before-quit", () => sourceProbe.cancelPrefetch());
+app.on("before-quit", () => {
+   sourceProbe.cancelPrefetch();
+   windowsShell.dispose();
+});
 let appWindow: BrowserWindow | null = null;
 let rendererReady = false;
 let pendingFile = process.env["ATTACUT_OPEN_FILE"] ?? fileArgument(process.argv.slice(1));
@@ -146,14 +150,21 @@ async function start(): Promise<void> {
       (source) => sourceSession.retainMedia(source)
    );
    // Test runs must not fill the real Recycle Bin, so their replaced files land in the profile.
+   const testTrash = process.env["ATTACUT_TEST_TRASH"];
    configureTrash(
       testing
-         ? async (path) => {
-              const bin = resolve(app.getPath("userData"), "test-trash");
-              await mkdir(bin, { recursive: true });
-              await rename(path, join(bin, `${randomUUID()}-${basename(path)}`));
+         ? {
+              move: async (path) => {
+                 const bin = resolve(app.getPath("userData"), "test-trash");
+                 await mkdir(bin, { recursive: true });
+                 await rename(path, join(bin, `${randomUUID()}-${basename(path)}`));
+              },
+              support: async () => (testTrash === "removable" ? "removable" : "yes"),
            }
-         : (path) => shell.trashItem(path)
+         : {
+              move: (path) => shell.trashItem(path),
+              ...(process.platform === "win32" ? { support: (path: string, size: number) => windowsShell.trashSupport(path, size) } : {}),
+           }
    );
    if (process.platform === "win32" && icon) {
       // Taskbar relaunches must show the splash too, so they go through the launcher.
@@ -224,6 +235,7 @@ async function start(): Promise<void> {
       const url = new URL(request.url);
       if (url.host === "stream") return streamResponse(sourceSession, url, request.signal);
       const id = url.pathname.slice(1);
+      sourceSession.noteActivity();
       const path = sourceSession.mediaPaths.get(id);
       return path ? serveMedia(path, request) : new Response("Not found", { status: 404 });
    });

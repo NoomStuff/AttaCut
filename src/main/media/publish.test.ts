@@ -117,3 +117,44 @@ it("gives a published file the source's dates", async () => {
       if (process.platform !== "linux") expect(info.birthtimeMs).toBe(created);
    });
 }, 30_000);
+
+it.each([
+   ["removable", "drive without a"],
+   ["size", "too big for this drive's"],
+   ["off", "deletes files right away"],
+] as const)("refuses to replace a file the trash would delete (%s) without touching it", async (support, message) => {
+   await fixture(async (source, destination) => {
+      await fs.writeFile(destination, "existing original");
+      const move = vi.fn(async () => undefined);
+      configureTrash({ move, support: async () => support });
+      try {
+         const refusal = publishOutput(source, destination, true, undefined, false, { trash: true });
+         await expect(refusal).rejects.toThrow(message);
+         await expect(refusal).rejects.toMatchObject({ code: "ETRASH", permanent: true });
+      } finally {
+         configureTrash(null);
+      }
+      expect(move).not.toHaveBeenCalled();
+      expect(await fs.readFile(destination, "utf8")).toBe("existing original");
+   });
+});
+
+it("retries a trash move that a reader briefly blocks", async () => {
+   const actual = await vi.importActual<typeof fs>("node:fs/promises");
+   vi.mocked(fs.link).mockImplementation(actual.link);
+   await fixture(async (source, destination) => {
+      await fs.writeFile(destination, "existing original");
+      let attempts = 0;
+      configureTrash(async (path) => {
+         if (++attempts < 3) throw new Error("The process cannot access the file because it is being used by another process.");
+         await fs.rm(path);
+      });
+      try {
+         await publishOutput(source, destination, true, undefined, false, { trash: true });
+      } finally {
+         configureTrash(null);
+      }
+      expect(attempts).toBe(3);
+      expect(await fs.readFile(destination, "utf8")).toBe("verified media");
+   });
+});

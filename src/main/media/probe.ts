@@ -240,7 +240,7 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
 /** The file being read still holds what was probed. A snapshot only changes through in-place writes. */
 export async function assertSourceUnchanged(source: MediaSource): Promise<void> {
    const info = await stat(readPath(source)).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") throw new Error("The original file changed. Reopen it before exporting.");
+      if (error.code === "ENOENT") throw new Error("The original file was moved or deleted. Locate it, then export again.");
       throw error;
    });
    const probed = source as ProbedSource;

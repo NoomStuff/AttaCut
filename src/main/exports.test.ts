@@ -198,6 +198,38 @@ describe("export destination confirmation", () => {
       expect(service.current?.items.map((item) => item.name)).toEqual(["source.mp4", "existing.mp4", "new.mp4"]);
       expect(held).toEqual(["retain", "release"]);
    });
+   it("refuses an export that cannot fit before doing any work", async () => {
+      const { source, request, service } = await fixture();
+      Object.assign(source, { size: Number.MAX_SAFE_INTEGER });
+      const plan = await service.plan(source, request);
+      service.start(plan.id);
+      await service.waitForIdle();
+      expect(service.current?.items[0]).toMatchObject({ status: "failed", failure: { code: "disk-full" } });
+      expect(service.current?.items[0]?.failure?.message).toMatch(/^There isn't enough free space for "clip\.mp4"\. It needs about/);
+      expect(exportCut).not.toHaveBeenCalled();
+   });
+   it("keeps the source's snapshot while a failed file can still be retried", async () => {
+      const { source, request } = await fixture();
+      const held: string[] = [];
+      const service = new ExportService(
+         () => {},
+         undefined,
+         () => {
+            held.push("retain");
+            return () => held.push("release");
+         }
+      );
+      vi.mocked(exportCut).mockRejectedValueOnce(new Error("Encoder crashed"));
+      const plan = await service.plan(source, request);
+      const job = service.start(plan.id);
+      await service.waitForIdle();
+      expect(service.current?.items[0]?.status).toBe("failed");
+      expect(held).toEqual(["retain"]);
+      service.retry(job.id);
+      await service.waitForIdle();
+      expect(service.current?.items[0]?.status).toBe("completed");
+      expect(held).toEqual(["retain", "release"]);
+   });
    it("rejects a hard link alias to the source", async () => {
       const { directory, source, request, service } = await fixture();
       await link(source.path, join(directory, "clip.mp4"));
