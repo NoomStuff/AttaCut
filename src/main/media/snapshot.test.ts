@@ -65,3 +65,15 @@ it("copies the source into app data when it has room", async () => {
    expect(await readFile(copy.path, "utf8")).toBe("original media");
    expect((await stat(copy.path)).mtimeMs).toBe(copy.modified);
 });
+
+it("keeps copying while playback is busy, only slower", async () => {
+   const { source, store } = await fixture();
+   let checks = 0;
+   const copy = await store.copy(source, await stat(source), new AbortController().signal, () => {
+      checks++;
+      return true;
+   });
+   if (!copy) return;
+   expect(checks).toBeGreaterThan(0);
+   expect(await readFile(copy.path, "utf8")).toBe("original media");
+});

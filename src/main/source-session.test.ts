@@ -341,7 +341,7 @@ it("does not write a preview cancelled while startup cache cleanup is pending", 
 });
 
 describe("original file", () => {
-   it("edits a snapshot, follows a rename in the same folder, and reports a deleted original", async () => {
+   it("edits a snapshot, follows a rename and a move into a subfolder, and reports a deleted original", async () => {
       const { mkdtemp, rename, rm, stat, writeFile, readFile } = await import("node:fs/promises");
       const { tmpdir } = await import("node:os");
       const { basename, dirname, join } = await import("node:path");
@@ -374,12 +374,16 @@ describe("original file", () => {
          await rename(path, join(folder, "renamed.mkv"));
          await expect.poll(() => source.name, { timeout: 5000 }).toBe("renamed.mkv");
          expect(statuses.at(-1)).toMatchObject({ state: "present", name: "renamed.mkv", protected: true });
-         await rm(join(folder, "renamed.mkv"));
+         const { mkdir } = await import("node:fs/promises");
+         await mkdir(join(folder, "kept"));
+         await rename(join(folder, "renamed.mkv"), join(folder, "kept", "renamed.mkv"));
+         await expect.poll(() => source.directory, { timeout: 5000 }).toBe(join(folder, "kept"));
+         await rm(join(folder, "kept", "renamed.mkv"));
          await expect.poll(() => statuses.at(-1)?.state, { timeout: 5000 }).toBe("missing");
          expect(await readFile(source.media!.path, "utf8")).toBe("recorded media");
          session.dispose();
       } finally {
          await rm(folder, { recursive: true, force: true });
       }
-   });
+   }, 20_000);
 });

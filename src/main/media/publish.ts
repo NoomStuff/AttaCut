@@ -4,8 +4,8 @@ import { createReadStream } from "node:fs";
 import { basename } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { windowsShell } from "../windows-shell.ts";
+import type { TrashSupport } from "../windows-shell.ts";
 import { hasSnapshot } from "./probe.ts";
 import type { ProbedSource } from "./probe.ts";
 
@@ -33,26 +33,65 @@ export function exportPublishOptions(source: ProbedSource): PublishOptions {
    };
 }
 
-let trashFile: ((path: string) => Promise<void>) | null = null;
+export interface Trash {
+   move: (path: string) => Promise<void>;
+   /** Whether the trash would keep this file. Windows silently deletes what its Recycle Bin cannot hold. */
+   support?: (path: string, size: number) => Promise<TrashSupport>;
+}
+let trash: Trash | null = null;
 /** The desktop shell supplies the platform trash. Without one, replacements are refused. */
-export function configureTrash(trash: ((path: string) => Promise<void>) | null): void {
-   trashFile = trash;
+export function configureTrash(value: Trash | ((path: string) => Promise<void>) | null): void {
+   trash = typeof value === "function" ? { move: value } : value;
 }
 export const trashName = process.platform === "win32" ? "Recycle Bin" : "Trash";
 
+/** A replacement refused before anything changed. `permanent` means retrying cannot help. */
+function trashRefusal(message: string, permanent: boolean): Error {
+   return Object.assign(new Error(message), { code: "ETRASH", permanent });
+}
+
+/** Why `path` cannot go to the trash, or null when it can. Unknown answers allow it, as before the check existed. */
+export async function trashProblem(path: string): Promise<Error | null> {
+   const name = `"${basename(path)}"`;
+   if (!trash) return trashRefusal(`AttaCut couldn't move ${name} to the ${trashName}, so it was left unchanged. Export under a different name instead.`, true);
+   const info = await statOrNull(path);
+   if (!info || !trash.support) return null;
+   const support = await trash.support(path, info.size).catch(() => "yes" as const);
+   const refuse = (reason: string) => trashRefusal(`${reason}, so AttaCut won't replace it. Export under a different name instead.`, true);
+   if (support === "removable" || support === "other") return refuse(`${name} is on a drive without a ${trashName}`);
+   if (support === "network") return refuse(`${name} is on a network drive without a ${trashName}`);
+   if (support === "off") return refuse(`This drive's ${trashName} deletes files right away instead of keeping ${name}`);
+   if (support === "size") return refuse(`${name} is too big for this drive's ${trashName}`);
+   return null;
+}
+
+/** `trashProblem` for exports that check ahead; without a configured trash, publishing refuses on its own. */
+export function replacementProblem(path: string): Promise<Error | null> {
+   return trash ? trashProblem(path) : Promise.resolve(null);
+}
+
 async function moveToTrash(path: string): Promise<void> {
-   const refused = () =>
-      new Error(`AttaCut couldn't move "${basename(path)}" to the ${trashName}, so it was left unchanged. Export under a different name instead.`);
-   if (!trashFile) throw refused();
-   try {
-      await trashFile(path);
-   } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "EBUSY" || /being used by another process|resource busy/i.test(String(error)))
-         throw Object.assign(new Error(`"${basename(path)}" is open in another app. Close it there and try again.`), { code: "EBUSY" });
-      throw refused();
+   const problem = await trashProblem(path);
+   if (problem) throw problem;
+   const name = `"${basename(path)}"`;
+   // AttaCut's own readers can hold the file for a moment after the editor lets go of it.
+   for (let attempt = 0; ; attempt++) {
+      try {
+         await trash!.move(path);
+         break;
+      } catch {
+         if (attempt < 3) {
+            await delay(300);
+            continue;
+         }
+         throw trashRefusal(
+            `AttaCut couldn't move ${name} to the ${trashName}, so it was left unchanged. If it's open in another app, close it and try again.`,
+            false
+         );
+      }
    }
-   if (await statOrNull(path)) throw refused();
+   if (await statOrNull(path))
+      throw trashRefusal(`AttaCut couldn't move ${name} to the ${trashName}, so it was left unchanged. Export under a different name instead.`, false);
 }
 
 /** Publish verified output; replacements require explicit approval. */
@@ -106,14 +145,7 @@ export async function copyFileTimes(path: string, times: FileTimes): Promise<voi
    // On macOS, moving the modified date before the creation date moves the creation date with it.
    if (process.platform === "darwin" && times.created > 0 && times.created < times.modified) await utimes(path, accessed, new Date(times.created));
    await utimes(path, accessed, new Date(times.modified));
-   if (process.platform === "win32" && times.created > 0) {
-      const ticks = BigInt(Math.round(times.created * 10_000)) + 621_355_968_000_000_000n;
-      await promisify(execFile)(
-         "powershell.exe",
-         ["-NoProfile", "-NonInteractive", "-Command", "[IO.File]::SetCreationTimeUtc($env:ATTACUT_FILE, [DateTime]::new([long]$env:ATTACUT_TICKS, 'Utc'))"],
-         { env: { ...process.env, ATTACUT_FILE: path, ATTACUT_TICKS: String(ticks) }, windowsHide: true, timeout: 15_000 }
-      );
-   }
+   if (process.platform === "win32" && times.created > 0) await windowsShell.setCreated(path, times.created);
 }
 
 /** Remove a work directory. Windows keeps handles open briefly after a killed child, so retry. */
@@ -133,7 +165,7 @@ export async function removeTemporary(path: string): Promise<void> {
 export async function protectSource(source: string, destination: string, replaceSource = false, sourceMayBeMissing = false): Promise<boolean> {
    const original = await stat(source).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT" && sourceMayBeMissing) return null;
-      if (error.code === "ENOENT") throw new Error("The original file changed. Reopen it before exporting.");
+      if (error.code === "ENOENT") throw new Error("The original file was moved or deleted. Locate it, then export again.");
       throw error;
    });
    const output = await statOrNull(destination);

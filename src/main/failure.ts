@@ -10,17 +10,22 @@ export interface FailureContext {
 /** Translate diagnostics at the process boundary. The renderer uses codes, not FFmpeg text. */
 export function appFailure(value: unknown, context: FailureContext = {}): AppFailure {
    if (isAppFailure(value)) return value;
-   const error = value as { code?: string; name?: string; message?: string } | null;
+   const error = value as { code?: string; name?: string; message?: string; permanent?: boolean } | null;
    const detail = (error?.message ?? String(value)).slice(-12000);
    const result = (code: FailureCode, message: string, retryable = true): AppFailure => ({ kind: "attacut-error", code, message, detail, retryable });
    const file = context.output ? `"${basename(context.output)}"` : "The file";
    if (error?.name === "AbortError" || /^(?:Cancelled|Canceled|This operation was aborted)\.?$/i.test(detail)) return result("cancelled", "Cancelled");
+   if (error?.code === "ETRASH") return result("trash", detail, !error.permanent);
    if (error?.code === "ENOSPC" || /ENOSPC|no space left on device/i.test(detail))
-      return result("disk-full", "The disk is full. Free up some space and try again.");
+      return result("disk-full", /^There isn't enough free space/.test(detail) ? detail : "The disk is full. Free up some space and try again.");
    if (error?.code === "EBUSY" || /\bEBUSY\b|being used by another process|resource busy/i.test(detail))
       return result("file-busy", `${file} is open in another app. Close it there and try again.`);
    if (error?.code === "EFBIG" || /\bEFBIG\b|file too large/i.test(detail))
-      return result("file-too-large", "This drive can't hold files over 4 GB. Export to another drive or export shorter clips.", false);
+      return result(
+         "file-too-large",
+         /FAT32 drive can't hold/.test(detail) ? detail : "This drive can't hold files over 4 GB. Export to another drive or export shorter clips.",
+         false
+      );
    if (error?.code === "ENAMETOOLONG" || /ENAMETOOLONG|name too long/i.test(detail))
       return result("path-too-long", "The file name or folder path is too long. Choose a shorter name or a folder closer to the top of the drive.", false);
    if (["EACCES", "EPERM"].includes(error?.code ?? "") || /\bEACCES\b|\bEPERM\b|permission denied|access is denied/i.test(detail))
@@ -30,9 +35,8 @@ export function appFailure(value: unknown, context: FailureContext = {}): AppFai
             ? `AttaCut couldn't write ${file}. Close it if it's open in another app, or check the folder's permissions.`
             : "AttaCut doesn't have permission for that. Check the file or folder's permissions and try again."
       );
-   if (/^The original file changed\./.test(detail)) return result("source-changed", detail, false);
-   if (/^AttaCut couldn't move .+ to the (Recycle Bin|Trash)|^The original .+ is in the (Recycle Bin|Trash)/.test(detail))
-      return result("trash", detail, false);
+   if (/^The original file (changed|was moved or deleted)\./.test(detail)) return result("source-changed", detail, false);
+   if (/^The original .+ is in the (Recycle Bin|Trash)/.test(detail)) return result("trash", detail, false);
    if (error?.code === "EIO" || /\bEIO\b|input\/output error|Error opening input file|device (is )?not (ready|connected)/i.test(detail))
       return result("source-missing", "AttaCut can't read the video anymore. If its drive was disconnected, reconnect it and try again.");
    if (error?.code === "ENOENT" && context.output)

@@ -1,10 +1,10 @@
-import { constants, createReadStream, createWriteStream } from "node:fs";
+import { constants } from "node:fs";
 import type { Stats } from "node:fs";
-import { copyFile, link, mkdir, readdir, readFile, rm, rmdir, stat, statfs, utimes, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, open, readdir, readFile, rm, rmdir, stat, statfs, utimes, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { dirname, extname, join, parse, resolve } from "node:path";
-import { pipeline } from "node:stream/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import type { SourceMedia } from "./probe.ts";
 import { removeTemporary } from "./publish.ts";
 
@@ -13,6 +13,28 @@ export type Snapshot = SourceMedia & { kind: "link" | "clone" | "copy" };
 /** Space a background copy must leave free on the app's drive. */
 function copyReserve(total: number): number {
    return Math.max(5 * 1024 ** 3, total * 0.1);
+}
+
+async function copyGently(from: string, to: string, signal: AbortSignal, busy: () => boolean): Promise<void> {
+   const input = await open(from, "r");
+   try {
+      const output = await open(to, "wx");
+      try {
+         const buffer = Buffer.allocUnsafe(4 * 1024 * 1024);
+         for (let position = 0; ;) {
+            signal.throwIfAborted();
+            if (busy()) await delay(250, undefined, { signal });
+            const { bytesRead } = await input.read(buffer, 0, buffer.length, position);
+            if (!bytesRead) return;
+            await output.write(buffer, 0, bytesRead, position);
+            position += bytesRead;
+         }
+      } finally {
+         await output.close();
+      }
+   } finally {
+      await input.close();
+   }
 }
 
 function sameContent(info: Stats, original: Stats): boolean {
@@ -79,15 +101,18 @@ export class SnapshotStore {
       }
    }
 
-   /** A full copy into app data, only when it leaves enough room on that drive. */
-   async copy(path: string, original: Stats, signal: AbortSignal): Promise<Snapshot | null> {
+   /**
+    * A full copy into app data, only when it leaves enough room on that drive. While `busy`
+    * reports playback or scrubbing, the copy slows down so it does not compete for a slow drive.
+    */
+   async copy(path: string, original: Stats, signal: AbortSignal, busy: () => boolean = () => false): Promise<Snapshot | null> {
       await this.swept;
       await mkdir(this.folder, { recursive: true });
       const space = await statfs(this.folder).catch(() => null);
       if (!space || space.bavail * space.bsize - original.size < copyReserve(space.blocks * space.bsize)) return null;
       const target = join(this.folder, `${randomUUID()}${extname(path)}`);
       try {
-         await pipeline(createReadStream(path, { highWaterMark: 4 * 1024 * 1024 }), createWriteStream(target, { flags: "wx" }), { signal });
+         await copyGently(path, target, signal, busy);
          const after = await stat(path);
          if (!sameContent(after, original) || after.ino !== original.ino) throw new Error("The original changed while it was copied.");
          await utimes(target, original.atime, original.mtime);
