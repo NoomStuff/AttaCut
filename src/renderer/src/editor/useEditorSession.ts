@@ -2,7 +2,7 @@ import { audioStreams } from "../../../shared/media";
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { flushSync } from "react-dom";
-import type { MediaSource, ExportJob, SavedSession } from "../../../shared/types";
+import type { MediaSource, ExportJob, SavedSession, SourceFileStatus } from "../../../shared/types";
 import type { Clip } from "../../../shared/editing";
 import { defaultPreferences } from "../../../shared/defaults";
 import { encodeSession } from "../../../shared/session-codec";
@@ -28,7 +28,7 @@ export interface OpeningEditor {
    cuts: "whole" | { clips: Clip[]; selectedId: string | null } | null;
 }
 
-export type EditorNotice = { text: string; tone: "error" | "warning" | "info" };
+export type EditorNotice = { text: string; tone: "error" | "warning" | "info"; action?: { label: string; run: () => void } };
 
 /** Owns the source, document, project, recovery and their desktop lifetime together. */
 export function useEditorSession({
@@ -76,6 +76,12 @@ export function useEditorSession({
    sourceRef.current = source;
    const documentRef = useRef(editor.document);
    documentRef.current = editor.document;
+   const editorRef = useRef(editor);
+   editorRef.current = editor;
+   const [, setRelocations] = useState(0);
+   const fileNotice = useRef<EditorNotice | null>(null);
+   // Banner actions outlive the render that created them, so they call the latest handlers.
+   const fileActions = useRef<{ locate: () => Promise<void>; reload: () => Promise<void> } | null>(null);
    // Saved eagerly here, and again on every change by the effect in usePersistence: this
    // call flushes the outgoing source's session before another one loads, so restoring
    // always sees the latest edit.
@@ -133,7 +139,8 @@ export function useEditorSession({
       saved?: SavedSession,
       playbackAudio = preferences.playbackAudio,
       confirm = true,
-      autoPlay = !saved && preferences.autoPlay
+      autoPlay = !saved && preferences.autoPlay,
+      reloading = false
    ) => {
       if (confirm && !(await confirmProject())) return;
       // Opening a source leaves text editing so playback shortcuts work immediately.
@@ -169,7 +176,7 @@ export function useEditorSession({
          saved = loaded?.session ?? saved;
          if (sequence !== openSequence.current) return;
          const validSaved =
-            saved && saved.size === media.size && saved.modified === media.modified && saved.clips.every((item) => item.end <= media.duration)
+            saved && (reloading || (saved.size === media.size && saved.modified === media.modified)) && saved.clips.every((item) => item.end <= media.duration)
                ? saved
                : undefined;
          if (saved && !validSaved) setError({ text: "The original file was changed. Your timeline was reset.", tone: "warning" });
@@ -311,7 +318,65 @@ export function useEditorSession({
       onOpenFile: (path) => {
          void openPath(path);
       },
+      onSourceFile: (status) => {
+         // An export replacing the source reopens it when it finishes.
+         if (replacingSourceId.current === status.sourceId || sourceRef.current?.id !== status.sourceId) return;
+         relocate(status);
+         const name = `"${status.name}"`;
+         if (status.state === "present") showFileNotice(null);
+         else if (status.state === "missing")
+            showFileNotice({
+               tone: "warning",
+               text: status.protected
+                  ? `${name} was moved or deleted. You can keep editing and exporting while it stays open here.`
+                  : `${name} was moved or deleted. Locate it to keep editing.`,
+               action: { label: "Locate", run: () => void fileActions.current?.locate() },
+            });
+         else
+            showFileNotice({
+               tone: "warning",
+               text: status.protected
+                  ? `${name} changed on disk. You're still editing the version you opened.`
+                  : `${name} changed on disk. Reload it to keep editing.`,
+               action: { label: "Reload", run: () => void fileActions.current?.reload() },
+            });
+      },
    });
+   /** File notices clear themselves when the file comes back, without dismissing anything newer. */
+   const showFileNotice = (notice: EditorNotice | null) => {
+      const previous = fileNotice.current;
+      fileNotice.current = notice;
+      setError((current) => notice ?? (current === previous ? null : current));
+   };
+   const relocate = (status: SourceFileStatus) => {
+      const current = sourceRef.current;
+      if (!current || current.id !== status.sourceId || current.path === status.path) return;
+      // Playback, waveforms and the export panel key on the source object. A rename must not restart them.
+      Object.assign(current, { path: status.path, name: status.name, directory: status.directory });
+      setRelocations((count) => count + 1);
+      const snapshot = sessionFor(current, editorRef.current, null, projectRef.current);
+      if (snapshot) void window.desktop.saveSession(encodeSession(snapshot)).catch(() => undefined);
+   };
+   const locateSource = async () => {
+      const current = sourceRef.current;
+      if (!current) return;
+      try {
+         const status = await window.desktop.locateSource(current.id);
+         if (!status) return;
+         relocate(status);
+         showFileNotice(null);
+      } catch (value) {
+         showError(errorText(value));
+      }
+   };
+   const reloadSource = async () => {
+      const current = sourceRef.current;
+      if (!current) return;
+      const snapshot = sessionFor(current, editorRef.current, null, projectRef.current);
+      fileNotice.current = null;
+      await openPath(current.path, snapshot ?? undefined, preferences.playbackAudio, false, false, true);
+   };
+   fileActions.current = { locate: locateSource, reload: reloadSource };
    usePersistence({ source, editor, restore, project, pendingProjectSave, preferences, ready, setError: showError });
    const beforeSourceReplace = async () => {
       if (!source) return;

@@ -1,5 +1,6 @@
 import { primaryVideo, type DetectedRange } from "../../shared/media";
 import type { ProbedSource } from "./probe";
+import { readPath } from "./probe";
 import { ffmpegBase, runMedia } from "./process";
 
 /** Decode every frame, but compare small pictures. Timestamps stay on the source grid. */
@@ -15,7 +16,7 @@ export async function detectSceneCuts(source: ProbedSource, threshold: number, s
          "-threads",
          "2",
          "-i",
-         source.path,
+         readPath(source),
          "-map",
          `0:${video.index}`,
          "-an",
@@ -84,7 +85,7 @@ export async function detectSilence(source: ProbedSource, audioIndex: number, no
          "-threads",
          "2",
          "-i",
-         source.path,
+         readPath(source),
          "-map",
          `0:${audioIndex}`,
          "-vn",
@@ -140,7 +141,7 @@ export async function detectBlack(source: ProbedSource, minimum: number, signal:
          "-threads",
          "2",
          "-i",
-         source.path,
+         readPath(source),
          "-map",
          `0:${video.index}`,
          "-an",

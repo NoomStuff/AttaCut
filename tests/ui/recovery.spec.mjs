@@ -1,6 +1,6 @@
 import { expect } from "@playwright/test";
 import { test, waitForVideo, configureIpc } from "./app.mjs";
-import { copyFile, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 async function open(app, path) {
@@ -102,48 +102,74 @@ test("restart with a missing source explains the problem and allows a new import
    await expect(next.locator(".title-filename")).toHaveText("fixture.mp4");
 });
 
-for (const changed of [true, false])
-   test(`planned export refuses a ${changed ? "changed" : "removed"} source`, async ({ launchApp, profile }) => {
-      const source = join(profile, "source.mp4");
-      await copyFile(resolve("work/fixture.mp4"), source);
-      const app = await launchApp(profile, source);
-      const page = await app.firstWindow();
-      await waitForVideo(page);
-      const plan = await page.evaluate(async (directory) => {
-         const sourceId = decodeURIComponent(new globalThis.URL(document.querySelector("video").currentSrc).pathname.slice(1));
-         return globalThis.desktop.planExport({ sourceId, directory, items: [{ name: "refused", clip: { id: "whole", color: 0, start: 0, end: 18 } }] });
-      }, profile);
-      const existing = join(profile, "preserved.mp4");
-      await writeFile(existing, "existing video");
-      // Windows can retain the decoder's file handle after the initial frame.
-      // Stop that reader while keeping the real source and export plan in app state.
-      await page.locator("video").evaluate((video) => {
-         video.pause();
-         video.removeAttribute("src");
-         video.load();
-      });
-      await expect
-         .poll(async () => {
-            try {
-               if (changed) await writeFile(source, "changed");
-               else await rm(source);
-               return true;
-            } catch (error) {
-               if (error.code === "EBUSY" || error.code === "EPERM") return false;
-               throw error;
-            }
-         })
-         .toBe(true);
-      await page.evaluate((id) => globalThis.desktop.startExport(id), plan.id);
-      await expect(page.getByText("Export failed", { exact: true })).toBeVisible();
-      await expect(page.getByRole("alert")).toContainText(/reopen|can't be found|no such file/i);
-      expect(await readFile(existing, "utf8")).toBe("existing video");
-      await expect(readFile(plan.items[0].outputPath)).rejects.toThrow();
-      await copyFile(resolve("work/fixture.mp4"), source);
-      await app.evaluate(({ dialog }, path) => {
-         dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
-      }, source);
-      await page.getByRole("button", { name: "Reopen source", exact: true }).click();
-      await waitForVideo(page);
-      await expect(page.getByRole("button", { name: "Export", exact: true })).toBeEnabled();
+test("a removed source keeps editing and exporting from its snapshot", async ({ launchApp, profile }) => {
+   const source = join(profile, "source.mp4");
+   await copyFile(resolve("work/fixture.mp4"), source);
+   const app = await launchApp(profile, source);
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const plan = await page.evaluate(async (directory) => {
+      const sourceId = decodeURIComponent(new globalThis.URL(document.querySelector("video").currentSrc).pathname.slice(1));
+      return globalThis.desktop.planExport({ sourceId, directory, items: [{ name: "kept", clip: { id: "whole", color: 0, start: 0, end: 18 } }] });
+   }, profile);
+   await expect
+      .poll(async () => {
+         try {
+            await rm(source);
+            return true;
+         } catch (error) {
+            if (error.code === "EBUSY" || error.code === "EPERM") return false;
+            throw error;
+         }
+      })
+      .toBe(true);
+   await expect(page.getByRole("status")).toContainText("was moved or deleted. You can keep editing");
+   await expect(page.getByRole("button", { name: "Locate", exact: true })).toBeVisible();
+   await page.evaluate((id) => globalThis.desktop.startExport(id), plan.id);
+   await expect(page.getByText(/^(clip exported|\d+ clips exported)$/i)).toBeVisible({ timeout: 60000 });
+   expect((await stat(plan.items[0].outputPath)).size).toBeGreaterThan(0);
+});
+
+test("planned export refuses a source changed in place", async ({ launchApp, profile }) => {
+   const source = join(profile, "source.mp4");
+   await copyFile(resolve("work/fixture.mp4"), source);
+   const app = await launchApp(profile, source);
+   const page = await app.firstWindow();
+   await waitForVideo(page);
+   const plan = await page.evaluate(async (directory) => {
+      const sourceId = decodeURIComponent(new globalThis.URL(document.querySelector("video").currentSrc).pathname.slice(1));
+      return globalThis.desktop.planExport({ sourceId, directory, items: [{ name: "refused", clip: { id: "whole", color: 0, start: 0, end: 18 } }] });
+   }, profile);
+   const existing = join(profile, "preserved.mp4");
+   await writeFile(existing, "existing video");
+   // Windows can retain the decoder's file handle after the initial frame.
+   // Stop that reader while keeping the real source and export plan in app state.
+   await page.locator("video").evaluate((video) => {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
    });
+   await expect
+      .poll(async () => {
+         try {
+            await writeFile(source, "changed");
+            return true;
+         } catch (error) {
+            if (error.code === "EBUSY" || error.code === "EPERM") return false;
+            throw error;
+         }
+      })
+      .toBe(true);
+   await page.evaluate((id) => globalThis.desktop.startExport(id), plan.id);
+   await expect(page.getByText("Export failed", { exact: true })).toBeVisible();
+   await expect(page.getByRole("alert")).toContainText(/reopen|can't be found|no such file/i);
+   expect(await readFile(existing, "utf8")).toBe("existing video");
+   await expect(readFile(plan.items[0].outputPath)).rejects.toThrow();
+   await copyFile(resolve("work/fixture.mp4"), source);
+   await app.evaluate(({ dialog }, path) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
+   }, source);
+   await page.getByRole("button", { name: "Reopen source", exact: true }).click();
+   await waitForVideo(page);
+   await expect(page.getByRole("button", { name: "Export", exact: true })).toBeEnabled();
+});

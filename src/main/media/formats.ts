@@ -102,9 +102,15 @@ export function isHdrTransfer(transfer: string): boolean {
 export function isMp4Container(extension: string): boolean {
    return [".mp4", ".mov", ".m4v"].includes(extension.toLowerCase());
 }
-/** Container options for MP-family outputs; hvc1 tags HEVC the way Apple's decoders require. */
-export function containerFlags(video: MediaStream): string[] {
-   return ["-movflags", "+faststart", ...(video.codec === "hevc" ? ["-tag:v", "hvc1"] : [])];
+/**
+ * Container options for MP-family outputs; hvc1 tags HEVC the way Apple's decoders require.
+ * Reverse-DNS keys such as com.apple.quicktime.make survive only in the mdta form, which
+ * other tools read less often, so it is used only when the source has such keys.
+ */
+export function containerFlags(video: MediaStream, tags: Record<string, string> = {}, converting = true): string[] {
+   const keys = Object.keys(tags).some((key) => key.includes("."));
+   const flags = `${converting ? "+faststart" : ""}${keys ? "+use_metadata_tags" : ""}`;
+   return [...(flags ? ["-movflags", flags] : []), ...(converting && video.codec === "hevc" ? ["-tag:v", "hvc1"] : [])];
 }
 /**
  * Convert HDR input to bt709 SDR. `inputMatrix` carries the source primaries/transfer/matrix

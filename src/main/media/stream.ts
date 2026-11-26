@@ -5,7 +5,7 @@ import { primaryVideo } from "../../shared/types";
 import type { ProbedSource } from "./probe.ts";
 import { binaryPath } from "./process.ts";
 import { frameTimesAround } from "./frame-times.ts";
-import { packetsAround, sourceFrames, sourceKeyframes } from "./probe.ts";
+import { packetsAround, sourceFrames, sourceKeyframes, readPath } from "./probe.ts";
 import { previewVideoFilter } from "./preview.ts";
 import { Fmp4Retimer } from "./fmp4-retime.ts";
 import { recordDiagnostic } from "../diagnostics";
@@ -65,7 +65,7 @@ export function streamArguments(source: ProbedSource, tracks: number[], videoSta
       "-copyts",
       ...(seek > 0 ? ["-ss", seek.toFixed(6)] : []),
       "-i",
-      source.path,
+      readPath(source),
       "-filter_complex",
       audio[0] === "-filter_complex" ? `${picture};${audio[1]}` : picture,
       "-map",

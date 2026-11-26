@@ -51,6 +51,18 @@ export interface MediaSource {
    url: string;
    chapters: { start: number; end: number; title: string; tags?: Record<string, string> }[];
 }
+/**
+ * Where the open video's original file is now. `protected` means AttaCut holds a snapshot,
+ * so editing and exporting continue whatever happens to the original.
+ */
+export interface SourceFileStatus {
+   sourceId: string;
+   state: "present" | "missing" | "changed";
+   path: string;
+   name: string;
+   directory: string;
+   protected: boolean;
+}
 /** A detected stretch of source time to remove. Starts are inclusive, ends exclusive. */
 export interface DetectedRange {
    start: number;

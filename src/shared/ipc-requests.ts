@@ -32,6 +32,7 @@ export const ipcRequestSchemas = {
    "project:save": z.object({ session: sessionStorageSchema, saveAs: z.boolean() }),
    "project:confirm": sessionStorageSchema,
    "source:close": z.void(),
+   "source:locate": z.string(),
    "source:keyframes": z.string(),
    "source:scenes": z.object({ sourceId: z.string(), requestId: z.string().uuid(), threshold: z.number().min(1).max(100) }),
    "source:ranges": z.object({

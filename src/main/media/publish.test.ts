@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as streams from "node:stream/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { publishOutput } from "./publish";
+import { configureTrash, copyFileTimes, publishOutput } from "./publish";
 
 vi.mock("node:fs/promises", async (original) => ({ ...(await original<typeof fs>()), link: vi.fn() }));
 vi.mock("node:stream/promises", async (original) => ({ ...(await original<typeof streams>()), pipeline: vi.fn() }));
@@ -67,5 +67,53 @@ it("does not hide permission or disk errors from linking", async () => {
       await expect(publishOutput(source, destination)).rejects.toBe(failure);
       expect(streams.pipeline).not.toHaveBeenCalled();
       expect(await fs.readFile(source, "utf8")).toBe("verified media");
+   });
+});
+
+it("moves a replaced file to the trash before publishing over it", async () => {
+   const actual = await vi.importActual<typeof fs>("node:fs/promises");
+   vi.mocked(fs.link).mockImplementation(actual.link);
+   await fixture(async (source, destination) => {
+      await fs.writeFile(destination, "existing original");
+      const trashed: string[] = [];
+      configureTrash(async (path) => {
+         trashed.push(await fs.readFile(path, "utf8"));
+         await fs.rm(path);
+      });
+      try {
+         await publishOutput(source, destination, true, undefined, false, { trash: true });
+      } finally {
+         configureTrash(null);
+      }
+      expect(trashed).toEqual(["existing original"]);
+      expect(await fs.readFile(destination, "utf8")).toBe("verified media");
+   });
+});
+
+it("leaves a file alone when it cannot go to the trash", async () => {
+   await fixture(async (source, destination) => {
+      await fs.writeFile(destination, "existing original");
+      await expect(publishOutput(source, destination, true, undefined, false, { trash: true })).rejects.toThrow("left unchanged");
+      configureTrash(async () => {
+         throw new Error("This volume has no Recycle Bin");
+      });
+      try {
+         await expect(publishOutput(source, destination, true, undefined, false, { trash: true })).rejects.toThrow("left unchanged");
+      } finally {
+         configureTrash(null);
+      }
+      expect(await fs.readFile(destination, "utf8")).toBe("existing original");
+      expect(await fs.readFile(source, "utf8")).toBe("verified media");
+   });
+});
+
+it("gives a published file the source's dates", async () => {
+   await fixture(async (source) => {
+      const created = Date.UTC(2023, 4, 6, 7, 8, 9);
+      const modified = Date.UTC(2024, 1, 2, 3, 4, 5);
+      await copyFileTimes(source, { accessed: modified, modified, created });
+      const info = await fs.stat(source);
+      expect(info.mtimeMs).toBe(modified);
+      if (process.platform !== "linux") expect(info.birthtimeMs).toBe(created);
    });
 });

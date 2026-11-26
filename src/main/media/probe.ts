@@ -14,7 +14,7 @@ import { waitForWork } from "./shared-work";
 
 const numberLike = z.union([z.string(), z.number()]).optional();
 const probeSchema = z.object({
-   format: z.object({ duration: numberLike, start_time: numberLike }),
+   format: z.object({ duration: numberLike, start_time: numberLike, tags: z.record(z.string(), z.string()).optional() }),
    streams: z.array(
       z.object({
          index: z.number(),
@@ -62,10 +62,30 @@ export function streamTitle(tags: Record<string, string> = {}): string {
    const handler = normalized["handler_name"] ?? "";
    return /^(sound|audio|video)handler$/i.test(handler) ? "" : handler;
 }
+/** The file AttaCut reads: the original, or a snapshot of it that cannot move or change. */
+export interface SourceMedia {
+   path: string;
+   device: number;
+   inode: number;
+   modified: number;
+   kind: "original" | "link" | "clone" | "copy";
+}
 export interface ProbedSource extends MediaSource {
    attachmentHashes?: Record<number, string>;
    startOffset: number;
    fileIdentity?: { device: number; inode: number };
+   media?: SourceMedia;
+   /** The original's file times, copied onto every export. */
+   times?: { accessed: number; created: number };
+   formatTags?: Record<string, string>;
+}
+/** The path every media read uses. Only the original path appears to people. */
+export function readPath(source: MediaSource): string {
+   return (source as ProbedSource).media?.path ?? source.path;
+}
+export function hasSnapshot(source: MediaSource): boolean {
+   const kind = (source as ProbedSource).media?.kind;
+   return !!kind && kind !== "original";
 }
 export async function probeSource(path: string, signal?: AbortSignal): Promise<ProbedSource> {
    const fullPath = resolve(path);
@@ -201,6 +221,8 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
       size: info.size,
       modified: info.mtimeMs,
       fileIdentity: { device: info.dev, inode: info.ino },
+      times: { accessed: info.atimeMs, created: info.birthtimeMs },
+      ...(result.format.tags ? { formatTags: result.format.tags } : {}),
       attachmentHashes: Object.fromEntries(
          result.streams.filter((stream) => stream.codec_type === "attachment" && stream.extradata_hash).map((stream) => [stream.index, stream.extradata_hash!])
       ),
@@ -215,10 +237,16 @@ export async function probeSource(path: string, signal?: AbortSignal): Promise<P
       })),
    };
 }
+/** The file being read still holds what was probed. A snapshot only changes through in-place writes. */
 export async function assertSourceUnchanged(source: MediaSource): Promise<void> {
-   const info = await stat(source.path);
-   const identity = (source as ProbedSource).fileIdentity;
-   if (info.size !== source.size || info.mtimeMs !== source.modified || (identity && (info.dev !== identity.device || info.ino !== identity.inode)))
+   const info = await stat(readPath(source)).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") throw new Error("The original file changed. Reopen it before exporting.");
+      throw error;
+   });
+   const probed = source as ProbedSource;
+   const identity = probed.media ?? probed.fileIdentity;
+   const modified = probed.media?.modified ?? source.modified;
+   if (info.size !== source.size || info.mtimeMs !== modified || (identity && (info.dev !== identity.device || info.ino !== identity.inode)))
       throw new Error("The original file changed. Reopen it before exporting.");
 }
 const packetSchema = z.object({
@@ -289,7 +317,7 @@ export async function sourceKeyframes(source: ProbedSource, signal?: AbortSignal
          "packet=pts_time,flags",
          "-of",
          "csv=p=0",
-         source.path,
+         readPath(source),
       ],
       {
          signal,
@@ -390,7 +418,7 @@ async function readPacketWindow(source: ProbedSource, begin: number, read: numbe
          "packet=pts_time,dts_time,duration_time,flags",
          "-of",
          "json",
-         source.path,
+         readPath(source),
       ],
       { signal }
    );

@@ -1,4 +1,18 @@
-export type FailureCode = "cancelled" | "disk-full" | "permission" | "source-changed" | "invalid-request" | "network" | "media" | "unknown";
+export type FailureCode =
+   | "cancelled"
+   | "disk-full"
+   | "permission"
+   | "file-busy"
+   | "file-too-large"
+   | "path-too-long"
+   | "folder-missing"
+   | "source-changed"
+   | "source-missing"
+   | "trash"
+   | "invalid-request"
+   | "network"
+   | "media"
+   | "unknown";
 export interface AppFailure {
    kind: "attacut-error";
    code: FailureCode;

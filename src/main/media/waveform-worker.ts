@@ -85,11 +85,13 @@ const consume = async (chunk: WaveformChunk) => {
 };
 try {
    await waitActivity();
-   const inputInfo = await stat(source.path);
+   const input = source.media?.path ?? source.path;
+   const identity = source.media ?? source.fileIdentity;
+   const inputInfo = await stat(input);
    if (
       inputInfo.size !== source.size ||
-      inputInfo.mtimeMs !== source.modified ||
-      (source.fileIdentity && (source.fileIdentity.device !== inputInfo.dev || source.fileIdentity.inode !== inputInfo.ino))
+      inputInfo.mtimeMs !== (source.media?.modified ?? source.modified) ||
+      (identity && (identity.device !== inputInfo.dev || identity.inode !== inputInfo.ino))
    )
       throw new Error("Source changed before waveform decode");
    const preview = decodePath ? await stat(decodePath).then((info) => ({ path: decodePath, size: info.size, mtimeMs: info.mtimeMs })) : undefined;
@@ -112,7 +114,7 @@ try {
                timings = value;
             },
          });
-         const after = await stat(source.path);
+         const after = await stat(input);
          if (after.size !== inputInfo.size || after.mtimeMs !== inputInfo.mtimeMs || after.dev !== inputInfo.dev || after.ino !== inputInfo.ino)
             throw new Error("Source changed during waveform decode");
          return result;

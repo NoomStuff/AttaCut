@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
+import { configureTrash } from "../../src/main/media/publish";
 import { resolve, join } from "node:path";
 import { ffmpegBase, runMedia } from "../../src/main/media/process";
 import { probeSource, ratio } from "../../src/main/media/probe";
@@ -48,6 +49,7 @@ const ranges = [
    [2.5, 3.5],
    [4.5, 5.5],
 ] as const;
+configureTrash((path) => rm(path));
 const service = new ExportService(() => {});
 const plan = await service.plan(source, {
    sourceId: source.id,

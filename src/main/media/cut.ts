@@ -2,13 +2,13 @@ import { audioStreams } from "../../shared/media";
 import { withTemporaryOutput } from "./transaction";
 import { primaryVideo } from "../../shared/types";
 import { writeFile, copyFile, stat, constants } from "node:fs/promises";
-import { publishOutput } from "./publish.ts";
+import { exportPublishOptions, publishOutput } from "./publish.ts";
 import { join, extname, dirname, resolve } from "node:path";
 import { availableParallelism } from "node:os";
 import type { Clip, ExportPlanItem, StreamAssessment, ExportStage, MediaStream } from "../../shared/types.ts";
 import { containerFamily, containerRejects, subtitleCodecFor } from "../../shared/export-format.ts";
 import type { ProbedSource, PacketPoint } from "./probe.ts";
-import { packetsAround, assertSourceUnchanged, sourceFrames, probeSource } from "./probe.ts";
+import { packetsAround, assertSourceUnchanged, sourceFrames, probeSource, readPath } from "./probe.ts";
 import { lowerBound } from "../../shared/sorted";
 import { ffmpegBase, runMedia } from "./process.ts";
 import type { RunOptions } from "./process.ts";
@@ -322,7 +322,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
       const video = primaryVideo(source)!;
       options.onStage?.(analysis.method === "boundary" ? "encoding" : "copying");
       if (analysis.execution === "file-copy" && unchanged && extension === source.extension.toLowerCase()) {
-         await copyFile(source.path, finalTemporary, constants.COPYFILE_EXCL);
+         await copyFile(readPath(source), finalTemporary, constants.COPYFILE_EXCL);
       } else if (clip.start === 0 && Math.abs(clip.end - source.duration) < epsilon) {
          // A whole-source remux preserves every stream the export keeps, including secondary
          // video, cover art, attachments and data. Unsupported container mappings fail explicitly.
@@ -340,7 +340,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             [
                ...ffmpegBase,
                "-i",
-               source.path,
+               readPath(source),
                ...(options.chapters?.length ? ["-f", "ffmetadata", "-i", chapterPath] : []),
                "-map",
                "0",
@@ -353,7 +353,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                "-c",
                "copy",
                ...subtitleCodecs,
-               ...(isMp4Container(extension) && extension !== source.extension.toLowerCase() ? containerFlags(video) : []),
+               ...(isMp4Container(extension) ? containerFlags(video, source.formatTags, extension !== source.extension.toLowerCase()) : []),
                finalTemporary,
             ],
             options
@@ -385,7 +385,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
                String(span.end - preroll + 2),
                "-noautorotate",
                "-i",
-               source.path,
+               readPath(source),
                "-map",
                `0:${video.index}`,
                "-an",
@@ -482,7 +482,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             "-itsoffset",
             String(-(clip.start - audioPreroll)),
             "-i",
-            source.path,
+            readPath(source),
             ...metadata.inputs,
             "-map",
             "0:v:0",
@@ -505,7 +505,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
             "-t",
             String(duration),
          ];
-         if (isMp4Container(extname(destination))) args.push(...containerFlags(video));
+         if (isMp4Container(extname(destination))) args.push(...containerFlags(video, source.formatTags));
          else {
             args.push("-bsf:a", dropOutside(0, duration), "-avoid_negative_ts", "disabled");
             if (source.streams.some((stream) => stream.type === "subtitle" && !textSubtitleCodecs.has(stream.codec) && kept(stream)))
@@ -568,7 +568,7 @@ export async function exportCut(source: ProbedSource, analysis: CutAnalysis, des
       await assertSourceUnchanged(source);
       options.onStage?.("saving");
       options.onProgress?.(0.98);
-      await publishOutput(finalTemporary, destination, options.overwrite, source.path, options.replaceSource);
+      await publishOutput(finalTemporary, destination, options.overwrite, source.path, options.replaceSource, exportPublishOptions(source));
       options.onProgress?.(1);
    });
 }

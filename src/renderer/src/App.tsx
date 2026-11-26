@@ -271,7 +271,13 @@ export default function App() {
             <NoticeBanner
                notice={error}
                onDismiss={() => setError(null)}
-               action={restore && <Button onClick={() => void choose(restore)}>Locate video</Button>}
+               action={
+                  error?.action ? (
+                     <Button onClick={error.action.run}>{error.action.label}</Button>
+                  ) : (
+                     restore && <Button onClick={() => void choose(restore)}>Locate video</Button>
+                  )
+               }
             />
             <main className="workspace">
                <div className="preview-workspace">

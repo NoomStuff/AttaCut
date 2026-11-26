@@ -19,6 +19,7 @@ interface IpcResponses {
    "project:save": Result<"saveProject">;
    "project:confirm": Result<"confirmProject">;
    "source:close": void;
+   "source:locate": Result<"locateSource">;
    "source:keyframes": number[];
    "source:scenes": number[];
    "source:ranges": Result<"detectRanges">;
@@ -69,4 +70,5 @@ export const IpcEvents = {
    windowAction: "window:action",
    windowFullscreen: "window:fullscreen",
    rendererReady: "app:renderer-ready",
+   sourceFile: "source:file",
 } as const;

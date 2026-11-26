@@ -21,6 +21,7 @@ import { analyzeRequestSchema, exportExtensionFor, planRequestSchema } from "../
 import { analyzeCut, exportCut } from "./media/cut.ts";
 import type { CutAnalysis } from "./media/cut.ts";
 import type { ProbedSource } from "./media/probe.ts";
+import { hasSnapshot } from "./media/probe.ts";
 import { protectSource } from "./media/publish.ts";
 import { exportCombined } from "./media/combine.ts";
 import { duplicateNames, filenameError, outputFilename } from "../shared/filename";
@@ -55,9 +56,12 @@ export class ExportService {
    private completion: Promise<void> = Promise.resolve();
    private readonly emit: (job: ExportJob) => void;
    private readonly beforeItem: ((signal: AbortSignal) => Promise<void>) | undefined;
-   constructor(emit: (job: ExportJob) => void, beforeItem?: (signal: AbortSignal) => Promise<void>) {
+   private readonly retain: ((source: ProbedSource) => () => void) | undefined;
+   /** `retain` keeps the source's snapshot alive while a job reads it, even after the editor moves on. */
+   constructor(emit: (job: ExportJob) => void, beforeItem?: (signal: AbortSignal) => Promise<void>, retain?: (source: ProbedSource) => () => void) {
       this.emit = emit;
       this.beforeItem = beforeItem;
+      this.retain = retain;
    }
    cancelAnalysis(): void {
       this.inspectionController.abort();
@@ -171,7 +175,7 @@ export class ExportService {
       const directoryPath = resolve(settings.directory);
       const names = outputNames(source, settings);
       const conflictFor = async (path: string): Promise<Omit<DestinationConflict, "clipId">> => {
-         if (await protectSource(source.path, path, true)) return { conflict: "Will replace the source video", danger: true };
+         if (await protectSource(source.path, path, true, hasSnapshot(source))) return { conflict: "Will replace the source video", danger: true };
          return (await exists(path)) ? { conflict: "Will replace an existing file", danger: false } : { conflict: null, danger: false };
       };
       if (settings.mode === "combined") return { items: [{ clipId: null, ...(await conflictFor(join(directoryPath, names[0]!))) }] };
@@ -238,7 +242,7 @@ export class ExportService {
          items.splice(0, items.length, combined);
       }
       const destinations = await mapConcurrent(items, async (item) => ({
-         source: await protectSource(source.path, item.outputPath, true),
+         source: await protectSource(source.path, item.outputPath, true, hasSnapshot(source)),
          exists: await exists(item.outputPath),
       }));
       let sourcePath: string | null = null;
@@ -325,7 +329,21 @@ export class ExportService {
       const job = this.job!;
       const stored = this.runningPlan!;
       const signal = this.controller!.signal;
-      for (const item of job.items) {
+      const release = this.retain?.(stored.source);
+      try {
+         await this.runItems(job, stored, signal);
+      } finally {
+         release?.();
+      }
+      job.running = false;
+      this.emit(structuredClone(job));
+   }
+   private async runItems(job: ExportJob, stored: StoredPlan, signal: AbortSignal): Promise<void> {
+      // Replacements run last, the source itself after everything else: no other file
+      // waits on a name that has already changed.
+      const rank = (item: ExportJob["items"][number]) =>
+         item.outputPath === stored.plan.sourcePath ? 2 : stored.plan.existingPaths.includes(item.outputPath) ? 1 : 0;
+      for (const item of [...job.items].sort((a, b) => rank(a) - rank(b))) {
          if (item.status !== "queued") continue;
          if (signal.aborted) {
             item.status = "cancelled";
@@ -342,7 +360,12 @@ export class ExportService {
             await this.beforeItem?.(signal);
             signal.throwIfAborted();
             if (stored.approval?.createDirectory) await mkdir(stored.plan.directory, { recursive: true });
-            await protectSource(stored.source.path, item.outputPath, !!stored.approval?.replaceSource && item.outputPath === stored.plan.sourcePath);
+            await protectSource(
+               stored.source.path,
+               item.outputPath,
+               !!stored.approval?.replaceSource && item.outputPath === stored.plan.sourcePath,
+               hasSnapshot(stored.source)
+            );
             const cuts = stored.analyses.get(item.id)!;
             const options = {
                priority: "export" as const,
@@ -373,13 +396,11 @@ export class ExportService {
          } catch (error) {
             item.status = signal.aborted ? "cancelled" : "failed";
             item.error = error instanceof Error ? error.message : String(error);
-            item.failure = appFailure(error);
+            item.failure = appFailure(error, { output: item.outputPath });
          }
          finishStage(item.status === "cancelled" ? "cancelled" : (item.failure?.code ?? "ok"));
          this.emit(structuredClone(job));
       }
-      job.running = false;
-      this.emit(structuredClone(job));
    }
 }
 function outputSettings(source: ProbedSource, settings: ReturnType<typeof analyzeRequestSchema.parse>): OutputSettings {

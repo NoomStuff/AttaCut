@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, readFile, rm, stat, utimes } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { runMedia, ffmpegBase } from "../../src/main/media/process.ts";
 import { probeSource } from "../../src/main/media/probe.ts";
@@ -252,6 +252,39 @@ const rotationOutput = join(folder, "rotated-cut.mov");
 await rm(rotationOutput, { force: true });
 await exportCut(rotationSource, rotationCut, rotationOutput);
 assert.equal((await probeSource(rotationOutput)).streams[0]!.rotation, rotationSource.streams[0]!.rotation);
+const tagged = join(folder, "tagged.mov");
+await rm(tagged, { force: true });
+await runMedia("ffmpeg", [
+   ...ffmpegBase,
+   "-i",
+   "work/formats/h264.mp4",
+   "-map",
+   "0",
+   "-c",
+   "copy",
+   "-metadata",
+   "com.apple.quicktime.make=Apple",
+   "-metadata",
+   "creation_time=2024-01-02T03:04:05Z",
+   "-movflags",
+   "use_metadata_tags",
+   tagged,
+]);
+const recorded = new Date("2024-01-02T03:04:05Z");
+await utimes(tagged, recorded, recorded);
+const taggedSource = await probeSource(tagged);
+for (const extension of [".mov", ".mp4"]) {
+   const target = join(folder, `tagged-cut${extension}`);
+   await rm(target, { force: true });
+   await exportCut(taggedSource, await analyzeCut(taggedSource, { id: "t", color: 0, start: 1.25, end: 6.5 }, undefined, { extension }), target);
+   const tags = (await probeSource(target)).formatTags ?? {};
+   assert.equal(tags["com.apple.quicktime.make"], "Apple", `${extension} keeps reverse-DNS tags`);
+   assert.match(tags["creation_time"] ?? "", /^2024-01-02T03:04:05/, `${extension} keeps the recording date`);
+   const times = await stat(target);
+   assert.equal(Math.round(times.mtimeMs), recorded.getTime(), `${extension} keeps the modified date`);
+   if (process.platform !== "linux")
+      assert.equal(Math.round(times.birthtimeMs), Math.round(taggedSource.times!.created), `${extension} keeps the creation date`);
+}
 const hdr = await probeSource(resolve("work/formats/hevc-hdr10.mkv"));
 const preview = await preparePreview(
    hdr,

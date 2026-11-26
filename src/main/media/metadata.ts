@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import type { Clip } from "../../shared/types.ts";
 import type { ProbedSource } from "./probe.ts";
+import { readPath } from "./probe.ts";
 import { runMedia } from "./process.ts";
 import { dispositionFlags, serializeChapters } from "./mux.ts";
 import type { ChapterMark } from "./mux.ts";
@@ -13,7 +14,7 @@ async function sourceSubtitle(source: ProbedSource, index: number, signal?: Abor
    let cache = subtitleCache.get(source);
    const cached = cache?.get(index);
    if (cached !== undefined) return cached;
-   const text = await runMedia("ffmpeg", ["-v", "error", "-i", source.path, "-map", `0:${index}`, "-c:s", "ass", "-f", "ass", "-"], { signal });
+   const text = await runMedia("ffmpeg", ["-v", "error", "-i", readPath(source), "-map", `0:${index}`, "-c:s", "ass", "-f", "ass", "-"], { signal });
    signal?.throwIfAborted();
    if (!cache) {
       cache = new Map();
