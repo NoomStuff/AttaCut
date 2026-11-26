@@ -334,7 +334,9 @@ export default function App() {
                      <EmptyState onImport={() => void choose()} loading={loading} mac={mac} recent={recent} onOpenRecent={(path) => void openPath(path)} />
                   )}
                   <JobNotifications
-                     onReopen={() => void choose()}
+                     sourceId={source?.id ?? null}
+                     onLocate={session.locateSource}
+                     onReload={() => void session.reloadSource()}
                      jobs={notifications}
                      onClear={() => setNotifications([])}
                      currentJob={job}

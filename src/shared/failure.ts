@@ -7,6 +7,7 @@ export type FailureCode =
    | "path-too-long"
    | "folder-missing"
    | "source-changed"
+   | "source-moved"
    | "source-missing"
    | "trash"
    | "invalid-request"

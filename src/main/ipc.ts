@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { join, resolve, dirname, basename } from "node:path";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { statOrNull } from "./files";
-import type { AvailableUpdate, SavedSession } from "../shared/types";
+import type { AvailableUpdate, RecoveredExport, SavedSession } from "../shared/types";
 import { projectExtension, projectExtensions, projectHasChanges, discardProjectChanges } from "../shared/project";
 import { readProject, projectSourcePaths, validateProjectSource, writeProject, updateProjectSource } from "./project-document";
 import { diagnosticReport, recordDiagnostic, recordAssessment, protectDiagnosticDestination } from "./diagnostics";
@@ -44,6 +44,7 @@ export function registerIpc({
    onRestartToUpdate,
    onCancelUpdateRestart,
    takeUpdateOutcome,
+   takeRecoveredExports,
    testing = null,
 }: {
    window: BrowserWindow;
@@ -57,9 +58,11 @@ export function registerIpc({
    onRestartToUpdate: () => void;
    onCancelUpdateRestart: () => void;
    takeUpdateOutcome: () => Promise<AvailableUpdate | null>;
+   takeRecoveredExports: () => Promise<RecoveredExport[]>;
    testing?: IpcTestAdapter | null;
 }): void {
    const frameOutputs = new Set<string>();
+   const recoveredOutputs = new Set<string>();
    // The final close snapshot outranks delayed autosaves. A cancelled close releases
    // those saves again so the live edit remains recoverable.
    let closingSnapshot: Promise<boolean> | null = null;
@@ -386,6 +389,11 @@ export function registerIpc({
    handle("export:start", (request) => exportsService.start(request.id, request.approval));
    handle("export:cancel", () => exportsService.cancel());
    handle("export:retry", (value) => exportsService.retry(value));
+   handle("export:recovered", async () => {
+      const recovered = await takeRecoveredExports();
+      for (const item of recovered) recoveredOutputs.add(item.path);
+      return recovered;
+   });
    const completedOutput = (path: string) => !!exportsService.current?.items.some((item) => item.outputPath === path && item.status === "completed");
    handle("output:open", async (path) => {
       if (!completedOutput(path)) throw new Error("Exported file not found.");
@@ -393,7 +401,8 @@ export function registerIpc({
       if (failure) throw new Error(failure);
    });
    handle("output:reveal", (path) => {
-      if (!frameOutputs.has(path) && updates.downloadedPath !== path && !completedOutput(path)) throw new Error("Output not found.");
+      if (!frameOutputs.has(path) && !recoveredOutputs.has(path) && updates.downloadedPath !== path && !completedOutput(path))
+         throw new Error("Output not found.");
       shell.showItemInFolder(path);
    });
    // The renderer only ever opens links to project-owned sites; the allowlist keeps a

@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as streams from "node:stream/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configureTrash, copyFileTimes, publishOutput } from "./publish";
+import { configurePublishJournal, configureTrash, copyFileTimes, publishOutput } from "./publish";
 
 vi.mock("node:fs/promises", async (original) => ({ ...(await original<typeof fs>()), link: vi.fn() }));
 vi.mock("node:stream/promises", async (original) => ({ ...(await original<typeof streams>()), pipeline: vi.fn() }));
@@ -87,6 +87,33 @@ it("moves a replaced file to the trash before publishing over it", async () => {
       }
       expect(trashed).toEqual(["existing original"]);
       expect(await fs.readFile(destination, "utf8")).toBe("verified media");
+   });
+});
+
+it("records a replacement before trashing and keeps the new file nearby when it can't take the old one's place", async () => {
+   const actual = await vi.importActual<typeof fs>("node:fs/promises");
+   await fixture(async (source, destination) => {
+      vi.mocked(fs.link).mockImplementation(async (from, to) => {
+         if (to === destination) throw Object.assign(new Error("denied"), { code: "EACCES" });
+         await actual.link(from, to);
+      });
+      await fs.writeFile(destination, "existing original");
+      const steps: string[] = [];
+      configurePublishJournal({
+         publishing: async (_folder, temporary, target) => void steps.push(`journal ${temporary === source} ${target === destination}`),
+      });
+      configureTrash(async (path) => {
+         steps.push("trash");
+         await fs.rm(path);
+      });
+      try {
+         await expect(publishOutput(source, destination, true, undefined, false, { trash: true })).rejects.toThrow('so it was saved as "output (2)"');
+      } finally {
+         configureTrash(null);
+         configurePublishJournal(null);
+      }
+      expect(steps).toEqual(["journal true true", "trash"]);
+      expect(await fs.readFile(`${destination} (2)`, "utf8")).toBe("verified media");
    });
 });
 

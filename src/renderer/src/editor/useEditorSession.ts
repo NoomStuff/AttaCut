@@ -81,7 +81,7 @@ export function useEditorSession({
    const [, setRelocations] = useState(0);
    const fileNotice = useRef<EditorNotice | null>(null);
    // Banner actions outlive the render that created them, so they call the latest handlers.
-   const fileActions = useRef<{ locate: () => Promise<void>; reload: () => Promise<void> } | null>(null);
+   const fileActions = useRef<{ locate: () => Promise<boolean>; reload: () => Promise<void> } | null>(null);
    // Saved eagerly here, and again on every change by the effect in usePersistence: this
    // call flushes the outgoing source's session before another one loads, so restoring
    // always sees the latest edit.
@@ -318,6 +318,18 @@ export function useEditorSession({
       onOpenFile: (path) => {
          void openPath(path);
       },
+      onRecovered: (items) => {
+         const bin = platform === "win32" ? "Recycle Bin" : "Trash";
+         const first = items[0]!;
+         setError({
+            tone: "info",
+            text:
+               items.length === 1
+                  ? `AttaCut closed while saving "${first.name}". The export is in place now, and the file it replaced is in the ${bin}.`
+                  : `AttaCut closed while saving ${items.length} exports. They're in place now, and the files they replaced are in the ${bin}.`,
+            action: { label: "Show in folder", run: () => void window.desktop.revealOutput(first.path).catch((value: unknown) => showError(errorText(value))) },
+         });
+      },
       onSourceFile: (status) => {
          // An export replacing the source reopens it when it finishes.
          if (replacingSourceId.current === status.sourceId || sourceRef.current?.id !== status.sourceId) return;
@@ -357,16 +369,19 @@ export function useEditorSession({
       const snapshot = sessionFor(current, editorRef.current, null, projectRef.current);
       if (snapshot) void window.desktop.saveSession(encodeSession(snapshot)).catch(() => undefined);
    };
-   const locateSource = async () => {
+   /** Whether the original was found. */
+   const locateSource = async (): Promise<boolean> => {
       const current = sourceRef.current;
-      if (!current) return;
+      if (!current) return false;
       try {
          const status = await window.desktop.locateSource(current.id);
-         if (!status) return;
+         if (!status) return false;
          relocate(status);
          showFileNotice(null);
+         return true;
       } catch (value) {
          showError(errorText(value));
+         return false;
       }
    };
    const reloadSource = async () => {
@@ -397,6 +412,8 @@ export function useEditorSession({
    return {
       source,
       sourceRef,
+      locateSource,
+      reloadSource,
       editor,
       documentRef,
       dispatch,

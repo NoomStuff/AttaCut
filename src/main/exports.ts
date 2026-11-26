@@ -24,6 +24,7 @@ import type { ProbedSource } from "./media/probe.ts";
 import { hasSnapshot } from "./media/probe.ts";
 import { protectSource, replacementProblem } from "./media/publish.ts";
 import { windowsShell } from "./windows-shell.ts";
+import { onFatDrive } from "./media/file-system.ts";
 import { exportCombined } from "./media/combine.ts";
 import { duplicateNames, filenameError, outputFilename } from "../shared/filename";
 import { substantialEncoding } from "../shared/export-policy";
@@ -450,7 +451,7 @@ async function assertSpaceFor(source: ProbedSource, item: ExportJob["items"][num
             code: "ENOSPC",
          }
       );
-   if (process.platform === "win32" && needed >= 4 * 1024 ** 3 && (await windowsShell.driveFormat(directory).catch(() => "")).toUpperCase() === "FAT32")
+   if (needed >= 4 * 1024 ** 3 && (await onFatDrive(directory)))
       throw Object.assign(
          new Error(
             `"${item.name}" would be about ${size(needed)}, and this FAT32 drive can't hold files over 4 GB. Export to another drive or export a shorter clip.`

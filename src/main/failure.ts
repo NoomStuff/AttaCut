@@ -35,7 +35,9 @@ export function appFailure(value: unknown, context: FailureContext = {}): AppFai
             ? `AttaCut couldn't write ${file}. Close it if it's open in another app, or check the folder's permissions.`
             : "AttaCut doesn't have permission for that. Check the file or folder's permissions and try again."
       );
-   if (/^The original file (changed|was moved or deleted)\./.test(detail)) return result("source-changed", detail, false);
+   if (/^The original file changed\./.test(detail)) return result("source-changed", detail, false);
+   // Locating the original updates the open source in place, so a retry reads it again.
+   if (/^The original file was moved or deleted\./.test(detail)) return result("source-moved", detail);
    if (/^The original .+ is in the (Recycle Bin|Trash)/.test(detail)) return result("trash", detail, false);
    if (error?.code === "EIO" || /\bEIO\b|input\/output error|Error opening input file|device (is )?not (ready|connected)/i.test(detail))
       return result("source-missing", "AttaCut can't read the video anymore. If its drive was disconnected, reconnect it and try again.");

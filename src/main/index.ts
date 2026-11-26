@@ -13,6 +13,7 @@ import { isProjectPath } from "../shared/project";
 import { prunePreviews } from "./media/preview.ts";
 import { SnapshotStore } from "./media/snapshot.ts";
 import { configureTrash } from "./media/publish.ts";
+import { configureWorkJournal, WorkJournal } from "./media/work-journal.ts";
 import { windowsShell } from "./windows-shell.ts";
 import { IpcEvents } from "../shared/ipc.ts";
 import { installMenu } from "./menu.ts";
@@ -213,6 +214,10 @@ async function start(): Promise<void> {
    void previewCleanup.catch(() => undefined);
    const snapshots = new SnapshotStore(resolve(app.getPath("userData"), "snapshots"));
    void snapshots.sweep();
+   const journal = new WorkJournal(resolve(app.getPath("userData"), "work-journal.json"));
+   configureWorkJournal(journal);
+   const recovery = journal.recover().catch(() => []);
+   let recoveryTaken = false;
    const sourceSession = new SourceSession(previewFolder, previewCleanup, sourceProbe, {
       snapshots,
       onStatus: (status) => {
@@ -487,6 +492,12 @@ async function start(): Promise<void> {
          if (outcomeTaken) return null;
          outcomeTaken = true;
          return outcome;
+      },
+      takeRecoveredExports: async () => {
+         const recovered = await recovery;
+         if (recoveryTaken) return [];
+         recoveryTaken = true;
+         return recovered;
       },
    });
    ipcMain.on(IpcEvents.windowAction, (event, value: unknown) => {
