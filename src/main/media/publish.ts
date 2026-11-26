@@ -1,7 +1,7 @@
 import { link, open, rename, rm, stat, utimes } from "node:fs/promises";
 import { samePath, statOrNull } from "../files";
 import { createReadStream } from "node:fs";
-import { basename } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { windowsShell } from "../windows-shell.ts";
@@ -42,6 +42,14 @@ let trash: Trash | null = null;
 /** The desktop shell supplies the platform trash. Without one, replacements are refused. */
 export function configureTrash(value: Trash | ((path: string) => Promise<void>) | null): void {
    trash = typeof value === "function" ? { move: value } : value;
+}
+/** Records a replacement in flight, so a crash between its two steps cannot lose the new file. */
+export interface PublishJournal {
+   publishing: (folder: string, temporary: string, destination: string) => Promise<void>;
+}
+let journal: PublishJournal | null = null;
+export function configurePublishJournal(value: PublishJournal | null): void {
+   journal = value;
 }
 export const trashName = process.platform === "win32" ? "Recycle Bin" : "Trash";
 
@@ -106,9 +114,13 @@ export async function publishOutput(
    if (source) await protectSource(source, destination, replaceSource, options.sourceMayBeMissing);
    if (overwrite) {
       if (options.trash && (await statOrNull(destination))) {
+         await journal?.publishing(dirname(temporary), temporary, destination);
          await moveToTrash(destination);
-         await publishNew(temporary, destination).catch((error: unknown) => {
-            throw new Error(`The original "${basename(destination)}" is in the ${trashName}, but the new file couldn't take its place. ${String(error)}`);
+         await publishNew(temporary, destination).catch(async (error: unknown) => {
+            const original = `The original "${basename(destination)}" is in the ${trashName}, but the new file couldn't take its place`;
+            const beside = await publishBeside(temporary, destination).catch(() => null);
+            if (beside) throw new Error(`${original}, so it was saved as "${basename(beside)}". ${String(error)}`);
+            throw new Error(`${original}. ${String(error)}`);
          });
       } else {
          // Both paths are on the destination volume. Keep the old file until the new
@@ -119,7 +131,7 @@ export async function publishOutput(
    if (options.times) await copyFileTimes(destination, options.times).catch(() => undefined);
 }
 
-async function publishNew(temporary: string, destination: string): Promise<void> {
+export async function publishNew(temporary: string, destination: string): Promise<void> {
    try {
       await link(temporary, destination);
    } catch (error) {
@@ -137,6 +149,21 @@ async function publishNew(temporary: string, destination: string): Promise<void>
       }
    }
    await rm(temporary, { force: true }).catch(() => undefined);
+}
+
+/** Keep a finished file under the next free name beside its destination. */
+async function publishBeside(temporary: string, destination: string): Promise<string> {
+   const extension = extname(destination);
+   const stem = basename(destination, extension);
+   for (let suffix = 2; ; suffix++) {
+      const path = join(dirname(destination), `${stem} (${suffix})${extension}`);
+      try {
+         await publishNew(temporary, path);
+         return path;
+      } catch (error) {
+         if ((error as NodeJS.ErrnoException).code !== "EEXIST" || suffix >= 20) throw error;
+      }
+   }
 }
 
 /** Give an export the source's file dates. Linux cannot set a creation date. */

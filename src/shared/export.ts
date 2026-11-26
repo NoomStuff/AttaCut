@@ -93,6 +93,11 @@ export interface JobItem {
    error: string | null;
    failure?: AppFailure;
 }
+/** A finished export a crash left out of place, which the next start put at its destination. */
+export interface RecoveredExport {
+   path: string;
+   name: string;
+}
 export interface ExportJob {
    id: string;
    sourceId: string;

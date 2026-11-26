@@ -49,6 +49,7 @@ interface IpcResponses {
    "export:start": Result<"startExport">;
    "export:cancel": void;
    "export:retry": Result<"retryExport">;
+   "export:recovered": Result<"takeRecoveredExports">;
    "output:open": void;
    "output:reveal": void;
    "open:external": void;

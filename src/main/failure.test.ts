@@ -29,8 +29,8 @@ it("keeps the specific wording of refusals made before an export starts", () => 
    const space = 'There isn\'t enough free space for "a.mp4". It needs about 2.0 GB, and the drive has 1.0 GB free.';
    expect(appFailure(Object.assign(new Error(space), { code: "ENOSPC" })).message).toBe(space);
    expect(appFailure(new Error("The original file was moved or deleted. Locate it, then export again."))).toMatchObject({
-      code: "source-changed",
-      retryable: false,
+      code: "source-moved",
+      retryable: true,
    });
    expect(appFailure(Object.assign(new Error("busy"), { code: "EBUSY" }), { output: "/out/clip.mp4" }).message).toContain('"clip.mp4" is open in another app');
 });

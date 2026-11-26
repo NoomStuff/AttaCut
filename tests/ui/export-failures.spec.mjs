@@ -1,6 +1,6 @@
 import { expect } from "@playwright/test";
 import { test, configureIpc, waitForVideo } from "./app.mjs";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 
 async function heldJob(app, page, profile) {
@@ -74,3 +74,20 @@ for (const cancel of [false, true])
       const state = JSON.parse(await readFile(join(profile, "session.json"), "utf8"));
       expect(state.session.clips[0].start).toBe(2);
    });
+
+test("an export a crash left mid-replacement is put in place on the next start", async ({ launchApp, profile }) => {
+   const work = join(profile, ".attacut-interrupted");
+   const destination = join(profile, "clip.mp4");
+   await mkdir(work);
+   await writeFile(join(work, "output.mp4"), "finished export");
+   await writeFile(
+      join(profile, "work-journal.json"),
+      JSON.stringify([{ folder: work, started: Date.now(), publish: { temporary: join(work, "output.mp4"), destination } }])
+   );
+   const app = await launchApp(profile);
+   const page = await app.firstWindow();
+   await expect(page.getByText('AttaCut closed while saving "clip.mp4".', { exact: false })).toBeVisible();
+   await expect(page.getByRole("button", { name: "Show in folder" })).toBeVisible();
+   expect(await readFile(destination, "utf8")).toBe("finished export");
+   expect((await readdir(profile)).some((name) => name.startsWith(".attacut-"))).toBe(false);
+});

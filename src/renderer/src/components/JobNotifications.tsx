@@ -10,7 +10,9 @@ export function JobNotifications({
    onClear,
    onError,
    onRetry,
-   onReopen,
+   sourceId,
+   onLocate,
+   onReload,
 }: {
    jobs: ExportJob[];
    currentJob: ExportJob | null;
@@ -18,7 +20,10 @@ export function JobNotifications({
    onClear: () => void;
    onError: (message: string) => void;
    onRetry: (job: ExportJob) => void;
-   onReopen: () => void;
+   /** The open source. Locate and reload only apply to its own exports. */
+   sourceId: string | null;
+   onLocate: () => Promise<boolean>;
+   onReload: () => void;
 }) {
    const root = useRef<HTMLElement>(null);
    const scroll = useRef<HTMLDivElement>(null);
@@ -141,7 +146,7 @@ export function JobNotifications({
                            onDismiss={() => onDismiss(job.id)}
                            onError={onError}
                            onRetry={onRetry}
-                           onReopen={onReopen}
+                           {...(job.sourceId === sourceId ? { onLocate, onReload } : {})}
                            retryAvailable={currentJob?.id === job.id && !currentJob.running}
                         />
                      </div>

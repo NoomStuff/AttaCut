@@ -72,6 +72,7 @@ const api: DesktopApi = {
    startExport: (id, approval) => invoke("export:start", { id, approval }),
    cancelExport: () => invoke("export:cancel"),
    retryExport: (id) => invoke("export:retry", id),
+   takeRecoveredExports: () => invoke("export:recovered"),
    revealOutput: (path) => invoke("output:reveal", path),
    openOutput: (path) => invoke("output:open", path),
    openExternal: (url) => invoke("open:external", url),

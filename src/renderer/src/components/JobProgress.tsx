@@ -14,7 +14,8 @@ export function JobProgress({
    onError,
    onRetry,
    retryAvailable,
-   onReopen,
+   onLocate,
+   onReload,
 }: {
    job: ExportJob;
    closing: boolean;
@@ -22,7 +23,8 @@ export function JobProgress({
    onError: (value: string) => void;
    onRetry: (value: ExportJob) => void;
    retryAvailable: boolean;
-   onReopen: () => void;
+   onLocate?: () => Promise<boolean>;
+   onReload?: () => void;
 }) {
    const [hideSuccess, setHideSuccess] = useState(false);
    const [hideFailures, setHideFailures] = useState(false);
@@ -47,6 +49,19 @@ export function JobProgress({
    const dismissFailures = () => {
       if (!completed.length || hideSuccess) onDismiss();
       else setHideFailures(true);
+   };
+   const retry = () => {
+      void window.desktop
+         .retryExport(job.id)
+         .then((value) => {
+            setHideSuccess(false);
+            setHideFailures(false);
+            onRetry(value);
+         })
+         .catch((value: unknown) => onError(errorText(value)));
+   };
+   const locate = async () => {
+      if ((await onLocate?.()) && retryAvailable) retry();
    };
    const openFirst = (action: "openOutput" | "revealOutput") => {
       const item = completed[0]!;
@@ -138,7 +153,8 @@ export function JobProgress({
                   ))}
                </div>
                <div className="job-actions">
-                  {failures.some((item) => item.failure?.code === "source-changed") && <Button onClick={onReopen}>Reopen source</Button>}
+                  {onLocate && failures.some((item) => item.failure?.code === "source-moved") && <Button onClick={() => void locate()}>Locate video</Button>}
+                  {onReload && failures.some((item) => item.failure?.code === "source-changed") && <Button onClick={onReload}>Reload video</Button>}
                   <Button
                      disabled={!retryAvailable || !failures.some((item) => item.failure?.retryable !== false)}
                      title={
@@ -148,16 +164,7 @@ export function JobProgress({
                              ? "Change the cuts or options before exporting again"
                              : undefined
                      }
-                     onClick={() => {
-                        void window.desktop
-                           .retryExport(job.id)
-                           .then((value) => {
-                              setHideSuccess(false);
-                              setHideFailures(false);
-                              onRetry(value);
-                           })
-                           .catch((value: unknown) => onError(errorText(value)));
-                     }}
+                     onClick={retry}
                   >
                      {job.items.length === 1 ? "Retry video" : "Retry files"}
                   </Button>

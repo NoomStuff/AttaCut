@@ -4,7 +4,7 @@ import type { ProjectOutline, SavedSession } from "./editing";
 import type { SessionInput } from "./session-codec";
 import type { DetectedRange, MediaSource, RangeDetection, ScrubAudio, SourceFileStatus } from "./media";
 import type { RecentEntry } from "./recent";
-import type { PlanRequest, AnalyzeRequest, ExportApproval, ExportPlan, ExportDestinations, CutReport, ExportJob } from "./export";
+import type { PlanRequest, AnalyzeRequest, ExportApproval, ExportPlan, ExportDestinations, CutReport, ExportJob, RecoveredExport } from "./export";
 import type { RendererError } from "./bug-report";
 export interface Bootstrap {
    warning: string | null;
@@ -94,6 +94,8 @@ export interface DesktopApi {
    startExport(planId: string, approval?: ExportApproval): Promise<ExportJob>;
    cancelExport(): Promise<void>;
    retryExport(jobId: string): Promise<ExportJob>;
+   /** Exports an earlier crash interrupted while replacing a file, reported once. */
+   takeRecoveredExports(): Promise<RecoveredExport[]>;
    revealOutput(path: string): Promise<void>;
    openOutput(path: string): Promise<void>;
    openExternal(url: string): Promise<void>;

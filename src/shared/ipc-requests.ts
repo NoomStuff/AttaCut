@@ -79,6 +79,7 @@ export const ipcRequestSchemas = {
    "export:start": z.object({ id: z.string(), approval: exportApprovalSchema.optional() }),
    "export:cancel": z.void(),
    "export:retry": z.string(),
+   "export:recovered": z.void(),
    "output:open": z.string(),
    "output:reveal": z.string(),
    "open:external": z.string(),
