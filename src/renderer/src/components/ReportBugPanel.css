@@ -1,0 +1,16 @@
+.report-bug-modal {
+   width: min(460px, calc(100vw - 60px));
+}
+
+.report-bug-body p {
+   margin: 0 0 8px;
+}
+
+.report-bug-detail {
+   color: var(--muted);
+   font-size: 12px;
+}
+
+.report-bug-error {
+   color: var(--danger);
+}

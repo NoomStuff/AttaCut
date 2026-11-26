@@ -1,0 +1,62 @@
+name: Bug report
+description: Something in AttaCut doesn't work the way it should
+labels: ["bug"]
+body:
+   - type: markdown
+     attributes:
+        value: Use **Report a bug** in the app (Help → Report a bug). It saves your logs and fills in your version and system. One bug per issue. If an export has the wrong frames, shifted cuts, out of sync audio or a missing track, say so in the title.
+   - type: textarea
+     id: what-happened
+     attributes:
+        label: What happened?
+        description: Error messages word for word, if there were any.
+        placeholder: I cut two clips and exported them. The second clip starts about half a second later than the handle I set.
+     validations:
+        required: true
+   - type: textarea
+     id: expected
+     attributes:
+        label: What did you expect?
+        placeholder: Both clips start on the exact frame I picked.
+     validations:
+        required: true
+   - type: textarea
+     id: steps
+     attributes:
+        label: How can it be reproduced?
+        description: Steps from opening the recording to the bug, and how often it happens. Skip the steps if you have no idea.
+        placeholder: |
+           1. Open the recording
+           2. Add a clip and drag its start handle to 00:12.4
+           3. Export with Snap to keyframes off
+   - type: input
+     id: version
+     attributes:
+        label: AttaCut version and system
+        description: The version is in Help → About. Report a bug fills this in.
+        placeholder: "x.y.z, Windows 11"
+     validations:
+        required: true
+   - type: textarea
+     id: file
+     attributes:
+        label: The video
+        description: |
+           If the problem happens with one recording, attaching it helps most. A short piece that still shows the problem is enough. GitHub takes MP4, MOV and WebM up to 10 MB and zips up to 25 MB. For bigger files, paste a link.
+           If you can't share it, run `ffprobe -hide_banner "your-file"` and paste the output instead. It lists the container, streams and codecs, not the video itself.
+   - type: textarea
+     id: logs
+     attributes:
+        label: Logs
+        description: |
+           Drag in the zip from Report a bug or Help → Export logs. If AttaCut won't open, zip the `logs` folder in `%APPDATA%\AttaCut`, `~/.config/AttaCut` or `~/Library/Application Support/AttaCut`.
+           It holds AttaCut's logs and system details. Never video, your user folder shows as `~`, and the names of your videos and exports are replaced.
+   - type: checkboxes
+     id: checks
+     attributes:
+        label: Before you send it
+        options:
+           - label: I searched the existing issues and this one is new.
+             required: true
+           - label: I'm on the newest AttaCut release, or I said above why I'm not.
+             required: true

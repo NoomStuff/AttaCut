@@ -7,6 +7,7 @@ import {
    faArrowUpFromBracket,
    faArrowUpRightFromSquare,
    faBroom,
+   faBug,
    faCamera,
    faCaretLeft,
    faCaretRight,
@@ -21,6 +22,7 @@ import {
    faFileCsv,
    faFileLines,
    faFilePen,
+   faFileZipper,
    faFilm,
    faFloppyDisk,
    faFolderOpen,
@@ -85,6 +87,8 @@ const menuIcons: Partial<Record<CommandId, IconDefinition>> = {
    about: faCircleInfo,
    updates: faArrowsRotate,
    releases: faArrowUpRightFromSquare,
+   reportBug: faBug,
+   exportLogs: faFileZipper,
    reset: faTriangleExclamation,
 };
 

@@ -1,0 +1,31 @@
+name: Feature request
+description: An idea that makes trimming a recording faster or more accurate
+labels: ["enhancement"]
+body:
+   - type: markdown
+     attributes:
+        value: AttaCut pulls kept ranges out of one recording. Joining sources, effects, transitions and rearranging clips are out of scope. If your idea is one of those, say why it belongs in AttaCut anyway.
+   - type: textarea
+     id: idea
+     attributes:
+        label: What should AttaCut do?
+        description: Rough is fine.
+        placeholder: Remember the last export folder per recording, so I don't pick it again for every clip.
+     validations:
+        required: true
+   - type: textarea
+     id: problem
+     attributes:
+        label: Why do you want it?
+        description: What you were trying to do and what got in the way.
+        placeholder: I trim twenty clips from each stream recording and every export asks for the folder again.
+     validations:
+        required: true
+   - type: checkboxes
+     id: checks
+     attributes:
+        label: Before you send it
+        options:
+           - label: I searched the existing issues and this idea is new.
+             required: true
+           - label: I'm willing to implement this feature myself.

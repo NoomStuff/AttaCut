@@ -8,7 +8,7 @@ const menuSections: Record<string, CommandId[][]> = {
    File: [["open"], ["frame", "export"], ["saveProject", "saveProjectAs", "closeProject"], ["quit"]],
    Edit: [["undo", "redo"], ["split", "merge", "autoDetectCuts"], ["setStart", "setEnd", "add", "delete", "invert"], ["preview"], ["settings"]],
    View: [["zoomIn", "zoomOut", "fit", "focusClip"], ["preview"], ["fullscreen"], ["options"]],
-   Help: [["help", "shortcuts", "about"], ["updates", "releases"], ["reset"]],
+   Help: [["help", "shortcuts", "about"], ["updates", "releases"], ["reportBug", "exportLogs"], ["reset"]],
 };
 
 /** The in-app menu bar. The open menu lives with the caller, since shortcuts yield to it. */

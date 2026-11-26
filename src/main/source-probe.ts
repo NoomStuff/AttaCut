@@ -5,6 +5,7 @@ import { probeSource } from "./media/probe";
 import type { ProbedSource } from "./media/probe";
 import { waitForWork } from "./media/shared-work";
 import type { Stats } from "node:fs";
+import { keepPrivate } from "./app-log";
 
 function fileIdentity(info: Stats): string {
    return JSON.stringify([info.dev, info.ino, info.size, info.mtimeMs, info.ctimeMs, info.birthtimeMs]);
@@ -49,6 +50,7 @@ export class SourceProbe {
 
    /** `fullPath` is already resolved by the public entry points. */
    private async read(fullPath: string, signal?: AbortSignal): Promise<ProbedSource> {
+      keepPrivate(fullPath, "video");
       signal?.throwIfAborted();
       const identity = fileIdentity(await stat(fullPath));
       signal?.throwIfAborted();
