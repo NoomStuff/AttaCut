@@ -29,6 +29,7 @@ import { substantialEncoding } from "../shared/export-policy";
 import { waitForWork } from "./media/shared-work";
 import { appFailure } from "./failure";
 import { recordDiagnostic } from "./diagnostics";
+import { keepPrivate, log } from "./app-log";
 
 /** Everything about an export's output except its clips and destination. */
 interface OutputSettings {
@@ -298,6 +299,7 @@ export class ExportService {
             error: null,
          })),
       };
+      for (const item of this.job.items) keepPrivate(item.outputPath, "export");
       this.controller = new AbortController();
       this.completion = this.run();
       return structuredClone(this.job);
@@ -343,7 +345,12 @@ export class ExportService {
       // waits on a name that has already changed.
       const rank = (item: ExportJob["items"][number]) =>
          item.outputPath === stored.plan.sourcePath ? 2 : stored.plan.existingPaths.includes(item.outputPath) ? 1 : 0;
+      const queued = job.items.filter((item) => item.status === "queued").length;
+      log(
+         `export: ${queued} of ${job.items.length} ${stored.plan.mode} output${job.items.length === 1 ? "" : "s"}, container ${stored.output.container}, ${stored.output.audioTracks.length} audio track${stored.output.audioTracks.length === 1 ? "" : "s"}${stored.output.lossless ? ", lossless" : ""}${stored.output.excludedStreams.length ? `, ${stored.output.excludedStreams.length} streams left out` : ""}`
+      );
       for (const item of [...job.items].sort((a, b) => rank(a) - rank(b))) {
+         const position = job.items.indexOf(item);
          if (item.status !== "queued") continue;
          if (signal.aborted) {
             item.status = "cancelled";
@@ -355,6 +362,7 @@ export class ExportService {
          const finishStage = (outcome: "ok" | ReturnType<typeof appFailure>["code"] = "ok") => {
             if (recordedStage) recordDiagnostic("export:stage", performance.now() - stageStarted, outcome, recordedStage);
          };
+         const itemStarted = performance.now();
          this.emit(structuredClone(job));
          try {
             await this.beforeItem?.(signal);
@@ -399,6 +407,13 @@ export class ExportService {
             item.failure = appFailure(error, { output: item.outputPath });
          }
          finishStage(item.status === "cancelled" ? "cancelled" : (item.failure?.code ?? "ok"));
+         const cuts = stored.analyses.get(item.id) ?? [];
+         const methods = [...new Set(cuts.map((cut) => cut.method))].join("+");
+         const encoded = cuts.reduce((sum, cut) => sum + cut.encodedSeconds, 0);
+         log(
+            `export: item ${position + 1} ${item.status} in ${((performance.now() - itemStarted) / 1000).toFixed(1)}s (${cuts.length} cut${cuts.length === 1 ? "" : "s"}, ${methods || "no plan"}, ${encoded.toFixed(2)}s encoded)${item.failure ? ` at ${item.stage ?? "start"}, ${item.failure.code}: ${item.failure.detail}` : ""}`,
+            item.status === "failed" ? "error" : "info"
+         );
          this.emit(structuredClone(job));
       }
    }

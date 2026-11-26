@@ -5,12 +5,16 @@ import { appFailure } from "./failure";
 import type { IpcResult } from "../shared/failure";
 import { existsSync } from "node:fs";
 import { join, resolve, dirname, basename } from "node:path";
-import { stat, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { statOrNull } from "./files";
 import type { AvailableUpdate, SavedSession } from "../shared/types";
 import { projectExtension, projectExtensions, projectHasChanges, discardProjectChanges } from "../shared/project";
 import { readProject, projectSourcePaths, validateProjectSource, writeProject, updateProjectSource } from "./project-document";
 import { diagnosticReport, recordDiagnostic, recordAssessment, protectDiagnosticDestination } from "./diagnostics";
+import { currentAppLog, keepPrivate, log } from "./app-log";
+import { logArchive, systemDescription, systemDetails } from "./log-archive";
+import { bugReportUrl, logArchiveName } from "../shared/bug-report";
+import { describeSource } from "./source-summary";
 import { runMedia } from "./media/process";
 import { publishOutput } from "./media/publish";
 import { withTemporaryOutput } from "./media/transaction";
@@ -96,6 +100,7 @@ export function registerIpc({
          if (result.canceled || !result.filePath) return null;
          path = result.filePath;
       }
+      keepPrivate(path, "project");
       return writeProject(path, session);
    };
    /** History is a convenience: a failed write must never fail the open that caused it. */
@@ -122,6 +127,8 @@ export function registerIpc({
          } catch (error) {
             const failure = appFailure(error);
             recordDiagnostic(channel, performance.now() - started, failure.code);
+            // Cancellations are routine: every new open cancels the one before it.
+            if (failure.code !== "cancelled") log(`${channel} failed (${failure.code}): ${failure.detail}`, failure.code === "unknown" ? "error" : "warn");
             return { ok: false, error: failure };
          }
       });
@@ -164,6 +171,7 @@ export function registerIpc({
    });
    handle("source:open", async (value) => {
       const source = await sourceSession.open(value);
+      log(`source: opened ${describeSource(source)}`);
       forgetSourceWork();
       remember(source.path, source, "video");
       return source;
@@ -177,6 +185,7 @@ export function registerIpc({
       const ensureCurrent = () => {
          if (sequence !== openSequence) throw new Error("Cancelled");
       };
+      keepPrivate(path, "project");
       const project = await readProject(path);
       ensureCurrent();
       let sourcePath: string | undefined;
@@ -338,6 +347,7 @@ export function registerIpc({
    });
    handle("frame:export", async (request) => {
       const path = await exportFrame(getSource(request.sourceId), request, sourceSession.signal);
+      keepPrivate(path, "frame");
       frameOutputs.add(path);
       return path;
    });
@@ -354,6 +364,7 @@ export function registerIpc({
    handle("app:factory-reset", async () => {
       await storage.reset();
       await recent.clear();
+      await currentAppLog()?.clear();
    });
    handle("window:title", (title) => window.setTitle(title));
    handle("preview:prepare", (request) => {
@@ -399,18 +410,8 @@ export function registerIpc({
       const failure = await shell.openPath(path);
       if (failure) throw new Error(failure);
    });
-   handle("diagnostics:export", async () => {
-      const initialSource = sourceSession.current;
-      const result = await dialog.showSaveDialog(window, {
-         title: "Save diagnostics",
-         defaultPath: join(app.getPath("downloads"), "AttaCut-diagnostics.json"),
-         filters: [{ name: "Diagnostic report", extensions: ["json"] }],
-      });
-      if (result.canceled || !result.filePath) return false;
-      const destination = result.filePath;
-      const protectedSources = new Set([initialSource, sourceSession.current]);
-      await protectDiagnosticDestination(destination, protectedSources);
-      const tools = Object.fromEntries(
+   const mediaTools = async () =>
+      Object.fromEntries(
          await Promise.all(
             (["ffmpeg", "ffprobe"] as const).map(
                async (tool) =>
@@ -424,7 +425,55 @@ export function registerIpc({
             )
          )
       );
-      const report = diagnosticReport(app.getVersion(), tools, sourceSession.current, exportsService.current);
+   const writeLogArchive = async (destination: string) => {
+      for (const file of recent.files) keepPrivate(file.path, file.kind === "project" ? "project" : "video");
+      if (storage.session?.path) keepPrivate(storage.session.path, "video");
+      if (storage.session?.project?.path) keepPrivate(storage.session.project.path, "project");
+      for (const item of exportsService.current?.items ?? []) keepPrivate(item.outputPath, "export");
+      const tools = await mediaTools();
+      const archive = await logArchive((sessions) => ({
+         ...diagnosticReport(app.getVersion(), tools, sourceSession.current, exportsService.current),
+         host: { ...systemDetails(sessions), packaged: isPackagedApp() },
+      }));
+      // The archive never replaces the open video, even when the user picks its name.
+      await protectDiagnosticDestination(destination, [sourceSession.current]);
+      await writeFile(destination, archive);
+   };
+   handle("logs:export", async () => {
+      const result = await dialog.showSaveDialog(window, {
+         title: "Export logs",
+         defaultPath: join(app.getPath("downloads"), logArchiveName(new Date())),
+         filters: [{ name: "ZIP archive", extensions: ["zip"] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      await writeLogArchive(result.filePath);
+      shell.showItemInFolder(result.filePath);
+      return result.filePath;
+   });
+   handle("logs:report", async () => {
+      const directory = app.getPath("downloads");
+      const path = join(directory, logArchiveName(new Date()));
+      await mkdir(directory, { recursive: true });
+      await writeLogArchive(path);
+      shell.showItemInFolder(path);
+      await shell.openExternal(bugReportUrl({ version: app.getVersion(), system: systemDescription(), archive: basename(path) }));
+      return path;
+   });
+   handle("logs:renderer-error", (report) => {
+      log(`renderer ${report.kind}: ${report.message}${report.stack ? `\n${report.stack}` : ""}${report.source ? `\n${report.source}` : ""}`, "error");
+   });
+   handle("diagnostics:export", async () => {
+      const initialSource = sourceSession.current;
+      const result = await dialog.showSaveDialog(window, {
+         title: "Save diagnostics",
+         defaultPath: join(app.getPath("downloads"), "AttaCut-diagnostics.json"),
+         filters: [{ name: "Diagnostic report", extensions: ["json"] }],
+      });
+      if (result.canceled || !result.filePath) return false;
+      const destination = result.filePath;
+      const protectedSources = new Set([initialSource, sourceSession.current]);
+      await protectDiagnosticDestination(destination, protectedSources);
+      const report = diagnosticReport(app.getVersion(), await mediaTools(), sourceSession.current, exportsService.current);
       await withTemporaryOutput(dirname(destination), ".attacut-diagnostics-", async (directory) => {
          const temporary = join(directory, "report.json");
          await writeFile(temporary, JSON.stringify(report, null, 2));

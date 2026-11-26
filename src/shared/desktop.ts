@@ -5,6 +5,7 @@ import type { SessionInput } from "./session-codec";
 import type { DetectedRange, MediaSource, RangeDetection, ScrubAudio, SourceFileStatus } from "./media";
 import type { RecentEntry } from "./recent";
 import type { PlanRequest, AnalyzeRequest, ExportApproval, ExportPlan, ExportDestinations, CutReport, ExportJob } from "./export";
+import type { RendererError } from "./bug-report";
 export interface Bootstrap {
    warning: string | null;
    preferences: Preferences;
@@ -98,6 +99,11 @@ export interface DesktopApi {
    openExternal(url: string): Promise<void>;
    openNotices(): Promise<void>;
    exportDiagnostics(): Promise<boolean>;
+   /** Saves a zip of the logs where the user picks. Resolves with its path, or null when cancelled. */
+   exportLogs(): Promise<string | null>;
+   /** Saves the logs to Downloads, shows them, and opens the bug form on GitHub. */
+   reportBug(): Promise<string>;
+   reportError(error: RendererError): Promise<void>;
    windowAction(action: "minimize" | "maximize" | "close" | "enterFullscreen" | "exitFullscreen"): void;
    rendererReady(): void;
    onJob(listener: (job: ExportJob) => void): () => void;

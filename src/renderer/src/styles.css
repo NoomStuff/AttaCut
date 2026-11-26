@@ -14,6 +14,7 @@
 @import "./components/SettingsPanel.css";
 @import "./components/HelpPanel.css";
 @import "./components/AboutPanel.css";
+@import "./components/ReportBugPanel.css";
 @import "./components/AudioPicker.css";
 @import "./components/DropdownSelect.css";
 @import "./components/IconAnimations.css";

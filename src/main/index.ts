@@ -26,9 +26,16 @@ import { createUpdateLog } from "./update-log.ts";
 import { clearInstallRecord, takeInstallOutcome, writeInstallRecord } from "./update-install-record.ts";
 import type { AvailableUpdate } from "../shared/types";
 import type { ExportJob } from "../shared/export";
+import { errorText, log, startAppLog } from "./app-log.ts";
+import { systemDescription } from "./log-archive.ts";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 if (process.env["ATTACUT_USER_DATA"]) app.setPath("userData", process.env["ATTACUT_USER_DATA"]);
+const appLog = startAppLog({ directory: join(app.getPath("userData"), "logs"), version: app.getVersion() });
+// Observes without replacing Electron's own handling, which shows the error and may exit.
+process.on("uncaughtExceptionMonitor", (error, origin) => appLog.crashed(`${origin}: ${errorText(error)}`));
+// Electron only warns about these in the main process; keep them in the log instead.
+process.on("unhandledRejection", (reason) => log(`unhandled rejection: ${errorText(reason)}`, "error"));
 const ownsInstance = app.requestSingleInstanceLock();
 const sourceProbe = new SourceProbe();
 app.on("before-quit", () => sourceProbe.cancelPrefetch());
@@ -87,6 +94,18 @@ async function start(): Promise<void> {
    if (pendingFile) prefetchStartup();
    else void storageReady.then(prefetchStartup).catch(() => undefined);
    await app.whenReady();
+   void appLog
+      .begin()
+      .then((previous) => {
+         log(`session: AttaCut ${app.getVersion()} on ${systemDescription()}, Electron ${process.versions.electron}${isPackagedApp() ? "" : ", development"}`);
+         if (previous && !previous.clean)
+            log(
+               `session: the previous run (${previous.version}, started ${new Date(previous.startedAt).toISOString()}) did not close cleanly${previous.crash ? `: ${previous.crash}` : ""}`,
+               "warn"
+            );
+      })
+      .catch(() => undefined);
+   app.on("will-quit", () => appLog.end());
    const icon = windowIcon();
    const backgroundLinuxTest =
       process.platform === "linux" &&
@@ -240,6 +259,7 @@ async function start(): Promise<void> {
       }
    });
    window.webContents.on("render-process-gone", failFlush);
+   window.webContents.on("render-process-gone", (_event, details) => log(`renderer: gone (${details.reason}, exit code ${details.exitCode})`, "error"));
    window.webContents.on("destroyed", failFlush);
    /** Resolves false when the editor cancels, for example from its unsaved-project prompt. */
    const flushRenderer = (): Promise<boolean> => {
@@ -416,6 +436,7 @@ async function start(): Promise<void> {
       })()
          .catch(async (error: unknown) => {
             updateLog.error(error);
+            log(`update: restart to update failed: ${errorText(error)}`, "error");
             onExportProgress = null;
             if (handedOver) return app.quit();
             await clearInstallRecord(userData).catch(() => undefined);
@@ -485,6 +506,7 @@ else
    void start().catch((error: unknown) => {
       sourceProbe.cancelPrefetch();
       console.error(error);
+      appLog.crashed(`startup: ${errorText(error)}`);
       // Hidden test windows cannot show this box sensibly: a native dialog from an
       // invisible process dangles on the user's screen, so tests fail in the log only.
       if (process.env["ATTACUT_TESTING"] === "1") {

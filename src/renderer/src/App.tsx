@@ -45,6 +45,7 @@ const loadHelpPanel = () => import("./components/HelpPanel").then((module) => ({
 const HelpPanel = lazy(loadHelpPanel);
 const loadAboutPanel = () => import("./components/AboutPanel").then((module) => ({ default: module.AboutPanel }));
 const AboutPanel = lazy(loadAboutPanel);
+const ReportBugPanel = lazy(() => import("./components/ReportBugPanel").then((module) => ({ default: module.ReportBugPanel })));
 const DetectionPanel = lazy(() => import("./components/DetectionPanel").then((module) => ({ default: module.DetectionPanel })));
 
 export default function App() {
@@ -464,6 +465,7 @@ export default function App() {
                   />
                )}
                {panel === "about" && <AboutPanel version={version} onClose={closePanel} />}
+               {panel === "report" && <ReportBugPanel onClose={closePanel} />}
             </Suspense>
             {confirmReset && (
                <Modal title="Reset AttaCut?" onClose={() => setConfirmReset(false)} className="reset-confirm">

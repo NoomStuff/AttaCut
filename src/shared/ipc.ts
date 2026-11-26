@@ -54,6 +54,9 @@ interface IpcResponses {
    "open:external": void;
    "notices:open": void;
    "diagnostics:export": boolean;
+   "logs:export": string | null;
+   "logs:report": string;
+   "logs:renderer-error": void;
 }
 export type IpcCalls = { [K in keyof IpcResponses]: { request: z.input<(typeof ipcRequestSchemas)[K]>; response: IpcResponses[K] } };
 export type IpcRequest<K extends keyof IpcCalls> = z.output<(typeof ipcRequestSchemas)[K]>;

@@ -84,4 +84,12 @@ export const ipcRequestSchemas = {
    "open:external": z.string(),
    "notices:open": z.void(),
    "diagnostics:export": z.void(),
+   "logs:export": z.void(),
+   "logs:report": z.void(),
+   "logs:renderer-error": z.object({
+      kind: z.enum(["error", "rejection", "react"]),
+      message: z.string().max(4000),
+      stack: z.string().max(16_000).optional(),
+      source: z.string().max(16_000).optional(),
+   }),
 };

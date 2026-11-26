@@ -16,7 +16,7 @@ import { errorText } from "../lib/errors";
 import { clamp } from "../../../shared/time";
 import { minimumSkip } from "../playback/feedback";
 
-export type EditorPanel = "export" | "frame" | "scenes" | "settings" | "shortcuts" | "help" | "about" | null;
+export type EditorPanel = "export" | "frame" | "scenes" | "settings" | "shortcuts" | "help" | "about" | "report" | null;
 const releasesUrl = "https://github.com/NoomStuff/AttaCut/releases";
 interface EditorViewActions {
    openPanel: (panel: EditorPanel) => void;
@@ -362,6 +362,21 @@ export function useEditorCommands({
          enabled: () => ready,
          run: () => {
             void window.desktop.openExternal(releasesUrl).catch((value) => showError(errorText(value)));
+         },
+      },
+      reportBug: {
+         enabled: () => true,
+         run: () => view.openPanel("report"),
+      },
+      exportLogs: {
+         enabled: () => true,
+         run: () => {
+            void window.desktop.exportLogs().then(
+               (path) => {
+                  if (path) onInfo("Logs exported.");
+               },
+               (value: unknown) => showError(errorText(value))
+            );
          },
       },
       reset: { enabled: () => ready, run: view.confirmReset },
