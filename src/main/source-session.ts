@@ -3,6 +3,7 @@ import type { Stats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname } from "node:path";
 import { statOrNull } from "./files";
+import { keepPrivate } from "./app-log";
 import type { Snapshot, SnapshotStore } from "./media/snapshot.ts";
 import { resolveFrameTime } from "../shared/frames.ts";
 import { packetsAround, sourceFrames, sourceKeyframes, setSourceLifetime } from "./media/probe.ts";
@@ -423,6 +424,7 @@ export class SourceSession {
       return null;
    }
    private follow(source: ProbedSource, path: string, info: Stats): void {
+      keepPrivate(path, "video");
       source.path = path;
       source.name = basename(path);
       source.directory = dirname(path);
