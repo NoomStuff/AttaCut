@@ -166,10 +166,7 @@ test("planned export refuses a source changed in place", async ({ launchApp, pro
    expect(await readFile(existing, "utf8")).toBe("existing video");
    await expect(readFile(plan.items[0].outputPath)).rejects.toThrow();
    await copyFile(resolve("work/fixture.mp4"), source);
-   await app.evaluate(({ dialog }, path) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
-   }, source);
-   await page.getByRole("button", { name: "Reopen source", exact: true }).click();
+   await page.getByRole("button", { name: "Reload video", exact: true }).click();
    await waitForVideo(page);
    await expect(page.getByRole("button", { name: "Export", exact: true })).toBeEnabled();
 });
